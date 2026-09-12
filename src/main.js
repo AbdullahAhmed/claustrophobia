@@ -848,7 +848,7 @@ function escape() {
   if (player.out) return; player.out = true; record.escapes++;
   cave.escaped = true; saveCave();
   $('flash').style.opacity = 1;
-  setTimeout(() => endScreen('DAYLIGHT', 'you found the way out', 'CLICK FOR A NEW CAVE'), 2400);
+  setTimeout(() => endScreen('DAYLIGHT', `you found the way out. ${Math.round(runTime / 60) >= 1 ? `you were down there ${Math.round(runTime / 60)} minute${Math.round(runTime / 60) > 1 ? 's' : ''}. ` : ''}the next one is deeper.`, 'CLICK FOR A NEW CAVE'), 2400);
 }
 function newCave() { location.href = location.pathname + '?seed=' + ((Math.random() * 1e9) | 0); }
 function sameCave() { location.href = location.pathname + '?seed=' + SEED; }
