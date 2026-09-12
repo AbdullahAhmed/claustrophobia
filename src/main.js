@@ -269,7 +269,7 @@ function placeBones(p) {
     const fy = floorBelow(x, p.y + 1.0, z); if (fy === null) continue;
     addBone(kind, x, fy + (kind === 'skull' ? 0.06 : 0.02) * sc, z, R() * Math.PI * 2, kind === 'skull' ? R() * 0.4 - 0.2 : R() * 0.3, kind === 'long' ? Math.PI / 2 + R() * 0.4 : R() * 0.3, sc);
   }
-  bonePiles.push({ x: p.x, y: p.y, z: p.z, r: p.rx * 0.7 + (p.big ? 3 : 0), crunched: 0 });
+  bonePiles.push({ x: p.x, y: p.y, z: p.z, r: p.rx * 0.7 + (p.big ? 3 : 0), crunched: 0, taught: false });
   if (!p.big && R() < 0.3) {
     const ax = p.x + (R() - 0.5) * 0.8, az = p.z + (R() - 0.5) * 0.8, fy = floorBelow(ax, p.y + 1.0, az);
     if (fy !== null) placeCache(ax, fy, az, R() < 0.4 ? 'battery' : R() < 0.62 ? 'sticks' : R() < 0.85 ? 'rope' : 'cells');
@@ -612,7 +612,15 @@ function sameCave() { location.href = location.pathname + '?seed=' + SEED; }
 // ---------- chalk ----------
 const decalHelper = new THREE.Object3D();
 const hint = $('hint'); let hintT = 0;
-function showHint(t) { hint.textContent = t; hint.style.opacity = 1; hintT = 2.5; }
+function showHint(t, long) { hint.textContent = t; hint.style.opacity = 1; hintT = long ? 5 : 2.5; }
+// things you are told once, ever
+let taught = {};
+try { taught = JSON.parse(localStorage.getItem('karst.taught') || '{}'); } catch (e) {}
+function teach(key, text) {
+  if (taught[key]) return; taught[key] = 1;
+  try { localStorage.setItem('karst.taught', JSON.stringify(taught)); } catch (e) {}
+  showHint(text, true);
+}
 const viewDir = new THREE.Vector3();
 async function placeMark(text) {
   try { await document.fonts.load('600 84px Caveat'); } catch (e) {}
@@ -767,6 +775,7 @@ function updateSound(dt) {
     for (const v of G.voids) { const d = Math.hypot(v.x - player.x, v.top - player.y, v.z - player.z); if (d < bd && player.y > v.y + 1) { bd = d; best = v; } }
     if (best) {
       if (!voidLoop) voidLoop = sfx.loop('rumble', { x: best.x, y: best.y + 1, z: best.z, rolloff: 0.6, wet: 0.8 });
+      if (bd < 8) teach('pit', 'hear that? the air moves where the floor doesn't. look down before you step');
       voidLoop.setPos(best.x, best.y + 1, best.z);
       voidLoop.setVol(0.55 * clamp(1 - bd / 14, 0, 1) * (1 - u), 0.5);
     } else if (voidLoop) voidLoop.setVol(0, 0.5);
@@ -783,6 +792,7 @@ function footstep(kind) {
   for (const b of bonePiles) {
     if (Math.hypot(b.x - player.x, b.z - player.z) < b.r && Math.abs(b.y - player.y) < 2 && b.crunched < performance.now() - 4000) {
       b.crunched = performance.now(); sfx.play('bone_crunch', { ...o, vol: 0.6 });
+      teach('bones', 'bones. someone came this way. their pack, if it's here, is worth a look — and T writes on the wall');
     }
   }
 }
@@ -836,6 +846,12 @@ function updatePlayer(dt) {
   const eyeY = player.y + player.h - 0.1;
   player.under = player.wl > eyeY;
   const stance = player.h > 1.4 ? 1 : player.h > 0.8 ? 0.55 : 0.3;
+  if (stance < 1 && !player.swim) teach('low', 'low ceiling — you duck on your own. lower still and you crawl. hold C to stay down');
+  if (player.swim) teach('swim', 'chest deep: you're swimming. look down + W or C to dive. space to surface. watch your breath');
+  if (player.under) teach('under', 'under. the bar at the top is your breath. turn back at half if you can't see air');
+  if (player.battery < 0.3) teach('torch', 'the torch is dying. tap F to shake it — you're blind while you do');
+  if (player.hurt) teach('hurt', 'something is broken. you're slower now, and a second fall will finish you');
+  if (player.cold > 0.6) teach('cold', 'you're cold. keep moving to warm up. too long and your hands stop working');
   player.sprint = sprintKey && ml > 0 && stance === 1 && !player.swim && player.stamina > 0.05 && !player.hurt;
   if (player.sprint) player.stamina = Math.max(0, player.stamina - dt / 7); else player.stamina = Math.min(1, player.stamina + dt / (12 * (1 + player.cold)));
   // water is cold; you warm up slowly, faster when moving
@@ -937,7 +953,7 @@ function updatePlayer(dt) {
   if (ropeHintT <= 0) { ropeHintT = 1.5; const v = nearestVoid(); if (v && player.grounded) showHint(player.rope > 0 ? 'a drop. E to rig the rope' : 'a drop. no rope'); }
   if (stuck === 0 && player.h <= 0.52 && ml > 0 && moved > 0 && !player.swim && clear < 0.62 && Math.random() < dt * 0.06) {
     stuck = 5 + (Math.random() * 4 | 0); stuckSide = 0; stuckT = 0;
-    showHint('stuck. wiggle — A, D, A, D'); sfx.play('scrape', { vol: 0.7, rate: 0.7, dur: 1.2 }); sfx.play('gasp', { vol: 0.5, rate: 0.9 });
+    showHint('stuck. wiggle — A, D, A, D', true); sfx.play('scrape', { vol: 0.7, rate: 0.7, dur: 1.2 }); sfx.play('gasp', { vol: 0.5, rate: 0.9 });
   }
   const lt = player.lastTrail;
   if (!lt || Math.hypot(player.x - lt.x, player.z - lt.z) > 0.7 || Math.abs(player.y - lt.y) > 0.7) {
@@ -1232,7 +1248,8 @@ function stepFrame(dt) {
   frameNo++;
   if (innerWidth !== lastW || innerHeight !== lastH) { lastW = innerWidth; lastH = innerHeight; resize(); }
   const tf = performance.now();
-  if (running && player.alive && !player.out) { updatePlayer(dt); runTime += dt; saveT += dt; if (saveT > 5) { saveT = 0; saveRun(); } }
+  if (running && player.alive && !player.out) { updatePlayer(dt); runTime += dt; saveT += dt; if (saveT > 5) { saveT = 0; saveRun(); }
+    if (runTime > 40 && runTime < 41) teach('survey', 'M opens your survey — it only shows where you have been. T chalks the wall. G drops a glowstick'); }
   G.advanceWorms(3);
   G.scanChunks(dt, false, disposeChunk);
   processQueue(running ? 5 : 12);
