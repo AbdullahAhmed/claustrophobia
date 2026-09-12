@@ -13,7 +13,7 @@ try { cave = JSON.parse(localStorage.getItem('karst.cave') || 'null'); } catch (
 const urlSeed = parseInt(params.get('seed'));
 const urlSeedIsNew = !!urlSeed && !(cave && cave.seed === urlSeed);
 const SEED = (urlSeed || (cave && !cave.escaped && cave.seed) || ((Math.random() * 1e9) | 0)) >>> 0;
-let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0, froze: 0, crushed: 0, foul: 0 };
+let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0, froze: 0, crushed: 0, foul: 0, wedged: 0 };
 try { record = Object.assign(record, JSON.parse(localStorage.getItem('karst.record') || '{}')); } catch (e) {}
 if (!cave || cave.seed !== SEED) cave = { seed: SEED, attempts: 0, deaths: [], marks: [], escaped: false, tier: record.escapes };
 if (cave.tier === undefined) cave.tier = 0;
@@ -709,7 +709,7 @@ record.runs++;
 try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {}
 $('ov-rec').textContent = `cave ${SEED}${cave.tier ? ` (the ${['second', 'third', 'fourth', 'fifth', 'sixth', 'seventh'][Math.min(cave.tier, 6) - 1] || 'next'} cave: deeper)` : ''} · attempt ${cave.attempts}${cave.deaths.length ? ` · ${cave.deaths.length} of you lie in it` : ''} · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
 {
-  const CAUSE = { drowned: 'drowned', fell: 'fell', froze: 'froze', crushed: 'buried', foul: 'bad air' };
+  const CAUSE = { drowned: 'drowned', fell: 'fell', froze: 'froze', crushed: 'buried', foul: 'bad air', wedged: 'wedged' };
   const last = cave.deaths.slice(-4).map(d => `✕ ${Math.hypot(d.x, d.z).toFixed(0)} m out, ${(-d.y).toFixed(0)} m down · ${CAUSE[d.cause] || d.cause}`);
   if (last.length) { const el = document.createElement('div'); el.className = 'rec'; el.style.marginTop = '6px'; el.style.opacity = '0.75'; el.textContent = last.join('   '); $('ov-rec').after(el); }
 }
@@ -965,7 +965,7 @@ function footstep(kind) {
 // ---------- player ----------
 let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2, ropeHintT = 0, blockedT = 0;
 let foulT = 0, lakeT = rr(20, 50), lakeFear = 0, climbing = false, climbT = 0;
-let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false;                      // stuck > 0: wedged, that many wiggles still needed
+let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false, stuckTight = false, exhaling = false, exhaleT = 0;                      // stuck > 0: wedged, that many wiggles still needed
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
   if (roping) {
@@ -978,8 +978,18 @@ function updatePlayer(dt) {
   const l = !still && (keys.KeyA || keys.ArrowLeft) ? 1 : 0, r = !still && (keys.KeyD || keys.ArrowRight) ? 1 : 0;
   if (stuck > 0) {                                            // wiggle: alternate A and D to work yourself loose
     const side = keys.KeyA || keys.ArrowLeft ? -1 : keys.KeyD || keys.ArrowRight ? 1 : 0;
-    if (side !== 0 && side !== stuckSide) { stuckSide = side; stuck--; wiggles++; sfx.play('scrape', { x: player.x, y: player.y + 0.3, z: player.z, vol: 0.5, rate: 1.3, vary: 0.3, dur: 0.5, hrtf: false }); camera.rotation.z += side * 0.05;
+    if (side !== 0 && side !== stuckSide) { stuckSide = side; wiggles++; sfx.play('scrape', { x: player.x, y: player.y + 0.3, z: player.z, vol: 0.5, rate: 1.3, vary: 0.3, dur: 0.5, hrtf: false }); camera.rotation.z += side * 0.05;
+      if (!stuckTight) stuck--;
+      else if (wiggles % 3 === 0) showHint('no. wiggling does nothing here. breathe out and push — hold C', true);
       if (stuck === 0) { showHint('free'); sfx.play('gasp', { vol: 0.7 }); } }
+    // the tight ones: you only get through by breathing out — and you cannot do that for long
+    if (stuckTight) {
+      if (keys.KeyC || keys.ControlLeft) {
+        exhaling = true; player.breath = Math.max(0, player.breath - dt / (BREATH_S * 0.7)); exhaleT += dt;
+        if (exhaleT > 0.9) { exhaleT = 0; stuck--; sfx.play('drag', { x: player.x, y: player.y + 0.3, z: player.z, vol: 0.6, rate: 0.8, dur: 0.8, hrtf: false }); camera.rotation.z += (Math.random() - 0.5) * 0.04; if (stuck === 0) { showHint('through. breathe', true); sfx.play('gasping', { vol: 0.8 }); } }
+        if (player.breath <= 0) { player.breath = 0; die('WEDGED', 'you breathed in. the rock did not give it back', 'wedged'); }
+      } else { exhaling = false; exhaleT = 0; player.breath = Math.min(1, player.breath + dt / 3); }
+    }
     stuckT += dt;
   }
   const crouchKey = keys.KeyC || keys.ControlLeft;
@@ -1158,7 +1168,7 @@ function updatePlayer(dt) {
   player.foul = !player.under && G.foulAt(player.x, player.y + 0.5, player.z);
   if (player.under) player.breath -= dt / BREATH_S;
   else if (player.foul) { player.breath -= dt / (BREATH_S * 3.2); foulT += dt; if (foulT > 4) teach('foul', 'the air is thick and your head hurts. this pocket has no air in it. back out'); }
-  else { player.breath = Math.min(1, player.breath + dt / (foulT > 0 ? 12 : 4)); foulT = 0; }
+  else if (!exhaling) { player.breath = Math.min(1, player.breath + dt / (foulT > 0 ? 12 : 4)); foulT = 0; }
   if (player.breath <= 0) { player.breath = 0; if (player.foul) die('BAD AIR', 'you sat down for a moment. the air in that pocket had nothing in it', 'foul'); else die('DROWNED', 'the water took you', 'drowned'); }
 
   const moved = Math.hypot(player.x - px0, player.z - pz0);
@@ -1177,8 +1187,11 @@ function updatePlayer(dt) {
   if (player.under && !wasUnder) surveyNote('sump', player.x, player.z);
   if (player.foul && foulT > 3) surveyNote('bad air', player.x, player.z);
   if (stuck === 0 && player.h <= 0.52 && ml > 0 && moved > 0 && !player.swim && clear < 0.62 && Math.random() < dt * 0.06) {
-    stuck = 5 + (Math.random() * 4 | 0); stuckSide = 0; stuckT = 0;
-    showHint('stuck. wiggle — A, D, A, D', true); sfx.play('scrape', { vol: 0.7, rate: 0.7, dur: 1.2 }); sfx.play('gasp', { vol: 0.5, rate: 0.9 });
+    stuck = 5 + (Math.random() * 4 | 0); stuckSide = 0; stuckT = 0; wiggles = 0; exhaleT = 0;
+    const sg = G.nearestSegAt(player.x, player.y + 0.3, player.z);
+    stuckTight = !!(sg && sg.rmin < 0.62 && Math.random() < 0.5);                    // a squeeze proper: chest-tight
+    if (stuckTight) { stuck = 3 + (Math.random() * 3 | 0); showHint('stuck. it has your chest. breathe out — hold C — and push', true); sfx.play('scrape', { vol: 0.8, rate: 0.6, dur: 1.4 }); sfx.play('gasping', { vol: 0.6 }); teach('tight', 'the tight ones: you get through on an empty chest, a few centimetres at a time. watch the bar'); }
+    else { showHint('stuck. wiggle — A, D, A, D', true); sfx.play('scrape', { vol: 0.7, rate: 0.7, dur: 1.2 }); sfx.play('gasp', { vol: 0.5, rate: 0.9 }); }
   }
   const lt = player.lastTrail;
   if (!lt || Math.hypot(player.x - lt.x, player.z - lt.z) > 0.7 || Math.abs(player.y - lt.y) > 0.7) {
@@ -1207,7 +1220,7 @@ function updatePlayer(dt) {
     if (!r.taken && Math.hypot(r.x - player.x, r.z - player.z) < 1.0 && Math.abs(r.y - player.y) < 1.5) {
       r.taken = true; scene.remove(r.light); scene.remove(r.lens);
       player.battery = Math.min(1, player.battery + 0.25);
-      showHint(`your own torch. still ${(r.battery * 100).toFixed(0)}% when you ${r.cause === 'drowned' ? 'drowned' : r.cause === 'froze' ? 'froze' : r.cause === 'crushed' ? 'were buried' : r.cause === 'foul' ? 'stopped breathing' : 'fell'}. +25%`);
+      showHint(`your own torch. still ${(r.battery * 100).toFixed(0)}% when you ${r.cause === 'drowned' ? 'drowned' : r.cause === 'froze' ? 'froze' : r.cause === 'crushed' ? 'were buried' : r.cause === 'foul' ? 'stopped breathing' : r.cause === 'wedged' ? 'stuck' : 'fell'}. +25%`);
       sfx.play('torch_click', { vol: 0.6 }); sfx.play('bones_rattle', { x: r.x, y: r.y, z: r.z, vol: 0.4, rate: 0.9 });
     }
   }
@@ -1652,7 +1665,7 @@ function hud(dt) {
   $('breathbar').style.width = (player.breath * 100).toFixed(0) + '%';
   breathM.style.opacity = player.under || player.breath < 1 ? 1 : 0;
   breathM.classList.toggle('low', player.breath < 0.35);
-  breathM.querySelector('.tag').textContent = player.foul ? 'bad air' : 'air';
+  breathM.querySelector('.tag').textContent = player.foul ? 'bad air' : exhaling ? 'breathe out' : 'air';
   if (showDebug) {
     let meshes = 0; for (const c of G.chunks.values()) if (c.mesh) meshes++;
     const stance = player.swim ? (player.under ? 'diving' : 'swimming') : player.h > 1.4 ? 'walking' : player.h > 0.8 ? 'crouched' : 'crawling';
@@ -1689,7 +1702,7 @@ function init() {
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
-               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; } };
+               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; }, tight: (n) => { stuck = n; stuckTight = true; wiggles = 0; exhaleT = 0; } };
 }
 init();
 // warm the shaders now, not the first time a lake or a loose block comes into view (a compile can cost a quarter second)
