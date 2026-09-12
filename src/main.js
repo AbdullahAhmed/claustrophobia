@@ -413,6 +413,10 @@ function whistle() {
   if (o > 16) setTimeout(() => sfx.play('rumble', { vol: 0.25, rate: 1.4, dur: 1.2, wet: 1.0 }), delay * 2600);
   for (const r of roosts) if (!r.spooked && Math.hypot(r.x - player.x, r.y - player.y, r.z - player.z) < 22) setTimeout(() => spookRoost(r), 300);
   if (following > 0) { following = 0; followT = rr(40, 90); }                          // whatever it is, it stops when you do that
+  if (dread > 0.35 && Math.random() < 0.22 + 0.3 * dread) {                             // and sometimes something answers, late, from the wrong place
+    const a = Math.random() * Math.PI * 2, d = rr(12, 22);
+    setTimeout(() => { if (player.alive) { sfx.play('whistle', { x: player.x + Math.sin(a) * d, y: player.y + 0.5, z: player.z + Math.cos(a) * d, vol: 0.4, rate: 0.9, wet: 0.9, rolloff: 0.4 }); showHint('that was not an echo', true); } }, rr(2600, 4200));
+  }
   teach('whistle', o > 9 ? 'listen to it come back. that took a while: this is a big space' : 'it came straight back. there is not much room here');
 }
 function updateBats(dt) {
