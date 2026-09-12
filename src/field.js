@@ -102,9 +102,9 @@ export function buildField(list, cx, cy, cz, into) {
             const floorY = lerp(bs.y0, bs.y1, bt) + (0.08 + 0.03 * bs.ry) * vnoise(x * 0.9 + 3, y * 0.9, z * 0.9 + 7);
             const f = floorY - y; if (f > v) v = f;                 // sediment fill -> walkable floor
           }
-          if (bs.core) { const c = coreDist(bs, x, y, z); if (c < v) v = c; }
-          for (let q = 0; q < bs.boulders.length; q++) {            // breakdown blocks on cavern floors
-            const b = bs.boulders[q], bd = b.r - Math.hypot(x - b.x, y - b.y, z - b.z) + 0.15 * vnoise(x * 2.3, y * 2.3, z * 2.3);
+          for (let q = 0; q < bs.boulders.length; q++) {            // breakdown blocks on cavern floors: a sphere with a skirt down into the floor, so nothing can wedge under it
+            const b = bs.boulders[q], dyb = y > b.y ? y - b.y : y < b.y - b.r ? y - (b.y - b.r) : 0;
+            const bd = b.r - Math.hypot(x - b.x, dyb, z - b.z) + 0.15 * vnoise(x * 2.3, y * 2.3, z * 2.3);
             if (bd > v) v = bd;
           }
           for (let q = 0; q < bs.spel.length; q++) {                // dripstone cones (calcite)
@@ -115,6 +115,7 @@ export function buildField(list, cx, cy, cz, into) {
             if (cd > v) v = cd;
             if (cd > -0.35) cal = Math.max(cal, clamp((cd + 0.35) / 0.35, 0, 1));
           }
+          if (bs.core) { const c = coreDist(bs, x, y, z); if (c < v) v = c; }   // last: the crawl core is a promise, boulders and dripstone included
           if (bs.wl !== undefined && y < bs.wl + 0.9) wt = clamp(1 - (y - bs.wl) / 0.9, 0, 1);
           // bioluminescence: damp band above water, plus flagged passages, patchy
           const patch = smooth(0.42, 0.9, vnoise(x * 1.5 + 21, y * 1.5, z * 1.5 - 13) * 0.5 + 0.5) * smooth(0.3, 0.7, vnoise(x * 0.35, y * 0.35, z * 0.35 + 5) * 0.5 + 0.5);

@@ -256,7 +256,7 @@ class Worm {
     if (cavern && R() < 0.6) {
       n.boulders = [];
       for (let k = 0, c = 1 + (R() * 3 | 0); k < c; k++) {
-        const r = wr(0.7, 2.4), a = R() * Math.PI * 2, d = R() * this.rx * 0.75;
+        const r = wr(0.7, 2.4), a = R() * Math.PI * 2, d = r + 1.0 + R() * Math.max(0.5, this.rx * 0.8 - r - 1.0);   // off the floor line: the way through stays open
         n.boulders.push({ x: n.x + Math.sin(a) * d, y: n.y + r * 0.45, z: n.z + Math.cos(a) * d, r });
       }
     }
