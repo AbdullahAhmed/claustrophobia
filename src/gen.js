@@ -93,6 +93,12 @@ export const MODES = [
   { name: 'crystal', rx: [2.0, 3.4], ry: [1.8, 2.8],   len: [6, 12],  w: 0.025 },
 ];
 const MODE = Object.fromEntries(MODES.map(m => [m.name, m]));
+const NOTES = {
+  dead: ['dead end', 'closes. turn back', 'no way through', 'ends', 'don\'t bother', 'pinches'],
+  water: ['sump', 'water — 12 m?', 'air on the far side', 'long one. breathe first', 'cold', 'it goes under'],
+  fork: ['left', 'right', 'keep the wall on your right', 'this way', 'main way ->', 'not this one'],
+  lie: ['way out', 'exit 50 m', 'daylight this way', 'safe', 'shallow', 'help'],
+};
 
 class Worm {
   constructor(id, node, yaw, pitch, kind, life) {
@@ -134,6 +140,7 @@ class Worm {
       const bell = under > 18 ? R() < 0.3 : under > 10 ? R() < 0.6 : false;
       this.sump = { phase: 'dive', wl: this.y + 0.35, left: under, bell: 0, bellAt: bell ? under * wr(0.4, 0.6) : null,
                     trap: this.kind !== 'trunk' && R() < 0.25 };
+      if (R() < 0.3) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: R() < 0.7 ? NOTES.water[(R() * NOTES.water.length) | 0] : NOTES.lie[(R() * NOTES.lie.length) | 0] });
       if (R() < 0.3) props.push({ type: 'cascade', x: this.x + wr(-0.6, 0.6), y: this.y + (1 + CY) * Math.max(this.ry, 1.2) - 0.2, z: this.z + wr(-0.6, 0.6), wl: this.y + 0.35, big: R() < 0.3 });
     }
     if (m.name === 'pit') {
@@ -175,6 +182,7 @@ class Worm {
         }
       }
     } else if (this.pinch > 0) {                        // ---- side passage pinching shut ----
+      if (this.pinch === 3 && R() < 0.35) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: R() < 0.8 ? NOTES.dead[(R() * NOTES.dead.length) | 0] : NOTES.lie[(R() * NOTES.lie.length) | 0] });
       this.pinch--; this.rx *= 0.55; this.ry *= 0.55; core = false;
       if (this.pinch === 0) { this.carve(core, wl); return false; }
     } else {
@@ -225,6 +233,7 @@ class Worm {
         const alcove = R() < 0.3;
         const c = new Worm((Math.imul(this.id, 1000003) + this.n * 7 + 1) | 0, this.node, this.yaw + (R() < 0.5 ? -1 : 1) * wr(0.7, 1.5), this.pitch * 0.5, 'side',
                            alcove ? wr(3, 8) : wr(15, 80));
+        if (R() < 0.12) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: R() < 0.6 ? NOTES.fork[(R() * NOTES.fork.length) | 0] : NOTES.lie[(R() * NOTES.lie.length) | 0] });
         c.pickMode(alcove ? MODE.squeeze : null);
         if (alcove) { c.trx = Math.max(0.6, c.trx * 0.8); c.try = Math.max(0.5, c.try * 0.8); }
         worms.push(c);

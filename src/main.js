@@ -22,7 +22,7 @@ const dread = Math.min(1, (cave.attempts - 1) * 0.18 + cave.deaths.length * 0.08
 let saveT = 0;
 function saveRun() {
   if (!player.alive || player.out) return;
-  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks,
+  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks, rope: player.rope,
                glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })),
                dist: player.dist, maxDepth: player.maxDepth, marks: runMarks, trail: player.trail.slice(-3000), t: runTime };
   saveCave();
@@ -37,7 +37,7 @@ const GRAV = 14;
 const player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, h: H_STAND, grounded: false, bob: 0, stamina: 1, sprint: false,
                  wl: -Infinity, swim: false, under: false, breath: 1, battery: 1, hurt: false,
                  airT: 0, whooshed: false, underT: 0, stepPhase: 0,
-                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0, sticks: 3 };
+                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0, sticks: 3, rope: 0 };
 G.focus.x = 0; G.focus.y = 0; G.focus.z = 0;
 
 // ---------- scene ----------
@@ -272,7 +272,7 @@ function placeBones(p) {
   bonePiles.push({ x: p.x, y: p.y, z: p.z, r: p.rx * 0.7 + (p.big ? 3 : 0), crunched: 0 });
   if (!p.big && R() < 0.3) {
     const ax = p.x + (R() - 0.5) * 0.8, az = p.z + (R() - 0.5) * 0.8, fy = floorBelow(ax, p.y + 1.0, az);
-    if (fy !== null) placeCache(ax, fy, az, R() < 0.55 ? 'battery' : 'sticks');
+    if (fy !== null) placeCache(ax, fy, az, R() < 0.45 ? 'battery' : R() < 0.7 ? 'sticks' : 'rope');
   }
 }
 const remains = [];          // {x,y,z, taken, light}
@@ -335,6 +335,44 @@ function updateBats(dt) {
   }
   bats.count = n; if (n) bats.instanceMatrix.needsUpdate = true;
 }
+// rope: rig a pit and go down it slowly; a rigged rope can be climbed back up
+const ropes = [];            // {x, top, bottom, z, mesh}
+const ropeMat = new THREE.MeshStandardMaterial({ color: 0xc8b48a, roughness: 0.9 });
+let roping = null;           // {rope, dir, t}
+function nearestVoid() {
+  let best = null, bd = 3.2;
+  for (const v of G.voids) { const d = Math.hypot(v.x - player.x, v.z - player.z); if (d < bd && Math.abs(v.top - player.y) < 1.5) { bd = d; best = v; } }
+  return best;
+}
+function useRope() {
+  if (!running || !player.alive || player.out || roping) return;
+  // climb an existing rope from the bottom
+  for (const r of ropes) {
+    if (Math.hypot(r.x - player.x, r.z - player.z) < 3.0 && Math.abs(player.y - r.bottom) < 1.8) { roping = { rope: r, dir: 1, t: 0 }; showHint('climbing'); return; }
+    if (Math.hypot(r.x - player.x, r.z - player.z) < 1.8 && Math.abs(player.y - r.top) < 1.5) { roping = { rope: r, dir: -1, t: 0 }; showHint('down the rope'); return; }
+  }
+  const v = nearestVoid();
+  if (!v) { showHint('nothing to rig here'); return; }
+  if (player.rope <= 0) { showHint('you have no rope'); return; }
+  player.rope--;
+  const r = { x: v.x, z: v.z, top: v.top, bottom: v.y, mesh: new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, v.top - v.y + 0.3, 5), ropeMat) };
+  r.mesh.position.set(v.x, (v.top + v.y) / 2 - 0.1, v.z); scene.add(r.mesh); ropes.push(r);
+  roping = { rope: r, dir: -1, t: 0 }; sfx.play('rattle', { vol: 0.5, rate: 0.6 }); showHint('rigged. going down');
+}
+function updateRoping(dt) {
+  if (!roping) return;
+  const r = roping.rope, span = r.top - r.bottom, speed = roping.dir < 0 ? 1.6 : 0.9;
+  roping.t += dt;
+  const target = roping.dir < 0 ? r.bottom : r.top;
+  player.x += (r.x - player.x) * Math.min(1, dt * 4); player.z += (r.z - player.z) * Math.min(1, dt * 4);
+  player.y += Math.sign(target - player.y) * speed * dt; player.vy = 0; player.airT = 0; player.h = H_CROUCH;
+  if (Math.floor(roping.t * 1.6) !== Math.floor((roping.t - dt) * 1.6)) sfx.play('scrape', { vol: 0.35, rate: 1.4, vary: 0.3, dur: 0.4, hrtf: false });
+  if ((roping.dir < 0 && player.y <= r.bottom + 0.15) || (roping.dir > 0 && player.y >= r.top - 0.05)) {
+    if (roping.dir > 0) { player.y = r.top + 0.1; const dx = -Math.sin(player.yaw), dz = -Math.cos(player.yaw); player.x = r.x + dx * 0.9; player.z = r.z + dz * 0.9; }   // step off the lip
+    else player.y = r.bottom + 0.15;
+    roping = null; showHint(player.y < r.bottom + 1 ? 'down' : 'up');
+  }
+}
 // glowsticks: a cold green light you can leave behind
 const glow = [];             // {x,y,z, light, mesh}
 const stickGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.16, 6);
@@ -356,9 +394,21 @@ const caches = [];           // {x,y,z, kind, taken, mesh}
 const packGeo = new THREE.BoxGeometry(0.28, 0.2, 0.16), packMat = new THREE.MeshStandardMaterial({ color: 0x3b3a36, roughness: 0.9, flatShading: true });
 function placeCache(x, y, z, kind) {
   const mesh = new THREE.Mesh(packGeo, packMat); mesh.position.set(x, y + 0.1, z); mesh.rotation.y = rr(0, 6); mesh.rotation.z = rr(-0.3, 0.3); scene.add(mesh);
-  const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : 0x9dffb0, fog: false }));
+  const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : kind === 'rope' ? 0xff7a5c : 0x9dffb0, fog: false }));
   tag.position.set(x, y + 0.22, z); scene.add(tag);
   caches.push({ x, y, z, kind, taken: false, mesh, tag });
+}
+// notes from the ones who came before, written on the nearest wall at head height
+function placeNote(p) {
+  let best = null, bd = 9;
+  for (let k = 0; k < 8; k++) {
+    const a = k / 8 * Math.PI * 2, dx = Math.sin(a), dz = Math.cos(a);
+    const t = G.rayToRock(p.x, p.y + 1.3, p.z, dx, 0, dz, 6, 0.1);
+    if (t < bd) { bd = t; best = new THREE.Vector3(p.x + dx * (t - 0.02), p.y + 1.3, p.z + dz * (t - 0.02)); }
+  }
+  if (!best) return;
+  G.gradAt(best.x, best.y, best.z); const g = G.G, gl = Math.hypot(g.x, g.y, g.z) || 1;
+  drawMark(p.text, best, new THREE.Vector3(-g.x / gl, -g.y / gl, -g.z / gl), true);
 }
 // cascades: water falling from the ceiling into a pool
 const cascades = [];         // {x,y,z, wl, drops: Float32Array phases, inst, foam, loop}
@@ -415,6 +465,7 @@ function processProps(dt) {
     else if (p.type === 'crystals') placeCrystals(p);
     else if (p.type === 'roost') placeRoost(p);
     else if (p.type === 'cascade') placeCascade(p);
+    else if (p.type === 'note') placeNote(p);
     else placeBones(p);
     G.props.splice(i, 1);
   }
@@ -474,6 +525,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyF' && !e.repeat) shakeTorch();
   if (e.code === 'KeyT' && !e.repeat) { e.preventDefault(); openChalk(); }
   if (e.code === 'KeyG' && !e.repeat) dropGlowstick();
+  if (e.code === 'KeyE' && !e.repeat) useRope();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 function openChalk() { typing = true; for (const k in keys) keys[k] = false; chalkIn.value = ''; chalkIn.style.display = 'block'; chalkIn.focus(); }
@@ -722,10 +774,15 @@ function footstep(kind) {
 }
 
 // ---------- player ----------
-let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2;
+let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2, ropeHintT = 0;
 let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false;                      // stuck > 0: wedged, that many wiggles still needed
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
+  if (roping) {
+    updateRoping(dt);
+    camera.position.set(player.x, player.y + player.h - 0.1, player.z); camera.rotation.set(player.pitch, player.yaw, 0);
+    G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return;
+  }
   const still = notebookOpen || stuck > 0;                    // you stop walking to write; or the rock has you
   const f = !still && (keys.KeyW || keys.ArrowUp) ? 1 : 0, b = !still && (keys.KeyS || keys.ArrowDown) ? 1 : 0;
   const l = !still && (keys.KeyA || keys.ArrowLeft) ? 1 : 0, r = !still && (keys.KeyD || keys.ArrowRight) ? 1 : 0;
@@ -860,6 +917,8 @@ function updatePlayer(dt) {
 
   const moved = Math.hypot(player.x - px0, player.z - pz0);
   player.dist += moved;
+  ropeHintT -= dt;
+  if (ropeHintT <= 0) { ropeHintT = 1.5; const v = nearestVoid(); if (v && player.grounded) showHint(player.rope > 0 ? 'a drop. E to rig the rope' : 'a drop. no rope'); }
   if (stuck === 0 && player.h <= 0.52 && ml > 0 && moved > 0 && !player.swim && clear < 0.62 && Math.random() < dt * 0.06) {
     stuck = 5 + (Math.random() * 4 | 0); stuckSide = 0; stuckT = 0;
     showHint('stuck. wiggle — A, D, A, D'); sfx.play('scrape', { vol: 0.7, rate: 0.7, dur: 1.2 }); sfx.play('gasp', { vol: 0.5, rate: 0.9 });
@@ -873,6 +932,7 @@ function updatePlayer(dt) {
     if (!c.taken && Math.hypot(c.x - player.x, c.z - player.z) < 0.9 && Math.abs(c.y - player.y) < 1.4) {
       c.taken = true; scene.remove(c.mesh); scene.remove(c.tag);
       if (c.kind === 'battery') { player.battery = Math.min(1, player.battery + 0.4); showHint('a dead caver\'s spare cells. +40%'); }
+      else if (c.kind === 'rope') { player.rope++; showHint('a coil of rope. E at a drop to rig it'); }
       else { player.sticks += 2; showHint(`two glowsticks in the pack · ${player.sticks} now`); }
       sfx.play('rattle', { vol: 0.5, rate: 0.7 }); sfx.play('torch_click', { vol: 0.4 });
     }
@@ -1082,7 +1142,7 @@ function drawNotebook() {
   ctx.fillStyle = 'rgba(60,52,44,0.9)'; ctx.font = '600 26px Caveat'; ctx.fillText('N', -8, -52); ctx.restore();
   $('nb-title').textContent = `survey · attempt ${cave.attempts}`;
   const dist = Math.hypot(player.x, player.z);
-  $('nb-foot').textContent = `${player.dist.toFixed(0)} m walked · ${(-player.y).toFixed(0)} m deep · ${dist.toFixed(0)} m from the entrance as the bat flies · ${player.sticks} glowsticks`;
+  $('nb-foot').textContent = `${player.dist.toFixed(0)} m walked · ${(-player.y).toFixed(0)} m deep · ${dist.toFixed(0)} m from the entrance as the bat flies · ${player.sticks} glowsticks · ${player.rope} rope`;
 }
 
 // ---------- overlays / hud ----------
@@ -1128,7 +1188,7 @@ function init() {
     const r = cave.run;
     player.x = r.x; player.y = r.y; player.z = r.z; player.yaw = r.yaw; player.battery = r.battery; player.breath = r.breath; player.hurt = r.hurt;
     player.dist = r.dist; player.maxDepth = r.maxDepth; player.trail = r.trail || []; runMarks.push(...(r.marks || [])); runTime = r.t || 0;
-    if (r.sticks !== undefined) player.sticks = r.sticks;
+    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.rope !== undefined) player.rope = r.rope;
     for (const g of (r.glow || [])) { const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(g.x, g.y, g.z); mesh.rotation.x = Math.PI / 2; scene.add(mesh); const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.set(g.x, g.y + 0.15, g.z); scene.add(light); glow.push({ ...g, light, mesh }); }
     for (const m of runMarks) G.props.push({ type: 'mark', ...m });
     G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
