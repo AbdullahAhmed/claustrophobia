@@ -683,7 +683,7 @@ function composePage(x, y, z, R) {
   const opts = [];
   const sp = near(G.sumpNodes, 70);
   if (sp) opts.push(sp.sump.trap ? `the sump ${bearing(sp.x - x, sp.z - z)} of here does not come up again. ${name} went in first. don\u2019t`
-                                : `the sump ${bearing(sp.x - x, sp.z - z)} of here goes about ${Math.round(sp.sump.len / 5) * 5} m under. ${sp.sump.bell ? 'there is air about halfway' : 'no air till the far side'}`);
+                                : `the sump ${bearing(sp.x - x, sp.z - z)} of here goes about ${Math.round(sp.sump.len / 5) * 5} m under. ${sp.sump.bell ? (sp.sump.foulBell ? 'there is air about halfway. do not trust it' : 'there is air about halfway') : 'no air till the far side'}`);
   const vd = near(G.voids, 70);
   if (vd) opts.push(`the drop ${bearing(vd.x - x, vd.z - z)} of here is ${Math.round(vd.top - vd.y)} m. ${vd.wet ? 'deep water at the bottom' : 'rock at the bottom. we lowered ' + name + ' on the rope'}`);
   const fl = near(G.nodes.filter(n => n.foul), 60);

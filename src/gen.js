@@ -192,6 +192,7 @@ class Worm {
       const r = R(), under = (fed ? wr(9, 22) : r < 0.45 ? wr(5, 10) : r < 0.85 ? wr(10, 18) : wr(18, 30)) * hard;
       const bell = under > 18 ? R() < 0.3 / hard : under > 10 ? R() < 0.6 / hard : false;
       this.sump = { phase: 'dive', wl: fed && this.node.wl !== undefined ? this.node.wl : this.y + 0.35, left: under, bell: 0, bellAt: bell ? under * wr(0.4, 0.6) : null,
+                    bellFoul: bell && TIER >= 1 && mulberry32((SEED ^ Math.imul(this.id, 2654435761) ^ this.n) >>> 0)() < 0.3,   // in the deeper caves some bells hold air with nothing in it
                     trap: !fed && this.kind !== 'trunk' && R() < 0.25 };
       if (R() < 0.3) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: R() < 0.7 ? NOTES.water[(R() * NOTES.water.length) | 0] : NOTES.lie[(R() * NOTES.lie.length) | 0] });
       if (R() < 0.3) props.push({ type: 'cascade', x: this.x + wr(-0.6, 0.6), y: this.y + (1 + CY) * Math.max(this.ry, 1.2) - 0.2, z: this.z + wr(-0.6, 0.6), wl: this.y + 0.35, big: R() < 0.3 });
@@ -387,11 +388,11 @@ class Worm {
     const cp = Math.cos(this.pitch);
     const n = { x: this.x + Math.sin(this.yaw) * cp * STEP, y: this.y + Math.sin(this.pitch) * STEP,
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
-                algae: core ? this.algae : 0, tint: this.tint, foul: this.foul, gour: !!(this.mode && this.mode.name === 'gour' && !this.pit && !this.sump), chimney: this.chimney > 0,
+                algae: core ? this.algae : 0, tint: this.tint, foul: this.foul || !!(this.sump && this.sump.bell > 0 && this.sump.bellFoul), gour: !!(this.mode && this.mode.name === 'gour' && !this.pit && !this.sump), chimney: this.chimney > 0,
                 blue: !!this.lake || this.theme === 'wet' && this.tint === 3 };   // over the lakes, and in the grey-blue wet rock, the glow is blue-white, not green
     if (this.pendingSlab) { n.slabs = [this.pendingSlab]; this.pendingSlab = null; }
     if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; if (this.stream || this.sump || this.pit || this.lake || (this.mode && this.mode.name === 'duck')) n.floods = true; }   // live water: it rises when it rains up top
-    if (this.sump && !this.sump.marked) { this.sump.marked = true; n.sump = { len: this.sump.left, bell: this.sump.bellAt !== null, trap: this.sump.trap }; sumpNodes.push(n); }
+    if (this.sump && !this.sump.marked) { this.sump.marked = true; n.sump = { len: this.sump.left, bell: this.sump.bellAt !== null, trap: this.sump.trap, foulBell: !!this.sump.bellFoul }; sumpNodes.push(n); }
     else if (core && this.mode && (this.mode.name === 'passage' || this.mode.name === 'bedding' || this.mode.name === 'chamber') && Math.abs(this.pitch) < 0.12 && R() < 0.07) n.wl = n.y + 0.07;   // a puddle in a low spot
     if (this.kind === 'trunk') { this.themeLeft -= STEP; if (this.themeLeft <= 0) { this.themeLeft = wr(120, 200); const others = THEME_NAMES.filter(t => t !== this.theme); this.theme = others[(R() * others.length) | 0]; } }
     n.theme = this.theme;
