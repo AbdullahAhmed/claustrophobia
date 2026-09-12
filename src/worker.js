@@ -8,7 +8,7 @@ self.onmessage = (e) => {
   if (m.type === 'build') {
     const out = buildChunkData(m.list, m.cx, m.cy, m.cz, edgeTable, triTable);
     const transfer = [];
-    for (const k of ['density', 'glow', 'calc', 'wet']) if (out[k]) transfer.push(out[k].buffer);
+    for (const k of ['density', 'glow', 'calc', 'wet', 'tint']) if (out[k]) transfer.push(out[k].buffer);
     if (out.rock) transfer.push(out.rock.pos.buffer, out.rock.col.buffer, out.rock.glow.buffer);
     if (out.water) transfer.push(out.water.buffer);
     self.postMessage({ type: 'built', key: m.key, gen: m.gen, ...out }, transfer);

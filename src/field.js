@@ -61,12 +61,18 @@ export function gridAt(d, lx, ly, lz) {              // trilinear sample of one 
 }
 
 const fcol = [0, 0, 0];
-function faceColor(cx, cy, cz, cal, wt) {
+// mineral tints: [plain, rust, ochre, grey-blue, copper-green] as (r,g,b) multipliers blended by strata
+const TINTS = [[1, 1, 1], [1.25, 0.72, 0.55], [1.2, 1.02, 0.6], [0.8, 0.86, 1.05], [0.7, 1.0, 0.85]];
+function faceColor(cx, cy, cz, cal, wt, ti) {
   const n1 = fbm(cx * 0.22, cy * 0.22, cz * 0.22) * 0.5 + 0.5;            // warm sandstone <-> cool limestone
   const n2 = hash3(Math.floor(cx * 9.1), Math.floor(cy * 9.1), Math.floor(cz * 9.1));
   const strata = 0.5 + 0.5 * Math.sin(cy * 2.3 + n1 * 4);
   const br = 0.8 + 0.2 * n2 - 0.1 * strata;
   let r = lerp(0.46, 0.32, n1) * br, g = lerp(0.37, 0.31, n1) * br, b = lerp(0.27, 0.33, n1) * br;
+  if (ti > 0.5) {                                                          // stained bands, strongest along the strata
+    const T = TINTS[Math.min(4, Math.round(ti))], k = 0.45 + 0.55 * strata;
+    r *= lerp(1, T[0], k); g *= lerp(1, T[1], k); b *= lerp(1, T[2], k);
+  }
   if (cal > 0) { const cb = 0.85 + 0.15 * n2; r = lerp(r, 0.82 * cb, cal); g = lerp(g, 0.78 * cb, cal); b = lerp(b, 0.70 * cb, cal); }
   if (wt > 0) { const k = 1 - 0.4 * wt; r *= k; g *= k * 1.02; b *= k * 1.08; }
   fcol[0] = r; fcol[1] = g; fcol[2] = b;
@@ -77,6 +83,7 @@ export function buildField(list, cx, cy, cz, into) {
   const dens = (into && into.density) || new Float32Array(M * M * M);
   const glow = (into && into.glow) || new Float32Array(M * M * M);
   const calc = (into && into.calc) || new Uint8Array(M * M * M), wet = (into && into.wet) || new Uint8Array(M * M * M);
+  const tint = (into && into.tint) || new Uint8Array(M * M * M);
   const ox = cx * CHUNK, oy = cy * CHUNK, oz = cz * CHUNK;
   let anyAir = false, anyRock = false, idx = 0;
   const row = [];
@@ -114,12 +121,12 @@ export function buildField(list, cx, cy, cz, into) {
           if (bs.algae > 0) g = bs.algae * patch;
           if (bs.wl !== undefined && y > bs.wl - 0.2 && y < bs.wl + 1.6) g = Math.max(g, 0.8 * patch * (1 - (y - bs.wl) / 1.8));
         }
-        dens[idx] = v; glow[idx] = g; calc[idx] = cal * 255; wet[idx] = wt * 255;
+        dens[idx] = v; glow[idx] = g; calc[idx] = cal * 255; wet[idx] = wt * 255; tint[idx] = bs ? bs.tint * 50 : 0;
         if (v < 0) anyAir = true; else anyRock = true;
       }
     }
   }
-  return { density: dens, glow, calc, wet, anyAir, anyRock };
+  return { density: dens, glow, calc, wet, tint, anyAir, anyRock };
 }
 
 // water surfaces: one flat sheet per perched level, clipped to air. Returns Float32Array positions or null.
@@ -170,7 +177,7 @@ export function marchingCubes(grids, cx, cy, cz, edgeTable, triTable) {
       pos.push(ev[a], ev[a + 1], ev[a + 2], ev[b2], ev[b2 + 1], ev[b2 + 2], ev[c], ev[c + 1], ev[c + 2]);
       const fx = (ev[a] + ev[b2] + ev[c]) / 3, fy = (ev[a + 1] + ev[b2 + 1] + ev[c + 1]) / 3, fz = (ev[a + 2] + ev[b2 + 2] + ev[c + 2]) / 3;
       const lx = (fx - ox) / VOXEL, ly = (fy - oy) / VOXEL, lz = (fz - oz) / VOXEL;
-      faceColor(fx, fy, fz, gridAt(grids.calc, lx, ly, lz) / 255, gridAt(grids.wet, lx, ly, lz) / 255);
+      faceColor(fx, fy, fz, gridAt(grids.calc, lx, ly, lz) / 255, gridAt(grids.wet, lx, ly, lz) / 255, gridAt(grids.tint, lx, ly, lz) / 50);
       col.push(fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2]);
       const g = gridAt(glowG, lx, ly, lz);
       glow.push(g, g, g);
@@ -185,7 +192,7 @@ export function marchingCubes(grids, cx, cy, cz, edgeTable, triTable) {
 export function buildChunkData(list, cx, cy, cz, edgeTable, triTable, into) {
   if (!list || list.length === 0) return { solid: true };
   const grids = buildField(list, cx, cy, cz, into);
-  const out = { solid: !grids.anyAir, density: grids.density, glow: grids.glow, calc: grids.calc, wet: grids.wet, rock: null, water: null };
+  const out = { solid: !grids.anyAir, density: grids.density, glow: grids.glow, calc: grids.calc, wet: grids.wet, tint: grids.tint, rock: null, water: null };
   if (!grids.anyAir) return out;
   if (grids.anyRock) out.rock = marchingCubes(grids, cx, cy, cz, edgeTable, triTable);
   out.water = waterQuads(list, grids.density, cx, cy, cz);

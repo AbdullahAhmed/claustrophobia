@@ -480,7 +480,7 @@ function updateSound(dt) {
   }
   const u = player.under ? 1 : 0;
   const level = torchLevel(player.battery);
-  fear = clamp(Math.max(level < 0.05 ? 0.8 : (1 - level) * 0.45, player.breath < 0.6 ? (1 - player.breath) * 0.9 : 0, eyes ? 0.55 : 0, player.hurt ? 0.3 : 0), 0, 1);
+  fear = clamp(Math.max(level < 0.05 ? 0.8 : (1 - level) * 0.45, player.breath < 0.6 ? (1 - player.breath) * 0.9 : 0, eyes ? 0.55 : 0, player.hurt ? 0.3 : 0, stuck > 0 ? Math.min(1, 0.5 + stuckT * 0.1) : 0), 0, 1);
   const set = (k, v) => loops[k] && loops[k].setVol(v, 0.6);
   set('amb_cave', (1 - u) * (0.45 + 0.5 * clamp((open - 2) / 10, 0, 1)));
   set('amb_grotto', (1 - u) * nearWater * 0.7);
@@ -552,11 +552,18 @@ function footstep(kind) {
 
 // ---------- player ----------
 let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2;
+let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0;                      // stuck > 0: wedged, that many wiggles still needed
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
-  const still = notebookOpen;                                 // you stop walking to write
+  const still = notebookOpen || stuck > 0;                    // you stop walking to write; or the rock has you
   const f = !still && (keys.KeyW || keys.ArrowUp) ? 1 : 0, b = !still && (keys.KeyS || keys.ArrowDown) ? 1 : 0;
   const l = !still && (keys.KeyA || keys.ArrowLeft) ? 1 : 0, r = !still && (keys.KeyD || keys.ArrowRight) ? 1 : 0;
+  if (stuck > 0) {                                            // wiggle: alternate A and D to work yourself loose
+    const side = keys.KeyA || keys.ArrowLeft ? -1 : keys.KeyD || keys.ArrowRight ? 1 : 0;
+    if (side !== 0 && side !== stuckSide) { stuckSide = side; stuck--; wiggles++; sfx.play('scrape', { x: player.x, y: player.y + 0.3, z: player.z, vol: 0.5, rate: 1.3, vary: 0.3, dur: 0.5, hrtf: false }); camera.rotation.z += side * 0.05;
+      if (stuck === 0) { showHint('free'); sfx.play('gasp', { vol: 0.7 }); } }
+    stuckT += dt;
+  }
   const crouchKey = keys.KeyC || keys.ControlLeft;
   const sprintKey = keys.ShiftLeft || keys.ShiftRight;
   let mx = r - l, mz = f - b; const ml = Math.hypot(mx, mz); if (ml > 0) { mx /= ml; mz /= ml; }
@@ -675,6 +682,10 @@ function updatePlayer(dt) {
 
   const moved = Math.hypot(player.x - px0, player.z - pz0);
   player.dist += moved;
+  if (stuck === 0 && player.h <= 0.52 && ml > 0 && moved > 0 && !player.swim && clear < 0.62 && Math.random() < dt * 0.06) {
+    stuck = 5 + (Math.random() * 4 | 0); stuckSide = 0; stuckT = 0;
+    showHint('stuck. wiggle — A, D, A, D'); sfx.play('scrape', { vol: 0.7, rate: 0.7, dur: 1.2 }); sfx.play('gasp', { vol: 0.5, rate: 0.9 });
+  }
   const lt = player.lastTrail;
   if (!lt || Math.hypot(player.x - lt.x, player.z - lt.z) > 0.7 || Math.abs(player.y - lt.y) > 0.7) {
     const pt = { x: +player.x.toFixed(1), y: +player.y.toFixed(1), z: +player.z.toFixed(1), k: player.under ? 2 : player.swim || depthW > 0.25 ? 1 : player.h < 0.8 ? 3 : 0 };
@@ -936,7 +947,7 @@ function init() {
   }
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
-               get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; },
+               get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
                run: () => { running = true; overlay.classList.add('hidden'); } };
 }
 init();

@@ -44,7 +44,7 @@ function addSeg(a, b) {
               rx, ry, sy, y0: a.y, y1: b.y, rmin: Math.min(rx, ry),
               wl: a.wl !== undefined ? a.wl : b.wl, core: a.core !== false && b.core !== false,
               steep: Math.abs(b.y - a.y) > 0.6 * len,          // shafts: no sediment floor
-              algae: Math.max(a.algae || 0, b.algae || 0),
+              algae: Math.max(a.algae || 0, b.algae || 0), tint: b.tint || a.tint || 0,
               boulders: (a.boulders || []).concat(b.boulders || []),
               spel: (a.spel || []).concat(b.spel || []),
               fx: a.x, fy: a.y + CORE_H, fz: a.z, fdx: b.x - a.x, fdy: b.y - a.y, fdz: b.z - a.z, nb: b };
@@ -102,6 +102,7 @@ class Worm {
     this.kind = kind; this.life = life; this.age = 0; this.n = 0;
     this.wander = 0; this.modeLeft = 0; this.target = null;
     this.mode = null; this.sump = null; this.pit = null; this.pinch = 0; this.exit = false; this.algae = 0;
+    this.tint = node.tint !== undefined ? node.tint : 0;
   }
   pickMode(force) {
     R = this.rng;
@@ -121,6 +122,7 @@ class Worm {
     this.trx = wr(m.rx[0], m.rx[1]); this.try = wr(m.ry[0], m.ry[1]);
     this.modeLeft = wr(m.len[0], m.len[1]);
     this.algae = R() < (m.name === 'chamber' || m.name === 'cavern' ? 0.35 : 0.07) ? wr(0.5, 1) : 0;
+    if (R() < 0.3) this.tint = (R() * 5) | 0;                    // 0 plain limestone, 1 rust, 2 ochre, 3 grey-blue, 4 copper-green
     if (m.name === 'sump') {
       // short: never needs air. medium: usually a bell. long: bring your nerve.
       const r = R(), under = r < 0.45 ? wr(5, 10) : r < 0.85 ? wr(10, 18) : wr(18, 30);
@@ -243,7 +245,7 @@ class Worm {
     const cp = Math.cos(this.pitch);
     const n = { x: this.x + Math.sin(this.yaw) * cp * STEP, y: this.y + Math.sin(this.pitch) * STEP,
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
-                algae: core ? this.algae : 0 };
+                algae: core ? this.algae : 0, tint: this.tint };
     if (wl !== undefined) n.wl = wl;
     const cavern = this.mode && this.mode.name === 'cavern' && !this.pit && !this.sump;
     if (cavern && R() < 0.6) {
@@ -332,8 +334,8 @@ export function buildChunk(ch) {
 }
 export function applyChunkData(ch, out) {
   ch.built = true; ch.dirty = false; ch.solid = !!out.solid;
-  if (out.solid && !out.density) { ch.density = null; ch.glow = null; ch.calc = null; ch.wet = null; return; }
-  ch.density = out.density; ch.glow = out.glow; ch.calc = out.calc; ch.wet = out.wet;
+  if (out.solid && !out.density) { ch.density = null; ch.glow = null; ch.calc = null; ch.wet = null; ch.tint = null; return; }
+  ch.density = out.density; ch.glow = out.glow; ch.calc = out.calc; ch.wet = out.wet; ch.tint = out.tint;
 }
 // Segments as plain data for a worker (drop the node back-reference).
 export function plainSegs(list) { return list.map(s => { const { nb, ...rest } = s; return rest; }); }
