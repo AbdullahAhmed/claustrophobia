@@ -18,6 +18,7 @@ if (!cave.run) cave.attempts++;
 function saveCave() { try { localStorage.setItem('karst.cave', JSON.stringify(cave)); } catch (e) {} }
 saveCave();
 const runMarks = [];
+const dread = Math.min(1, (cave.attempts - 1) * 0.18 + cave.deaths.length * 0.08);   // the cave remembers you
 let saveT = 0;
 function saveRun() {
   if (!player.alive || player.out) return;
@@ -35,7 +36,7 @@ const GRAV = 14;
 const player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, h: H_STAND, grounded: false, bob: 0, stamina: 1, sprint: false,
                  wl: -Infinity, swim: false, under: false, breath: 1, battery: 1, hurt: false,
                  airT: 0, whooshed: false, underT: 0, stepPhase: 0,
-                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null };
+                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0 };
 G.focus.x = 0; G.focus.y = 0; G.focus.z = 0;
 
 // ---------- scene ----------
@@ -486,8 +487,9 @@ sfx.load().then(() => {
     loops[k] = sfx.loop(k, { hrtf: false });
   $('ov-snd').textContent = '';
 }).catch(e => { console.warn(e); $('ov-snd').textContent = 'sound unavailable'; });
-let open = 5, openT = 0, dripT = 2, rockT = rr(60, 160), nearWater = 0, fear = 0, gaspT = 0;
+let open = 5, openT = 0, dripT = 2, rockT = rr(60, 160), nearWater = 0, fear = 0, gaspT = 0, lastPx = 0, lastPz = 0;
 let voidLoop = null, voidT = 0;
+let stillT = 0, presenceT = rr(40, 90), gustT = 0;
 function updateSound(dt) {
   if (!soundsOn) return;
   camera.getWorldDirection(viewDir);
@@ -513,7 +515,7 @@ function updateSound(dt) {
   set('amb_underwater', u * 0.9);
   const puff = 1 - player.stamina;
   set('breath_calm', (1 - u) * (player.hurt ? 0 : (0.35 + (player.h < 0.8 ? 0.35 : 0)) * (1 - fear) * (1 - puff)));
-  set('breath_scared', (1 - u) * Math.max(fear, puff * 0.9) * (player.hurt ? 0.5 : 1));
+  set('breath_scared', (1 - u) * Math.max(fear, puff * 0.9, player.cold > 0.5 ? (player.cold - 0.5) * 1.2 : 0) * (player.hurt ? 0.5 : 1));
   set('breath_labored', (1 - u) * (player.hurt ? 0.7 : 0));
   set('heartbeat', u * (0.35 + (1 - player.breath) * 0.8) + (1 - u) * fear * 0.35);
   if (loops.heartbeat) loops.heartbeat.setRate(0.9 + (1 - player.breath) * 0.6 + fear * 0.2, 1);
@@ -539,6 +541,27 @@ function updateSound(dt) {
     sfx.play(Math.random() < 0.7 ? 'rockfall' : 'rumble', { x: player.x + Math.sin(a) * d, y: player.y + rr(-4, 6), z: player.z + Math.cos(a) * d, vol: 0.5, wet: 1, rolloff: 0.5 });
   }
   if (gaspT > 0) gaspT -= dt;
+  // the presence: the longer you have been here, the less alone you are
+  if (dread > 0.05 && running && player.alive && !player.out) {
+    const moving = Math.hypot(player.x - lastPx, player.z - lastPz) > 0.02; lastPx = player.x; lastPz = player.z;
+    stillT = moving ? 0 : stillT + dt;
+    presenceT -= dt * (1 + dread) * (stillT > 4 ? 2 : 1) * (torchLevel(player.battery) < 0.3 ? 1.6 : 1);
+    if (presenceT <= 0) {
+      presenceT = rr(50, 140) / (0.5 + dread);
+      camera.getWorldDirection(viewDir);
+      const bx = player.x - viewDir.x * rr(5, 9), bz = player.z - viewDir.z * rr(5, 9);       // behind you
+      const r = Math.random();
+      if (r < 0.5) {                                                                           // footsteps that stop when you turn
+        for (let k = 0; k < 3 + (Math.random() * 3 | 0); k++) setTimeout(() => sfx.play('step_rock', { x: bx + k * viewDir.x * 0.7, y: player.y, z: bz + k * viewDir.z * 0.7, vol: 0.28, wet: 0.8, rate: 0.9 }), k * 520);
+      } else if (r < 0.8 || dread < 0.5) {                                                    // a pebble, a settling
+        sfx.play('rockfall', { x: bx, y: player.y + 1, z: bz, vol: 0.3, wet: 0.9, rate: 1.2, dur: 1.2 });
+      } else {                                                                                 // breath, close
+        sfx.play('creature_breath', { x: player.x - viewDir.x * 1.2, y: player.y + 1.5, z: player.z - viewDir.z * 1.2, vol: 0.35, rolloff: 1.5, dur: 3 });
+        if (dread > 0.6 && Math.random() < 0.5) gustT = 1.6;                                   // and the torch dips
+      }
+    }
+  }
+  if (gustT > 0) gustT -= dt;
   // daylight, heard before it is seen
   if (exitInfo) {
     if (!exitLoops) exitLoops = { wind: sfx.loop('wind', { x: exitInfo.x, y: exitInfo.y + 2, z: exitInfo.z, rolloff: 0.35, wet: 0.3 }), birds: sfx.loop('birds', { x: exitInfo.x + exitInfo.dx * 4, y: exitInfo.y + 3, z: exitInfo.z + exitInfo.dz * 4, rolloff: 0.6 }) };
@@ -619,7 +642,9 @@ function updatePlayer(dt) {
   player.under = player.wl > eyeY;
   const stance = player.h > 1.4 ? 1 : player.h > 0.8 ? 0.55 : 0.3;
   player.sprint = sprintKey && ml > 0 && stance === 1 && !player.swim && player.stamina > 0.05 && !player.hurt;
-  if (player.sprint) player.stamina = Math.max(0, player.stamina - dt / 7); else player.stamina = Math.min(1, player.stamina + dt / 12);
+  if (player.sprint) player.stamina = Math.max(0, player.stamina - dt / 7); else player.stamina = Math.min(1, player.stamina + dt / (12 * (1 + player.cold)));
+  // water is cold; you warm up slowly, faster when moving
+  if (player.swim || depthW > 0.3) player.cold = Math.min(1, player.cold + dt / (player.under ? 14 : 25)); else player.cold = Math.max(0, player.cold - dt / (ml > 0 ? 45 : 80));
   let speed = 3.3 * stance * (player.hurt ? 0.7 : 1) * (player.sprint ? 1.7 : 1);
   let stepKind = stance === 1 ? 'walk' : stance > 0.4 ? 'crouch' : 'crawl';
 
@@ -739,8 +764,9 @@ function updatePlayer(dt) {
   if (phase !== player.stepPhase) { player.stepPhase = phase; if (moving) footstep(stepKind); }
   const bobA = moving ? (player.swim ? 0.02 : 0.028 * stance) : 0;
   const limp = player.hurt ? Math.sin(player.bob * 0.5) * 0.02 : 0;
+  const shiver = player.cold > 0.35 ? (player.cold - 0.35) * 0.012 * Math.sin(performance.now() * 0.041) * Math.sin(performance.now() * 0.0173) : 0;
   camera.position.set(player.x + Math.cos(player.bob * 0.5) * bobA * 0.6, player.y + player.h - 0.1 + Math.sin(player.bob) * bobA, player.z);
-  camera.rotation.set(player.pitch, player.yaw, Math.sin(player.bob * 0.5) * bobA * 0.35 + limp);
+  camera.rotation.set(player.pitch + shiver, player.yaw + shiver * 0.7, Math.sin(player.bob * 0.5) * bobA * 0.35 + limp + shiver);
   camera.fov += (lerp(58, 75, (player.h - 0.5) / 1.22) - camera.fov) * Math.min(1, dt * 6);
   camera.updateProjectionMatrix();
   G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
@@ -800,6 +826,7 @@ function updateTorch(dt) {
   // a dying torch stutters; while you shake it the contact is broken and you're in the dark
   if (player.battery < 0.3 && Math.random() < (0.3 - player.battery) * 0.3) { stutter = 0.15; if (buzzT <= 0) { sfx.play('bulb_buzz', { vol: 0.35, offset: Math.random() * 3, dur: 0.6 }); buzzT = 1.5; } }
   stutter += (1 - stutter) * Math.min(1, dt * 12); buzzT -= dt;
+  if (gustT > 0) stutter = Math.min(stutter, 0.1 + 0.4 * Math.random());
   level *= stutter * (shakeT > 0 ? 0.12 : 1) * (player.under ? 0.7 : 1);
   spot.intensity = 12 * (torchHeld ? adapt : 1) * level * (0.96 + 0.04 * Math.sin(t * 13.7) * Math.sin(t * 3.1));
   bounce.intensity = torchHeld ? 0.9 * adapt * level : 0;
@@ -839,7 +866,7 @@ function spawnEyes() {
 }
 function updateEyes(dt) {
   if (!eyes) {
-    eyesT -= dt * (torchLevel(player.battery) < 0.3 ? 2.5 : 1);
+    eyesT -= dt * (torchLevel(player.battery) < 0.3 ? 2.5 : 1) * (1 + dread * 2);
     if (eyesT <= 0 && running) { spawnEyes(); eyesT = rr(120, 300); }
     return;
   }
@@ -946,7 +973,7 @@ function hud(dt) {
     const stance = player.swim ? (player.under ? 'diving' : 'swimming') : player.h > 1.4 ? 'walking' : player.h > 0.8 ? 'crouched' : 'crawling';
     $('hud').innerHTML = `<b>${Math.hypot(player.x, player.z).toFixed(0)} m</b> from entrance &nbsp; depth <b>${(-player.y).toFixed(1)} m</b> &nbsp; ${stance} &nbsp; open ${open.toFixed(1)}` +
       ` &nbsp;·&nbsp; ${fps} fps · ${meshes} chunks · ${G.worms.length} worms · build max ${stats.maxMs.toFixed(0)} ms · seed ${SEED}`;
-  } else $('hud').innerHTML = player.hurt ? 'hurt' : '';
+  } else $('hud').innerHTML = [player.hurt ? 'hurt' : '', player.cold > 0.5 ? 'cold' : ''].filter(Boolean).join(' · ');
 }
 
 // ---------- bootstrap ----------
