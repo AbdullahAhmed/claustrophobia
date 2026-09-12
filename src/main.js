@@ -874,7 +874,7 @@ function pollGamepad(dt) {
   keys.KeyW = ly < -0.3 || keys._kbW; keys.KeyS = ly > 0.3 || keys._kbS; keys.KeyA = lx < -0.3 || keys._kbA; keys.KeyD = lx > 0.3 || keys._kbD;
   if (rx || ry) look(rx * 900 * dt, ry * 700 * dt);
   const b = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
-  keys.Space = b(0) || keys._kbSpace; keys.KeyC = b(1) || keys._kbC; keys.ShiftLeft = b(6) || keys._kbShift;
+  keys.Space = b(0) || keys._kbSpace; keys.KeyC = b(1) || keys._kbC; keys.ShiftLeft = b(6) || keys._kbShift; keys._padRest = b(13);
   const edge = (i) => { const now = b(i), was = !!padPrev[i]; padPrev[i] = now; return now && !was; };
   if (!running) { if (edge(0) || edge(9)) overlay.click(); return; }
   if (edge(2)) shakeTorch(); if (edge(3)) whistle(); if (edge(5)) throwGlowstick(0.5); if (edge(9)) toggleNotebook(); if (edge(8)) useRope();
@@ -1186,7 +1186,7 @@ function footstep(kind) {
 
 // ---------- player ----------
 let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2, ropeHintT = 0, blockedT = 0;
-let foulT = 0, lakeT = rr(20, 50), lakeFear = 0, climbing = false, climbT = 0;
+let foulT = 0, lakeT = rr(20, 50), lakeFear = 0, climbing = false, climbT = 0, resting = false, restT = 0;
 let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false, stuckTight = false, exhaling = false, exhaleT = 0;                      // stuck > 0: wedged, that many wiggles still needed
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
@@ -1195,7 +1195,12 @@ function updatePlayer(dt) {
     camera.position.set(player.x, player.y + player.h - 0.1, player.z); camera.rotation.set(player.pitch, player.yaw, 0);
     G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return;
   }
-  const still = notebookOpen || stuck > 0;                    // you stop walking to write; or the rock has you
+  // resting: hold R on dry ground — the torch goes off to save it, you sit, and the cold and the tiredness go, slowly. the dark is not empty
+  const wantRest = (keys.KeyR || keys._padRest) && player.grounded && !player.swim && (player.wl - player.y) < 0.2 && stuck === 0 && !climbing;
+  if (wantRest && !resting) { resting = true; restT = 0; sfx.play('torch_click', { vol: 0.5, rate: 0.9 }); teach('rest', 'sitting down, torch off. the cold goes, the legs come back; the battery is spared. listen while you wait'); }
+  if (!wantRest && resting) { resting = false; sfx.play('torch_click', { vol: 0.5, rate: 1.1 }); }
+  if (resting) { restT += dt; player.cold = Math.max(0, player.cold - dt / 12); player.stamina = Math.min(1, player.stamina + dt / 4); if (restT > 25 && Math.floor(restT) % 20 === 0 && Math.floor(restT) !== Math.floor(restT - dt)) showHint('still here'); }
+  const still = notebookOpen || stuck > 0 || resting;         // you stop walking to write; or the rock has you; or you are sitting
   const f = !still && (keys.KeyW || keys.ArrowUp) ? 1 : 0, b = !still && (keys.KeyS || keys.ArrowDown) ? 1 : 0;
   const l = !still && (keys.KeyA || keys.ArrowLeft) ? 1 : 0, r = !still && (keys.KeyD || keys.ArrowRight) ? 1 : 0;
   if (stuck > 0) {                                            // wiggle: alternate A and D to work yourself loose
@@ -1503,7 +1508,7 @@ let stutter = 1;
 const fog = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const r = g.createRadialGradient(32, 32, 2, 32, 32, 30); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); return t; })(), transparent: true, opacity: 0, depthWrite: false, depthTest: false, fog: false }));
 fog.renderOrder = 5; fog.visible = false; camera.add(fog);
 function updateTorch(dt) {
-  if (running && player.alive && !player.out) player.battery = Math.max(0, player.battery - dt / (BATTERY_S * (player.cells ? 1.6 : 1) * (beamNarrow ? 0.8 : 1)));
+  if (running && player.alive && !player.out && !resting) player.battery = Math.max(0, player.battery - dt / (BATTERY_S * (player.cells ? 1.6 : 1) * (beamNarrow ? 0.8 : 1)));
   if (torchHeld) {
     torch.position.copy(camera.position);
     const a = 1 - Math.pow(shakeT > 0 ? 0.05 : 0.0005, dt);
@@ -1539,7 +1544,7 @@ function updateTorch(dt) {
   }
   adapt += (clamp(0.15 + ahead / 2.4, 0.2, 1) - adapt) * Math.min(1, dt * 3);
   const t = performance.now() * 0.001;
-  let level = torchLevel(player.battery);
+  let level = resting ? 0 : torchLevel(player.battery);
   // a dying torch stutters; while you shake it the contact is broken and you're in the dark
   if (player.battery < 0.3 && Math.random() < (0.3 - player.battery) * 0.3) { stutter = 0.15; if (buzzT <= 0) { sfx.play('bulb_buzz', { vol: 0.35, offset: Math.random() * 3, dur: 0.6 }); buzzT = 1.5; } }
   stutter += (1 - stutter) * Math.min(1, dt * 12); buzzT -= dt;

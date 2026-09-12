@@ -1,34 +1,28 @@
-p='src/gen.js'; s=open(p,encoding='utf-8').read()
+p='src/main.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
-rep("""    // draperies: thin calcite curtains hanging from a sloped roof, in the old rock mostly""",
-    """    // cave pearls: little calcite spheres in the terrace pools
-    if (this.mode && this.mode.name === 'gour' && wl !== undefined && R() < 0.35) props.push({ type: 'pearls', x: n.x, y: wl, z: n.z, r: this.rx * 0.5, n: 8 + (R() * 20 | 0), seed: R() });
-    // draperies: thin calcite curtains hanging from a sloped roof, in the old rock mostly""")
+rep("""  const still = notebookOpen || stuck > 0;                    // you stop walking to write; or the rock has you""",
+    """  // resting: hold R on dry ground — the torch goes off to save it, you sit, and the cold and the tiredness go, slowly. the dark is not empty
+  const wantRest = (keys.KeyR || keys._padRest) && player.grounded && !player.swim && depthW < 0.2 && stuck === 0 && !climbing;
+  if (wantRest && !resting) { resting = true; restT = 0; sfx.play('torch_click', { vol: 0.5, rate: 0.9 }); teach('rest', 'sitting down, torch off. the cold goes, the legs come back; the battery is spared. listen while you wait'); }
+  if (!wantRest && resting) { resting = false; sfx.play('torch_click', { vol: 0.5, rate: 1.1 }); }
+  if (resting) { restT += dt; player.cold = Math.max(0, player.cold - dt / 12); player.stamina = Math.min(1, player.stamina + dt / 4); if (restT > 25 && Math.floor(restT) % 20 === 0 && Math.floor(restT) !== Math.floor(restT - dt)) showHint('still here'); }
+  const still = notebookOpen || stuck > 0 || resting;         // you stop walking to write; or the rock has you; or you are sitting""")
+rep("""let foulT = 0, lakeT = rr(20, 50), lakeFear = 0, climbing = false, climbT = 0;""",
+    """let foulT = 0, lakeT = rr(20, 50), lakeFear = 0, climbing = false, climbT = 0, resting = false, restT = 0;""")
+# torch off while resting; battery does not drain
+rep("""  if (running && player.alive && !player.out) player.battery = Math.max(0, player.battery - dt / (BATTERY_S * (player.cells ? 1.6 : 1) * (beamNarrow ? 0.8 : 1)));""",
+    """  if (running && player.alive && !player.out && !resting) player.battery = Math.max(0, player.battery - dt / (BATTERY_S * (player.cells ? 1.6 : 1) * (beamNarrow ? 0.8 : 1)));""")
+rep("""  let level = torchLevel(player.battery);""", """  let level = resting ? 0 : torchLevel(player.battery);""")
+# the pad: hold B while standing still could be crouch; use the D-pad down (button 13) for rest
+rep("""  keys.Space = b(0) || keys._kbSpace; keys.KeyC = b(1) || keys._kbC; keys.ShiftLeft = b(6) || keys._kbShift;""",
+    """  keys.Space = b(0) || keys._kbSpace; keys.KeyC = b(1) || keys._kbC; keys.ShiftLeft = b(6) || keys._kbShift; keys._padRest = b(13);""")
 open(p,'w',encoding='utf-8').write(s)
-
-p='src/main.js'; s=open(p,encoding='utf-8').read()
-rep("""    else if (p.type === 'oldrope') placeOldRope(p);""",
-    """    else if (p.type === 'oldrope') placeOldRope(p);
-    else if (p.type === 'pearls') placePearls(p);""")
-rep("""// draperies: a wavy calcite sheet hung from the roof""",
-"""// cave pearls: calcite spheres, polished by the water that made them
-const pearlInst = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 6, 5), new THREE.MeshStandardMaterial({ color: 0xf2ead8, roughness: 0.35 }), 1500); pearlInst.count = 0; pearlInst.frustumCulled = false; scene.add(pearlInst);
-function placePearls(p) {
-  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
-  for (let i = 0; i < p.n && pearlInst.count < 1500; i++) {
-    const a = R() * Math.PI * 2, d = Math.sqrt(R()) * p.r, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
-    const fy = floorBelow(x, p.y + 0.3, z); if (fy === null || fy > p.y - 0.02) continue;      // on the pool floor, under the water
-    const r = 0.025 + R() * 0.035;
-    _m.compose(_p.set(x, fy + r * 0.8, z), _q.identity(), _s.set(r, r * 0.9, r)); pearlInst.setMatrixAt(pearlInst.count++, _m);
-  }
-  pearlInst.instanceMatrix.needsUpdate = true;
-}
-// draperies: a wavy calcite sheet hung from the roof""")
-# V hides the interface for a look
-rep("""  if (e.code === 'KeyH' && !e.repeat) whistle();""",
-    """  if (e.code === 'KeyH' && !e.repeat) whistle();
-  if (e.code === 'KeyV' && !e.repeat) { hudHidden = !hudHidden; for (const id of ['torchm', 'breathm', 'hint', 'hud']) $(id).style.visibility = hudHidden ? 'hidden' : ''; }""")
-rep("""let torchDrifting = false, beamNarrow = false;""", """let torchDrifting = false, beamNarrow = false, hudHidden = false;""")
+p='index.html'; s=open(p,encoding='utf-8').read()
+rep("""<b>Q</b> spot / flood<br>""", """<b>Q</b> spot / flood &nbsp;·&nbsp; <b>R</b> (hold) rest, torch off<br>""")
+open(p,'w',encoding='utf-8').write(s)
+p='README.md'; s=open(p,encoding='utf-8').read()
+rep("""| T | chalk a note on the rock you're looking at |""", """| R (hold) | rest on dry ground: the torch goes off to spare it, the cold and the tiredness go; the dark is not empty |
+| T | chalk a note on the rock you're looking at |""")
 open(p,'w',encoding='utf-8').write(s); print('ok')

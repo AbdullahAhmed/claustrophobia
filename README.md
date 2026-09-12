@@ -19,6 +19,7 @@ a seed, the same for everyone). Mouse + keyboard or a controller, headphones rec
 | Space | hop / mantle; underwater: surface; in a chimney (a narrow rift going up): hold to climb — it drains you, and if you run out you come off |
 | F (tap repeatedly) | shake the torch to charge it — the bulb is dark while you do |
 | Q | spot or flood beam — narrow reaches the far wall of a cavern and the bottom of a pit, wide shows you the floor either side; the spot eats the battery faster |
+| R (hold) | rest on dry ground: the torch goes off to spare it, the cold and the tiredness go; the dark is not empty |
 | T | chalk a note on the rock you're looking at |
 | G | drop a glowstick (three per attempt); hold and release to throw one — down a pit, across a chamber; you hear where it lands |
 | H | whistle — the echo tells you how big the space is, even with the torch dead; bats mind it |
