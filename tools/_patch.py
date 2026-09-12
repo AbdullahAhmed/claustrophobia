@@ -2,31 +2,35 @@ p='src/main.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
-rep("""  if (e.code === 'KeyE' && !e.repeat) { restRequested = false; useRope(); }""",
-    """  if (e.code === 'KeyE' && !e.repeat) { restRequested = false; eHeldAt = performance.now(); }""")
-rep("""  if (e.code === 'KeyG') releaseGlow();""",
-    """  if (e.code === 'KeyG') releaseGlow();
-  if (e.code === 'KeyE' && eHeldAt) { const held = (performance.now() - eHeldAt) / 1000; eHeldAt = 0; if (canAct() && !typing && !toolsOpen && !notebookOpen) { if (held > 0.6) derigRope(); else useRope(); } }""")
-rep("""let gameClock = 0;""", """let gameClock = 0, eHeldAt = 0;""")
-rep("""function useRope() {""",
-"""// derig: hold E at the top of a rope you rigged to pull it up and coil it again
-function derigRope() {
-  for (const r of ropes) {
-    if (r.old || r.rescue) continue;
-    if (Math.hypot(r.x - player.x, r.z - player.z) < 2.2 && Math.abs(player.y - r.top) < 1.5 && !roping) {
-      scene.remove(r.mesh); ropes.splice(ropes.indexOf(r), 1); player.rope += r.coils || 1;
-      sfx.play('drag', { vol: 0.5, rate: 1.1, dur: 1.2 }); showHint(`rope pulled up and coiled · ${player.rope}`); return;
-    }
-  }
-  if (ropes.some(r => (r.old || r.rescue) && Math.hypot(r.x - player.x, r.z - player.z) < 2.2)) showHint('not yours to take');
-  else useRope();
+rep("""      if (tips.length && Math.random() < 0.7) { const c = tips[Math.floor(Math.random() * tips.length)]; x = c.x; z = c.z; y = c.top - c.len; }
+      sfx.play('drip', { x, y, z, vol: 0.5 + Math.random() * 0.4, vary: 0.25, wet: 0.9, rolloff: 0.8 });""",
+    """      let fromTip = false;
+      if (tips.length && Math.random() < 0.7) { const c = tips[Math.floor(Math.random() * tips.length)]; x = c.x; z = c.z; y = c.top - c.len; fromTip = true; }
+      const landY = s.wl !== undefined ? s.wl : floor;
+      if (fromTip && y - landY > 0.4) {                                                 // you see it fall before you hear it land
+        const fallT = Math.sqrt(2 * Math.max(0.1, y - landY) / 9.8);
+        spawnDrip(x, y, z, landY); gameDelay(() => sfx.play('drip', { x, y: landY, z, vol: 0.5 + Math.random() * 0.4, vary: 0.25, wet: 0.9, rolloff: 0.8 }), fallT * 1000);
+      } else sfx.play('drip', { x, y, z, vol: 0.5 + Math.random() * 0.4, vary: 0.25, wet: 0.9, rolloff: 0.8 });""")
+rep("""let stillT = 0, presenceT = rr(40, 90), gustT = 0;
+function updateSound(dt) {""",
+"""// a single falling drop, from a stalactite tip to the floor or the water
+const dripDrops = []; let dripInst = null;
+function spawnDrip(x, y, z, landY) {
+  if (!dripInst) { dripInst = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.05, 0.12), dropMat, 24); dripInst.count = 0; dripInst.frustumCulled = false; scene.add(dripInst); }
+  if (dripDrops.length >= 24) return;
+  dripDrops.push({ x, y, z, landY, v: 0 });
 }
-function useRope() {""")
-rep("""  player.rope -= need; if (need > 1) showHint(`${need} coils tied together`);""",
-    """  player.rope -= need; if (need > 1) showHint(`${need} coils tied together`);
-  ropeCoils = need;""")
-rep("""  const r = { x: v.x, z: v.z, top: v.top, bottom: v.y, mesh: new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, v.top - v.y + 0.3, 5), ropeMat) };""",
-    """  const r = { x: v.x, z: v.z, top: v.top, bottom: v.y, coils: ropeCoils, mesh: new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, v.top - v.y + 0.3, 5), ropeMat) };""")
-rep("""const ropes = [];            // {x, top, bottom, z, mesh}""", """const ropes = [];            // {x, top, bottom, z, mesh}
-let ropeCoils = 1;""")
+function updateDrips(dt) {
+  if (!dripInst) return;
+  for (let i = dripDrops.length - 1; i >= 0; i--) { const d = dripDrops[i]; d.v += 9.8 * dt; d.y -= d.v * dt; if (d.y <= d.landY) dripDrops.splice(i, 1); }
+  dripInst.count = dripDrops.length;
+  for (let i = 0; i < dripDrops.length; i++) { const d = dripDrops[i]; _m.compose(_p.set(d.x, d.y, d.z), camera.quaternion, _s.set(1, 1 + d.v * 0.25, 1)); dripInst.setMatrixAt(i, _m); }
+  dripInst.instanceMatrix.needsUpdate = true;
+}
+let stillT = 0, presenceT = rr(40, 90), gustT = 0;
+function updateSound(dt) {""")
+rep("""  updateStones(dt);
+  updateDrops(dt);""", """  updateStones(dt);
+  updateDrips(dt);
+  updateDrops(dt);""")
 open(p,'w',encoding='utf-8').write(s); print('ok')
