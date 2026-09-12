@@ -37,6 +37,7 @@ Development tools, screenshots, `.git`, and `.claude` are not needed on the web 
 | G | Tap to drop a glowstick; hold and release to throw |
 | Q (hold) | Tools wheel: move the mouse toward chalk, whistle, rest, or stone, then release Q. Release at the center to cancel. A tossed stone lands where you are looking: you hear the floor, or the drop — and a crust over a shaft gives way under it. |
 | Tab | Open / close the survey notebook |
+| chalk | type a note and press Enter; press Enter with nothing typed (or pick chalk on a controller) for an arrow with the compass direction you face |
 | Esc | Pause movement, resources, hazards, delayed events, and audio; open settings and the new-cave option |
 | Alternating A / D | Work free from ordinary wedging |
 | Backtick | Developer debug display |
