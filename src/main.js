@@ -22,7 +22,8 @@ const dread = Math.min(1, (cave.attempts - 1) * 0.18 + cave.deaths.length * 0.08
 let saveT = 0;
 function saveRun() {
   if (!player.alive || player.out) return;
-  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt,
+  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks,
+               glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })),
                dist: player.dist, maxDepth: player.maxDepth, marks: runMarks, trail: player.trail.slice(-3000), t: runTime };
   saveCave();
 }
@@ -36,7 +37,7 @@ const GRAV = 14;
 const player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, h: H_STAND, grounded: false, bob: 0, stamina: 1, sprint: false,
                  wl: -Infinity, swim: false, under: false, breath: 1, battery: 1, hurt: false,
                  airT: 0, whooshed: false, underT: 0, stepPhase: 0,
-                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0 };
+                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0, sticks: 3 };
 G.focus.x = 0; G.focus.y = 0; G.focus.z = 0;
 
 // ---------- scene ----------
@@ -269,6 +270,10 @@ function placeBones(p) {
     addBone(kind, x, fy + (kind === 'skull' ? 0.06 : 0.02) * sc, z, R() * Math.PI * 2, kind === 'skull' ? R() * 0.4 - 0.2 : R() * 0.3, kind === 'long' ? Math.PI / 2 + R() * 0.4 : R() * 0.3, sc);
   }
   bonePiles.push({ x: p.x, y: p.y, z: p.z, r: p.rx * 0.7 + (p.big ? 3 : 0), crunched: 0 });
+  if (!p.big && R() < 0.3) {
+    const ax = p.x + (R() - 0.5) * 0.8, az = p.z + (R() - 0.5) * 0.8, fy = floorBelow(ax, p.y + 1.0, az);
+    if (fy !== null) placeCache(ax, fy, az, R() < 0.55 ? 'battery' : 'sticks');
+  }
 }
 const remains = [];          // {x,y,z, taken, light}
 const torchGeo = new THREE.CylinderGeometry(0.025, 0.03, 0.22, 6), torchMat = new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.6 });
@@ -329,6 +334,31 @@ function updateBats(dt) {
     if (Math.hypot(b.x - camera.position.x, b.y - camera.position.y, b.z - camera.position.z) < 0.5 && b.t > 0.2 && !b.hit) { b.hit = true; camera.rotation.z += (Math.random() - 0.5) * 0.06; }
   }
   bats.count = n; if (n) bats.instanceMatrix.needsUpdate = true;
+}
+// glowsticks: a cold green light you can leave behind
+const glow = [];             // {x,y,z, light, mesh}
+const stickGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.16, 6);
+const stickMat = new THREE.MeshBasicMaterial({ color: 0x9dffb0, fog: false });
+function dropGlowstick() {
+  if (!running || !player.alive || player.out) return;
+  if (player.sticks <= 0) { showHint('no glowsticks left'); return; }
+  player.sticks--;
+  const fy = floorBelow(player.x, player.y + 0.5, player.z), y = (fy === null ? player.y : fy) + 0.03;
+  const x = player.x + (Math.random() - 0.5) * 0.3, z = player.z + (Math.random() - 0.5) * 0.3;
+  const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(x, y, z); mesh.rotation.set(Math.PI / 2 + rr(-0.2, 0.2), rr(0, 6), 0); scene.add(mesh);
+  const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.set(x, y + 0.15, z); scene.add(light);
+  glow.push({ x, y, z, light, mesh });
+  sfx.play('torch_click', { vol: 0.5, rate: 1.4 });
+  showHint(`glowstick down · ${player.sticks} left`);
+}
+// caches: a dead caver's pack next to some bones
+const caches = [];           // {x,y,z, kind, taken, mesh}
+const packGeo = new THREE.BoxGeometry(0.28, 0.2, 0.16), packMat = new THREE.MeshStandardMaterial({ color: 0x3b3a36, roughness: 0.9, flatShading: true });
+function placeCache(x, y, z, kind) {
+  const mesh = new THREE.Mesh(packGeo, packMat); mesh.position.set(x, y + 0.1, z); mesh.rotation.y = rr(0, 6); mesh.rotation.z = rr(-0.3, 0.3); scene.add(mesh);
+  const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : 0x9dffb0, fog: false }));
+  tag.position.set(x, y + 0.22, z); scene.add(tag);
+  caches.push({ x, y, z, kind, taken: false, mesh, tag });
 }
 let exitInfo = null, exitLoops = null;
 function placeExit(e) {
@@ -410,6 +440,7 @@ addEventListener('keydown', e => {
   if (!running || !player.alive || player.out) return;
   if (e.code === 'KeyF' && !e.repeat) shakeTorch();
   if (e.code === 'KeyT' && !e.repeat) { e.preventDefault(); openChalk(); }
+  if (e.code === 'KeyG' && !e.repeat) dropGlowstick();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 function openChalk() { typing = true; for (const k in keys) keys[k] = false; chalkIn.value = ''; chalkIn.style.display = 'block'; chalkIn.focus(); }
@@ -789,6 +820,14 @@ function updatePlayer(dt) {
     const pt = { x: +player.x.toFixed(1), y: +player.y.toFixed(1), z: +player.z.toFixed(1), k: player.under ? 2 : player.swim || depthW > 0.25 ? 1 : player.h < 0.8 ? 3 : 0 };
     player.trail.push(pt); player.lastTrail = pt;
   }
+  for (const c of caches) {
+    if (!c.taken && Math.hypot(c.x - player.x, c.z - player.z) < 0.9 && Math.abs(c.y - player.y) < 1.4) {
+      c.taken = true; scene.remove(c.mesh); scene.remove(c.tag);
+      if (c.kind === 'battery') { player.battery = Math.min(1, player.battery + 0.4); showHint('a dead caver\'s spare cells. +40%'); }
+      else { player.sticks += 2; showHint(`two glowsticks in the pack · ${player.sticks} now`); }
+      sfx.play('rattle', { vol: 0.5, rate: 0.7 }); sfx.play('torch_click', { vol: 0.4 });
+    }
+  }
   dropT -= dt;
   if (!torchHeld && dropT <= 0 && Math.hypot(torch.position.x - player.x, torch.position.z - player.z) < 0.8 && Math.abs(torch.position.y - player.y) < 1.4) {
     torchHeld = true; hand.visible = true; torchM.classList.remove('gone');
@@ -975,6 +1014,9 @@ function drawNotebook() {
   // depth ticks every ~25 m of trail
   ctx.fillStyle = 'rgba(60,52,44,0.8)'; ctx.font = '500 22px Caveat';
   for (let i = 0; i < t.length; i += 36) ctx.fillText((-t[i].y).toFixed(0) + ' m', X(t[i].x) + 8, Z(t[i].z) - 8);
+  // glowsticks
+  ctx.fillStyle = 'rgba(40,150,80,0.9)';
+  for (const g of glow) { ctx.beginPath(); ctx.arc(X(g.x), Z(g.z), 6, 0, Math.PI * 2); ctx.fill(); }
   // chalk, in my hand
   ctx.font = '600 26px Caveat'; ctx.fillStyle = 'rgba(40,34,28,0.9)';
   for (const m of runMarks.concat(cave.marks)) ctx.fillText(m.text, X(m.x) + 10, Z(m.z) + 8);
@@ -991,7 +1033,7 @@ function drawNotebook() {
   ctx.fillStyle = 'rgba(60,52,44,0.9)'; ctx.font = '600 26px Caveat'; ctx.fillText('N', -8, -52); ctx.restore();
   $('nb-title').textContent = `survey · attempt ${cave.attempts}`;
   const dist = Math.hypot(player.x, player.z);
-  $('nb-foot').textContent = `${player.dist.toFixed(0)} m walked · ${(-player.y).toFixed(0)} m deep · ${dist.toFixed(0)} m from the entrance as the bat flies`;
+  $('nb-foot').textContent = `${player.dist.toFixed(0)} m walked · ${(-player.y).toFixed(0)} m deep · ${dist.toFixed(0)} m from the entrance as the bat flies · ${player.sticks} glowsticks`;
 }
 
 // ---------- overlays / hud ----------
@@ -1037,6 +1079,8 @@ function init() {
     const r = cave.run;
     player.x = r.x; player.y = r.y; player.z = r.z; player.yaw = r.yaw; player.battery = r.battery; player.breath = r.breath; player.hurt = r.hurt;
     player.dist = r.dist; player.maxDepth = r.maxDepth; player.trail = r.trail || []; runMarks.push(...(r.marks || [])); runTime = r.t || 0;
+    if (r.sticks !== undefined) player.sticks = r.sticks;
+    for (const g of (r.glow || [])) { const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(g.x, g.y, g.z); mesh.rotation.x = Math.PI / 2; scene.add(mesh); const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.set(g.x, g.y + 0.15, g.z); scene.add(light); glow.push({ ...g, light, mesh }); }
     for (const m of runMarks) G.props.push({ type: 'mark', ...m });
     G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
     G.advanceWorms(4000);                                           // the same rounds give the same cave
