@@ -581,6 +581,7 @@ function placeSinkhole(p) {
   sinkhole = { ...p, sky, shaft, pool, dripT: 0 };
   // rain down the shaft, into a puddle
   placeCascade({ x: p.x, y: p.y - 0.5, z: p.z, wl: p.floor + 0.02, big: false, quiet: true });
+  if (p.window && soundsOn) { const b = sfx.loop('birds', { x: p.x, y: p.y + 1, z: p.z, rolloff: 1.2 }); b.setVol(0.5, 2); }
 }
 let exitInfo = null, exitLoops = null;
 function placeExit(e) {
@@ -1520,13 +1521,13 @@ function surveyNote(t, x, z) {
 
 // ---------- place names: cavers name what they find ----------
 const NAME_A = ['Long', 'Broken', 'Quiet', 'Black', 'High', 'Wet', 'Low', 'Cold', 'Far', 'Old', 'Grey', 'Lost'];
-const NAME_B = { lake: ['Lake', 'Water', 'Mere', 'Pool'], cavern: ['Hall', 'Cathedral', 'Vault', 'Hollow', 'Chamber'], chamber: ['Room', 'Chamber', 'Alcove', 'Gallery'], crystal: ['Pocket', 'Grotto', 'Vein'], gour: ['Terraces', 'Steps', 'Pools', 'Stairs'] };
+const NAME_B = { window: ['Window', 'Skylight', 'Eye', 'Light'], lake: ['Lake', 'Water', 'Mere', 'Pool'], cavern: ['Hall', 'Cathedral', 'Vault', 'Hollow', 'Chamber'], chamber: ['Room', 'Chamber', 'Alcove', 'Gallery'], crystal: ['Pocket', 'Grotto', 'Vein'], gour: ['Terraces', 'Steps', 'Pools', 'Stairs'] };
 const places = [];           // {x,y,z, name, kind}
 let placeT = 0, lastNamed = -1e9;
 function updatePlaces(dt) {
   placeT -= dt; if (placeT > 0) return; placeT = 1.0;
   const sg = G.nearestSegAt(player.x, player.y + 0.5, player.z); if (!sg || !sg.nb) return;
-  const n = sg.nb, kind = n.wl !== undefined && n.wl - n.y > 1.2 && n.rx > 4 ? 'lake' : n.rx > 8 ? 'cavern' : n.tint === 5 ? 'crystal' : n.gour ? 'gour' : n.rx > 3.4 && n.ry > 2.6 ? 'chamber' : null;
+  const n = sg.nb, kind = n.window ? 'window' : n.wl !== undefined && n.wl - n.y > 1.2 && n.rx > 4 ? 'lake' : n.rx > 8 ? 'cavern' : n.tint === 5 ? 'crystal' : n.gour ? 'gour' : n.rx > 3.4 && n.ry > 2.6 ? 'chamber' : null;
   if (!kind) return;
   if (kind !== 'cavern' && runTime - lastNamed < 75) return;               // naming is an event, not a label printer
   for (const pl of places) if (Math.hypot(pl.x - player.x, pl.z - player.z) < (kind === 'cavern' ? 60 : 35)) return;

@@ -35,6 +35,7 @@ export const streamNodes = [];          // flowing-water nodes, for the sound of
 export const voids = [];                       // pit bottoms: {x,y,z, top}
 export const sumpNodes = [];                   // where each sump begins, with what it is: {len, bell, trap}
 export const trunkIds = new Set();
+let windows = 0;
 export let exit = null;
 let exitClaimed = false;
 export const ckey = (cx, cy, cz) => cx + ',' + cy + ',' + cz;
@@ -364,6 +365,22 @@ class Worm {
     // an unstable stretch of a low trunk passage: it can come down behind you once you are through
     if (this.kind === 'trunk' && core && wl === undefined && !this.pit && !this.sump && this.age > 30 && this.mode &&
         (this.mode.name === 'crawl' || this.mode.name === 'squeeze' || this.mode.name === 'bedding') && R() < 0.05) n.unstable = true;
+    // a window: a second hole to the sky in a shallow chamber roof — daylight, roots, birds, and no way up it
+    if (core && wl === undefined && !this.pit && !this.sump && this.ry > 2.2 && this.rx > 2.5 && n.y > -16 && n.y < 4 && R() < 0.03 && windows < 6) {
+      windows++;
+      const top = n.y + (1 + CY) * this.ry;
+      let prev = { x: n.x, y: top - 1.0, z: n.z, rx: 0.9, ry: 0.9, w: -3, i: windows * 40, core: false, algae: 0 };
+      nodes.push(prev);
+      const steps = Math.ceil((SURFACE_Y + 5 - prev.y) / 1.5);
+      for (let k = 1; k <= steps; k++) {
+        const q = { x: n.x + Math.sin(k * 0.8 + windows) * 0.2, y: prev.y + 1.5, z: n.z + Math.cos(k * 0.7 + windows) * 0.2, rx: 0.8, ry: 0.8, w: -3, i: windows * 40 + k, core: false, algae: 0 };
+        addSeg(prev, q); nodes.push(q); prev = q;
+      }
+      props.push({ type: 'sinkhole', x: prev.x, y: prev.y + 0.6, z: prev.z, floor: n.y, window: true });
+      props.push({ type: 'roots', x: n.x, y: top - 0.2, z: n.z, rx: this.rx * 0.6, n: 6 + (R() * 6 | 0), seed: R() });
+      if (R() < 0.5) props.push({ type: 'note', x: n.x, y: n.y, z: n.z, text: ['too far up', 'we tried the walls. no', 'daylight. 14 m. no', 'shout. nobody'][(R() * 4) | 0] });
+      n.tint = 4; n.window = true;
+    }
     // a loose block in the roof of a cavern (or a big chamber): it comes down when something moves under it
     if (core && wl === undefined && !this.pit && !this.sump && this.ry > 2.3 && R() < (cavern ? 0.12 : 0.04)) {
       const a = R() * Math.PI * 2, d = R() * this.rx * 0.5;
@@ -549,6 +566,9 @@ export function openness(x, y, z) {
 
 // ---------- bootstrap ----------
 export function initGen(seed, tier = 0) {
+  nodes.length = 0; segs.length = 0; cellSegs.clear(); worms.length = 0; props.length = 0; algaeNodes.length = 0; streamNodes.length = 0;
+  voids.length = 0; sumpNodes.length = 0; trunkIds.clear(); windows = 0; rounds = 0; exit = null; exitClaimed = false;
+  for (const ch of chunks.values()) ch.dirty = true;
   SEED = seed; TIER = tier; setSeed(seed); rand = mulberry32(seed); EXIT_AT = rr(340, 500) * (1 + 0.12 * Math.min(tier, 6));
   const start = { x: 0, y: 0, z: 0, rx: 3.4, ry: 2.6, w: -1, i: 0, core: true, algae: 0 }; nodes.push(start);
   // the hole you came through: a shaft from the chamber roof up to the surface, too smooth and too far to climb
