@@ -872,6 +872,16 @@ function placeExit(e) {
   const sun = borrowLight(dl.name === 'night' ? 0x7f90c0 : dl.name === 'dusk' ? 0xffb070 : 0xfff1d6, 140 * Math.max(0.12, dl.k), 60, 2, e.x + e.dx * 3, e.y + 3, e.z + e.dz * 3); if (sun) sun.userData.keep = true;
   const sky = borrowLight(0x9fc4ff, 30 * Math.max(0.2, dl.k), 40, 2, e.n1.x, e.n1.y + 1.8, e.n1.z); if (sky) sky.userData.keep = true;
   exitDaylight = dl.name;
+  // trees against the light: dark shapes past the mouth, and grass at the lip
+  const treeMat = new THREE.MeshBasicMaterial({ color: 0x06090a, fog: false });
+  for (let k = 0; k < 6; k++) {
+    const side = (k % 2 ? 1 : -1) * (1.0 + Math.random() * 3.2), along = 3.4 + Math.random() * 1.0, h = 3 + Math.random() * 4;   // just inside the disc, so they stand against the light
+    const t = new THREE.Mesh(new THREE.ConeGeometry(0.5 + Math.random() * 0.8, h, 5), treeMat);
+    t.position.set(e.x + e.dx * along - e.dz * side, e.y + 2.2 + h / 2 - 1.5, e.z + e.dz * along + e.dx * side); scene.add(t);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 2.5, 5), treeMat); trunk.position.set(t.position.x, t.position.y - h / 2 - 1.0, t.position.z); scene.add(trunk);
+  }
+  const grassMat = new THREE.MeshStandardMaterial({ color: 0x4f6a2e, roughness: 1, side: THREE.DoubleSide });
+  for (let k = 0; k < 40; k++) { const g = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.25 + Math.random() * 0.3), grassMat); const along = 2.5 + Math.random() * 3, side = (Math.random() - 0.5) * 5; const gx = e.x + e.dx * along - e.dz * side, gz = e.z + e.dz * along + e.dx * side; const fy = floorBelow(gx, e.y + 2, gz); if (fy === null) continue; g.position.set(gx, fy + 0.15, gz); g.rotation.y = Math.random() * 3.14; g.rotation.z = (Math.random() - 0.5) * 0.4; scene.add(g); }
 }
 let propTimer = 0;
 function processProps(dt) {
