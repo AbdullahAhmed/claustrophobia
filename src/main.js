@@ -1790,7 +1790,7 @@ let stutter = 1;
 const fog = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const r = g.createRadialGradient(32, 32, 2, 32, 32, 30); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); return t; })(), transparent: true, opacity: 0, depthWrite: false, depthTest: false, fog: false }));
 fog.renderOrder = 5; fog.visible = false; camera.add(fog);
 function updateTorch(dt) {
-  if (running && player.alive && !player.out && !resting) player.battery = Math.max(0, player.battery - dt / (BATTERY_S * (player.cells ? 1.6 : 1) * (beamNarrow ? 0.8 : 1)));
+  if (running && player.alive && !player.out && !resting) player.battery = Math.max(0, player.battery - dt / (BATTERY_S * (player.cells ? 1.6 : 1) * (beamNarrow ? 0.8 : 1) * (1 - 0.25 * Math.max(0, player.cold - 0.5) * 2)));   // cold cells give less and drain faster
   if (torchHeld) {
     torch.position.copy(camera.position);
     const a = 1 - Math.pow(shakeT > 0 ? 0.05 : 0.0005, dt);
@@ -1831,7 +1831,8 @@ function updateTorch(dt) {
   if (player.battery < 0.3 && Math.random() < (0.3 - player.battery) * 0.3) { stutter = 0.15; if (buzzT <= 0) { sfx.play('bulb_buzz', { vol: 0.35, offset: Math.random() * 3, dur: 0.6 }); buzzT = 1.5; } }
   stutter += (1 - stutter) * Math.min(1, dt * 12); buzzT -= dt;
   if (gustT > 0) stutter = Math.min(stutter, 0.1 + 0.4 * Math.random());
-  level *= stutter * (shakeT > 0 ? 0.12 : 1) * (player.under ? 0.7 : 1);
+  level *= stutter * (shakeT > 0 ? 0.12 : 1) * (player.under ? 0.7 : 1) * (1 - 0.3 * Math.max(0, player.cold - 0.5) * 2);
+  if (player.cold > 0.75 && torchHeld) teach('coldcells', 'the cold is in the cells too: the beam is weaker, and the battery goes faster. warm up, or get out of the water');
   // the beam: flood is wide and short, spot is narrow and long — it eats the battery a little faster
   const wantAngle = beamNarrow ? 0.26 : 0.52; spot.angle += (wantAngle - spot.angle) * Math.min(1, dt * 8);
   spot.distance = beamNarrow ? 60 : 34; spot.penumbra = beamNarrow ? 0.5 : 0.8;
