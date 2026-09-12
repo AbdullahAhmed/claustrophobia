@@ -23,7 +23,7 @@ let saveT = 0;
 function saveRun() {
   if (!player.alive || player.out) return;
   cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks, rope: player.rope, cells: player.cells,
-               glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })),
+               glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })), places,
                dist: player.dist, maxDepth: player.maxDepth, marks: runMarks, trail: player.trail.slice(-3000), t: runTime };
   saveCave();
 }
@@ -613,7 +613,7 @@ function endScreen(title, sub, go) {
 function die(title, why, stat) {
   if (!player.alive) return; player.alive = false; record[stat]++;
   cave.deaths.push({ x: player.x, y: player.y, z: player.z, cause: stat, battery: player.battery, t: Date.now(), trail: player.trail.filter((p, i) => i % 3 === 0).slice(-700) });
-  cave.marks.push(...runMarks); saveCave();
+  cave.marks.push(...runMarks); cave.places = (cave.places || []).concat(places.filter(p => !(cave.places || []).some(q => q.name === p.name))); saveCave();
   $('hurt').style.opacity = 0.9;
   setTimeout(() => endScreen(title, why, 'CLICK TO GO BACK DOWN &nbsp;·&nbsp; <span style="opacity:.6">N for a new cave</span>'), 1400);
 }
@@ -1086,6 +1086,59 @@ function updateTorch(dt) {
   for (const r of remains) if (!r.taken) r.light.intensity = 0.18 + 0.1 * Math.sin(t * 7 + r.x) * Math.sin(t * 2.3);
 }
 
+// ---------- something crosses the passage ----------
+// the beam finds it low on the floor, looking back at you; then it goes, across and into the wall
+let crosser = null, crosserT = rr(120, 260);
+const crosserMesh = new THREE.Group(), crosserEyes = [];
+{
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1d1814, roughness: 1 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.3), dark); body.position.y = 0.42;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 0.22), dark); head.position.set(0.55, 0.38, 0); head.name = 'head';
+  crosserMesh.add(body, head);
+  const shine = new THREE.MeshBasicMaterial({ color: 0xd8ff9c, fog: false });
+  for (const sz of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 5), shine); e.position.set(0.14, 0.03, sz * 0.075); e.scale.y = 0.75; head.add(e); crosserEyes.push(e); }
+  for (let i = 0; i < 4; i++) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.4, 0.07), dark); leg.position.set(i < 2 ? 0.3 : -0.3, 0.2, i % 2 ? 0.1 : -0.1); leg.userData.i = i; crosserMesh.add(leg); }
+  crosserMesh.visible = false; scene.add(crosserMesh);
+}
+function spawnCrosser() {
+  camera.getWorldDirection(viewDir);
+  for (let tries = 0; tries < 24; tries++) {
+    const d = 5.5 + Math.random() * 4, cx = camera.position.x + viewDir.x * d, cz = camera.position.z + viewDir.z * d;
+    const fy = floorBelow(cx, camera.position.y + 1, cz); if (fy === null || fy > camera.position.y + 0.5 || fy < camera.position.y - 4) continue;
+    if (G.rayToRock(camera.position.x, camera.position.y, camera.position.z, viewDir.x, 0, viewDir.z, d, 0.3) < d - 0.5) continue;
+    const lx = -viewDir.z, lz = viewDir.x;
+    const l = G.rayToRock(cx, fy + 0.4, cz, lx, 0, lz, 5, 0.2), r = G.rayToRock(cx, fy + 0.4, cz, -lx, 0, -lz, 5, 0.2);
+    if (l < 1.0 && r < 1.0) continue;
+    const toL = l >= r, run = toL ? l : r, sx = toL ? lx : -lx, sz = toL ? lz : -lz;
+    crosser = { x0: cx, z0: cz, x1: cx + sx * (run - 0.3), z1: cz + sz * (run - 0.3), y: fy, t: 0, hold: 0.5 + Math.random() * 0.6, dur: 0.35 + run * 0.12,
+                faceX: camera.position.x - cx, faceZ: camera.position.z - cz };
+    crosserMesh.visible = true; crosserMesh.position.set(cx, fy, cz);
+    crosserMesh.rotation.y = Math.atan2(crosser.faceX, crosser.faceZ) - Math.PI / 2;      // head toward you
+    for (const e of crosserEyes) e.visible = true;
+    return;
+  }
+}
+function updateCrosser(dt) {
+  if (!crosser) {
+    if (dread > 0.35 && running && player.alive && !player.out) { crosserT -= dt * (1 + dread); if (crosserT <= 0) { spawnCrosser(); crosserT = rr(150, 360) / (0.5 + dread); } }
+    return;
+  }
+  crosser.t += dt;
+  if (crosser.t < crosser.hold) {                                   // frozen, eyeshine on the beam
+    for (const e of crosserEyes) e.visible = torchHeld && torchLevel() > 0.05;
+    return;
+  }
+  if (!crosser.gone) {
+    crosser.gone = true; for (const e of crosserEyes) e.visible = false;
+    crosserMesh.rotation.y = Math.atan2(crosser.x1 - crosser.x0, crosser.z1 - crosser.z0) - Math.PI / 2;
+    for (let k = 0; k < 5; k++) setTimeout(() => sfx.play('step_rock', { x: crosser ? crosserMesh.position.x : crosser.x0, y: crosser.y, z: crosser ? crosserMesh.position.z : crosser.z0, vol: 0.5, rate: 1.5, vary: 0.25, wet: 0.7 }), k * 90);
+    setTimeout(() => sfx.play('rockfall', { x: crosser.x1, y: crosser.y, z: crosser.z1, vol: 0.28, rate: 1.3, dur: 1.0, wet: 0.8 }), 450);
+  }
+  const k = Math.min(1, (crosser.t - crosser.hold) / crosser.dur);
+  crosserMesh.position.set(crosser.x0 + (crosser.x1 - crosser.x0) * k, crosser.y, crosser.z0 + (crosser.z1 - crosser.z0) * k);
+  for (const c of crosserMesh.children) if (c.userData.i !== undefined) c.rotation.z = Math.sin(crosser.t * 42 + c.userData.i * 1.6) * 0.7;
+  if (k >= 1) { crosser = null; crosserMesh.visible = false; }
+}
 // ---------- eyes ----------
 let eyes = null, eyesT = rr(90, 200);
 const eyeMat = new THREE.MeshBasicMaterial({ color: 0xd8ff9c, fog: false });
@@ -1128,6 +1181,25 @@ function updateEyes(dt) {
     if (Math.random() < 0.3) sfx.play('creature_growl', { x: eyes.x, y: eyes.y, z: eyes.z, vol: 0.25, rate: 0.8, wet: 0.9 });
     eyes = null;
   }
+}
+
+// ---------- place names: cavers name what they find ----------
+const NAME_A = ['Long', 'Broken', 'Quiet', 'Black', 'High', 'Wet', 'Low', 'Cold', 'Far', 'Old', 'Grey', 'Lost'];
+const NAME_B = { cavern: ['Hall', 'Cathedral', 'Vault', 'Hollow', 'Chamber'], chamber: ['Room', 'Chamber', 'Alcove', 'Gallery'], crystal: ['Pocket', 'Grotto', 'Vein'] };
+const places = [];           // {x,y,z, name, kind}
+let placeT = 0, lastNamed = -1e9;
+function updatePlaces(dt) {
+  placeT -= dt; if (placeT > 0) return; placeT = 1.0;
+  const sg = G.nearestSegAt(player.x, player.y + 0.5, player.z); if (!sg || !sg.nb) return;
+  const n = sg.nb, kind = n.rx > 8 ? 'cavern' : n.tint === 5 ? 'crystal' : n.rx > 3.4 && n.ry > 2.6 ? 'chamber' : null;
+  if (!kind) return;
+  if (kind !== 'cavern' && runTime - lastNamed < 75) return;               // naming is an event, not a label printer
+  for (const pl of places) if (Math.hypot(pl.x - player.x, pl.z - player.z) < (kind === 'cavern' ? 60 : 35)) return;
+  let sd = (Math.abs(n.x * 73 + n.z * 131) | 0) + SEED; const R = () => ((sd = (sd * 9301 + 49297) % 233280) / 233280);
+  let adj = NAME_A[(R() * NAME_A.length) | 0]; for (let k = 0; k < 6 && places.some(p => p.name.startsWith(adj + ' ')); k++) adj = NAME_A[(R() * NAME_A.length) | 0];
+  const name = `${adj} ${NAME_B[kind][(R() * NAME_B[kind].length) | 0]}`; lastNamed = runTime;
+  places.push({ x: player.x, y: player.y, z: player.z, name, kind });
+  showHint(name.toLowerCase(), true);
 }
 
 // ---------- survey notebook ----------
@@ -1173,6 +1245,9 @@ function drawNotebook() {
   // depth ticks every ~25 m of trail
   ctx.fillStyle = 'rgba(60,52,44,0.8)'; ctx.font = '500 22px Caveat';
   for (let i = 0; i < t.length; i += 36) ctx.fillText((-t[i].y).toFixed(0) + ' m', X(t[i].x) + 8, Z(t[i].z) - 8);
+  // places
+  ctx.font = '600 30px Caveat'; ctx.fillStyle = 'rgba(45,38,32,0.85)';
+  for (const pl of places) ctx.fillText(pl.name, X(pl.x) - ctx.measureText(pl.name).width / 2, Z(pl.z) - 16);
   // glowsticks
   ctx.fillStyle = 'rgba(40,150,80,0.9)';
   for (const g of glow) { ctx.beginPath(); ctx.arc(X(g.x), Z(g.z), 6, 0, Math.PI * 2); ctx.fill(); }
@@ -1231,6 +1306,7 @@ function init() {
   G.initGen(SEED);
   for (const d of cave.deaths) G.props.push({ type: 'remains', ...d });
   for (const m of cave.marks) G.props.push({ type: 'mark', ...m });
+  if (cave.places) places.push(...cave.places);
   G.scanChunks(1, true, disposeChunk); processQueue(1e9, true);
   for (let y = -3; y < 3; y += 0.1) if (G.fieldAt(0, y + 0.35, 0) < -0.3 && G.fieldAt(0, y + 1.2, 0) < -0.3) { player.y = y; break; }
   player.yaw = Math.PI;
@@ -1238,7 +1314,7 @@ function init() {
     const r = cave.run;
     player.x = r.x; player.y = r.y; player.z = r.z; player.yaw = r.yaw; player.battery = r.battery; player.breath = r.breath; player.hurt = r.hurt;
     player.dist = r.dist; player.maxDepth = r.maxDepth; player.trail = r.trail || []; runMarks.push(...(r.marks || [])); runTime = r.t || 0;
-    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.rope !== undefined) player.rope = r.rope; if (r.cells) player.cells = true;
+    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.places) places.push(...r.places); if (r.rope !== undefined) player.rope = r.rope; if (r.cells) player.cells = true;
     for (const g of (r.glow || [])) { const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(g.x, g.y, g.z); mesh.rotation.x = Math.PI / 2; scene.add(mesh); const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.set(g.x, g.y + 0.15, g.z); scene.add(light); glow.push({ ...g, light, mesh }); }
     for (const m of runMarks) G.props.push({ type: 'mark', ...m });
     G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
@@ -1251,7 +1327,7 @@ function init() {
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
-               run: () => { running = true; overlay.classList.add('hidden'); } };
+               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places };
 }
 init();
 
@@ -1273,6 +1349,8 @@ function stepFrame(dt) {
   processProps(dt);
   updateTorch(dt);
   updateEyes(dt);
+  updatePlaces(dt);
+  updateCrosser(dt);
   updateBats(dt);
   updateCascades(dt);
   updateSound(dt);
