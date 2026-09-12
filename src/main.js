@@ -23,7 +23,7 @@ const H_STAND = 1.72, H_CROUCH = 0.95, H_PRONE = 0.5;
 const BREATH_S = 16, BATTERY_S = 130;                      // seconds of breath; seconds of torch at full
 const GRAV = 14;
 
-const player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, h: H_STAND, grounded: false, bob: 0,
+const player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, h: H_STAND, grounded: false, bob: 0, stamina: 1, sprint: false,
                  wl: -Infinity, swim: false, under: false, breath: 1, battery: 1, hurt: false,
                  airT: 0, whooshed: false, underT: 0, stepPhase: 0,
                  dist: 0, maxDepth: 0, marks: 0, alive: true, out: false };
@@ -65,11 +65,47 @@ spot.position.set(0.16, -0.14, 0); spot.target.position.set(0.05, -0.16, -8);
 torch.add(spot); torch.add(spot.target);
 const bounce = new THREE.PointLight(0xffc890, 0.9, 7, 1.5); scene.add(bounce);
 scene.add(new THREE.AmbientLight(0x1a1610, 0.06));
+// dust in the beam: a cloud of motes around the camera, lit only where the torch cone reaches them
+const MOTES = 300;
+const motePos = new Float32Array(MOTES * 3), moteVel = new Float32Array(MOTES * 3), moteSz = new Float32Array(MOTES);
+for (let i = 0; i < MOTES; i++) { motePos[i * 3] = 1e6; moteSz[i] = 0.007 + Math.random() * 0.014; }
+const moteTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.4, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 32, 32); const t = new THREE.CanvasTexture(c); return t; })();
+const moteMat = new THREE.MeshBasicMaterial({ color: 0xffffff, map: moteTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false, side: THREE.DoubleSide });
+const motes = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), moteMat, MOTES);
+motes.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MOTES * 3), 3);
+motes.frustumCulled = false; scene.add(motes);
+const _td = new THREE.Vector3(), _tp = new THREE.Vector3(), _mm = new THREE.Matrix4(), _mp = new THREE.Vector3(), _ms = new THREE.Vector3(), _mc = new THREE.Color();
+function updateMotes(dt, level) {
+  torch.getWorldDirection(_td).negate(); _tp.copy(camera.position);            // torch is a plain Object3D: +Z is backwards
+  const t = performance.now() * 0.001, ic = motes.instanceColor.array;
+  for (let i = 0; i < MOTES; i++) {
+    let x = motePos[i * 3], y = motePos[i * 3 + 1], z = motePos[i * 3 + 2];
+    x += (Math.sin(t * 0.7 + i) * 0.04 + moteVel[i * 3]) * dt; y += (-0.05 + Math.cos(t * 0.5 + i * 1.3) * 0.03) * dt; z += (Math.cos(t * 0.6 + i * 0.7) * 0.04 + moteVel[i * 3 + 2]) * dt;
+    const rx = x - _tp.x, ry = y - _tp.y, rz = z - _tp.z, d = Math.hypot(rx, ry, rz);
+    if (d > 6 || d < 0.6 || G.fieldAt(x, y, z) > -0.05) {            // drifted off, too close, or inside rock: respawn in the beam, in air
+      const r = 1.0 + Math.random() * 4.5, a = Math.random() * Math.PI * 2, s = Math.random() * r * 0.4;
+      x = _tp.x + _td.x * r + Math.sin(a) * s; y = _tp.y + _td.y * r + (Math.random() - 0.5) * r * 0.5; z = _tp.z + _td.z * r + Math.cos(a) * s;
+      moteVel[i * 3] = (Math.random() - 0.5) * 0.08; moteVel[i * 3 + 2] = (Math.random() - 0.5) * 0.08;
+      if (G.fieldAt(x, y, z) > -0.05) { x = 1e6; }                    // try again next frame
+    }
+    motePos[i * 3] = x; motePos[i * 3 + 1] = y; motePos[i * 3 + 2] = z;
+    // brightness: inside the cone, fading with distance and toward the cone edge
+    const cosA = d > 0 ? (rx * _td.x + ry * _td.y + rz * _td.z) / d : 0;
+    const edge = clamp((cosA - 0.86) / 0.1, 0, 1);
+    const b = x > 1e5 ? 0 : 0.9 * level * edge * clamp(1.4 / (d + 0.4), 0, 1) * (0.55 + 0.45 * Math.sin(t * 3 + i * 2.1)) * (player.under ? 0.4 : 1);
+    ic[i * 3] = b * 0.9; ic[i * 3 + 1] = b * 0.82; ic[i * 3 + 2] = b * 0.62;
+    _mp.set(x, y, z); _ms.setScalar(moteSz[i] * (1 + d * 0.25));
+    _mm.compose(_mp, camera.quaternion, _ms); motes.setMatrixAt(i, _mm);
+  }
+  motes.instanceMatrix.needsUpdate = true; motes.instanceColor.needsUpdate = true;
+}
 // algae light pool
 const algaeLights = []; for (let i = 0; i < 6; i++) { const l = new THREE.PointLight(0x2fd8b0, 0, 7, 1.6); scene.add(l); algaeLights.push(l); }
 
-let lastW = 0, lastH = 0;
-function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+let lastW = -1, lastH = -1;
+function resize() { const w = innerWidth || 1280, h = innerHeight || 800; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 
 // ---------- chunk meshes ----------
 function realizeChunk(ch) {
@@ -358,6 +394,7 @@ sfx.load().then(() => {
   $('ov-snd').textContent = '';
 }).catch(e => { console.warn(e); $('ov-snd').textContent = 'sound unavailable'; });
 let open = 5, openT = 0, dripT = 2, rockT = rr(60, 160), nearWater = 0, fear = 0, gaspT = 0;
+let voidLoop = null, voidT = 0;
 function updateSound(dt) {
   if (!soundsOn) return;
   camera.getWorldDirection(viewDir);
@@ -381,8 +418,9 @@ function updateSound(dt) {
   set('drips_cave', (1 - u) * nearWater * 0.5);
   set('amb_drone', (1 - u) * clamp((open - 9) / 10, 0, 1) * 0.8);
   set('amb_underwater', u * 0.9);
-  set('breath_calm', (1 - u) * (player.hurt ? 0 : (0.35 + (player.h < 0.8 ? 0.35 : 0)) * (1 - fear)));
-  set('breath_scared', (1 - u) * fear * (player.hurt ? 0.5 : 1));
+  const puff = 1 - player.stamina;
+  set('breath_calm', (1 - u) * (player.hurt ? 0 : (0.35 + (player.h < 0.8 ? 0.35 : 0)) * (1 - fear) * (1 - puff)));
+  set('breath_scared', (1 - u) * Math.max(fear, puff * 0.9) * (player.hurt ? 0.5 : 1));
   set('breath_labored', (1 - u) * (player.hurt ? 0.7 : 0));
   set('heartbeat', u * (0.35 + (1 - player.breath) * 0.8) + (1 - u) * fear * 0.35);
   if (loops.heartbeat) loops.heartbeat.setRate(0.9 + (1 - player.breath) * 0.6 + fear * 0.2, 1);
@@ -408,6 +446,18 @@ function updateSound(dt) {
     sfx.play(Math.random() < 0.7 ? 'rockfall' : 'rumble', { x: player.x + Math.sin(a) * d, y: player.y + rr(-4, 6), z: player.z + Math.cos(a) * d, vol: 0.5, wet: 1, rolloff: 0.5 });
   }
   if (gaspT > 0) gaspT -= dt;
+  // a pit nearby: the air moves, and it sounds like it comes from below
+  voidT -= dt;
+  if (voidT <= 0) {
+    voidT = 0.5;
+    let best = null, bd = 14;
+    for (const v of G.voids) { const d = Math.hypot(v.x - player.x, v.top - player.y, v.z - player.z); if (d < bd && player.y > v.y + 1) { bd = d; best = v; } }
+    if (best) {
+      if (!voidLoop) voidLoop = sfx.loop('rumble', { x: best.x, y: best.y + 1, z: best.z, rolloff: 0.6, wet: 0.8 });
+      voidLoop.setPos(best.x, best.y + 1, best.z);
+      voidLoop.setVol(0.55 * clamp(1 - bd / 14, 0, 1) * (1 - u), 0.5);
+    } else if (voidLoop) voidLoop.setVol(0, 0.5);
+  }
 }
 function footstep(kind) {
   if (!soundsOn) return;
@@ -429,7 +479,8 @@ function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
   const f = keys.KeyW || keys.ArrowUp ? 1 : 0, b = keys.KeyS || keys.ArrowDown ? 1 : 0;
   const l = keys.KeyA || keys.ArrowLeft ? 1 : 0, r = keys.KeyD || keys.ArrowRight ? 1 : 0;
-  const crouchKey = keys.KeyC || keys.ControlLeft || keys.ShiftLeft;
+  const crouchKey = keys.KeyC || keys.ControlLeft;
+  const sprintKey = keys.ShiftLeft || keys.ShiftRight;
   let mx = r - l, mz = f - b; const ml = Math.hypot(mx, mz); if (ml > 0) { mx /= ml; mz /= ml; }
   const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
   const px0 = player.x, py0 = player.y, pz0 = player.z;
@@ -458,7 +509,9 @@ function updatePlayer(dt) {
   const eyeY = player.y + player.h - 0.1;
   player.under = player.wl > eyeY;
   const stance = player.h > 1.4 ? 1 : player.h > 0.8 ? 0.55 : 0.3;
-  let speed = 3.3 * stance * (player.hurt ? 0.7 : 1);
+  player.sprint = sprintKey && ml > 0 && stance === 1 && !player.swim && player.stamina > 0.05 && !player.hurt;
+  if (player.sprint) player.stamina = Math.max(0, player.stamina - dt / 7); else player.stamina = Math.min(1, player.stamina + dt / 12);
+  let speed = 3.3 * stance * (player.hurt ? 0.7 : 1) * (player.sprint ? 1.7 : 1);
   let stepKind = stance === 1 ? 'walk' : stance > 0.4 ? 'crouch' : 'crawl';
 
   if (player.swim) {
@@ -603,6 +656,7 @@ function updateTorch(dt) {
   level *= stutter * (shakeT > 0 ? 0.12 : 1) * (player.under ? 0.7 : 1);
   spot.intensity = 12 * adapt * level * (0.96 + 0.04 * Math.sin(t * 13.7) * Math.sin(t * 3.1));
   bounce.intensity = 0.9 * adapt * level;
+  updateMotes(dt, level * (0.5 + 0.5 * adapt));
   if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15; $('water').style.opacity = 1; }
   else { scene.fog.color.copy(FOG_AIR); scene.fog.density = 0.048; $('water').style.opacity = 0; }
   waterGroup.position.y = Math.sin(t * 1.1) * 0.012;
@@ -643,7 +697,7 @@ function updateEyes(dt) {
   eyes.t -= dt; eyes.blink -= dt;
   if (eyes.blink <= 0) { eyes.grp.scale.y = 0.08; if (eyes.blink < -0.13) { eyes.grp.scale.y = 1; eyes.blink = rr(0.8, 2.6); } }
   const dx = eyes.x - camera.position.x, dy = eyes.y - camera.position.y, dz = eyes.z - camera.position.z, d = Math.hypot(dx, dy, dz);
-  torch.getWorldDirection(viewDir);
+  torch.getWorldDirection(viewDir).negate();
   const lit = (dx * viewDir.x + dy * viewDir.y + dz * viewDir.z) / d > 0.994 && torchLevel(player.battery) > 0.3 && d < 22;
   if (eyes.t <= 0 || lit || d < 8) {
     scene.remove(eyes.grp);
@@ -693,7 +747,7 @@ function init() {
   player.yaw = Math.PI;
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
-               get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt),
+               get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos,
                run: () => { running = true; overlay.classList.add('hidden'); } };
 }
 init();
