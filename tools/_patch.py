@@ -1,24 +1,32 @@
-p='src/main.js'; s=open(p,encoding='utf-8').read()
+p='src/gen.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
-rep("""  if (player.swim) {
-    const cp = Math.cos(player.pitch), sp = Math.sin(player.pitch);""",
-"""  if (player.swim) {
-    // deep, black water, and you are not the only thing in it
-    if (!player.under && depthW > 1.4 && dread > 0.15) {
-      lakeT -= dt;
-      if (lakeT <= 0) {
-        lakeT = rr(35, 80);
-        const a = Math.random() * Math.PI * 2, d = rr(4, 9);
-        if (Math.random() < 0.65) { sfx.play('splash', { x: player.x + Math.sin(a) * d, y: player.wl, z: player.z + Math.cos(a) * d, vol: 0.7, rate: 0.85, wet: 0.7, rolloff: 0.5 }); setTimeout(() => sfx.play('stroke', { x: player.x + Math.sin(a) * d * 0.7, y: player.wl, z: player.z + Math.cos(a) * d * 0.7, vol: 0.4, rate: 0.7, wet: 0.7 }), 900); showHint('something moved in the water'); }
-        else { sfx.play('bubbles', { vol: 0.5, rate: 0.8, dur: 1.4 }); camera.rotation.z += (Math.random() - 0.5) * 0.08; player.vy -= 0.6; showHint('something touched your leg'); sfx.play('gasp', { vol: 0.7 }); }
-        lakeFear = 1;
-      }
-    }
-    const cp = Math.cos(player.pitch), sp = Math.sin(player.pitch);""")
-rep("""let foulT = 0;""", """let foulT = 0, lakeT = rr(20, 50), lakeFear = 0;""")
-rep("""player.hurt ? 0.3 : 0, stuck > 0 ? Math.min(1, 0.5 + stuckT * 0.1) : 0, batList.length ? 0.5 : 0), 0, 1);""",
-    """player.hurt ? 0.3 : 0, stuck > 0 ? Math.min(1, 0.5 + stuckT * 0.1) : 0, batList.length ? 0.5 : 0, lakeFear * 0.8), 0, 1);
-  lakeFear = Math.max(0, lakeFear - dt * 0.08);""")
+rep("""export function chimneyAt(x, y, z) {                       // a rift you can climb by pressing against both walls
+  const s = nearestSegAt(x, y, z);
+  return !!(s && s.chimney);
+}""",
+"""export function chimneyAt(x, y, z) {                       // a rift you can climb by pressing against both walls
+  const s = nearestSegAt(x, y, z);
+  return !!(s && s.chimney);
+}
+export function chimneyLineAt(x, y, z) {                   // where the rift's centre line is at this height: {x,z} or null
+  const s = nearestSegAt(x, y, z);
+  if (!s || !s.chimney || Math.abs(s.fdy) < 0.3) return null;
+  const t = clamp((y - s.fy) / s.fdy, 0, 1);
+  return { x: s.fx + s.fdx * t, z: s.fz + s.fdz * t };
+}""")
+open(p,'w',encoding='utf-8').write(s)
+
+p='src/main.js'; s=open(p,encoding='utf-8').read()
+rep("""    const inChimney = G.chimneyAt(player.x, player.y + 0.8, player.z) && Math.min(G.rayToRock(player.x, player.y + 0.9, player.z, 1, 0, 0, 1.2, 0.1) + G.rayToRock(player.x, player.y + 0.9, player.z, -1, 0, 0, 1.2, 0.1), G.rayToRock(player.x, player.y + 0.9, player.z, 0, 0, 1, 1.2, 0.1) + G.rayToRock(player.x, player.y + 0.9, player.z, 0, 0, -1, 1.2, 0.1)) < 1.9;
+    if (inChimney && keys.Space && !player.hurt && player.stamina > 0.02) {
+      climbing = true; player.vy = 0.85; player.stamina = Math.max(0, player.stamina - dt / 9); player.grounded = false;""",
+"""    const chimHere = G.chimneyAt(player.x, player.y + 1.5, player.z) || G.chimneyAt(player.x, player.y + 0.8, player.z);
+    const narrow = (h) => Math.min(G.rayToRock(player.x, player.y + h, player.z, 1, 0, 0, 1.6, 0.1) + G.rayToRock(player.x, player.y + h, player.z, -1, 0, 0, 1.6, 0.1), G.rayToRock(player.x, player.y + h, player.z, 0, 0, 1, 1.6, 0.1) + G.rayToRock(player.x, player.y + h, player.z, 0, 0, -1, 1.6, 0.1)) < 2.9;
+    const inChimney = chimHere && (climbing || narrow(1.5) || narrow(2.4));
+    if (inChimney && keys.Space && !player.hurt && player.stamina > 0.02) {
+      climbing = true; player.vy = 0.85; player.stamina = Math.max(0, player.stamina - dt / 9); player.grounded = false;
+      const ln = G.chimneyLineAt(player.x, player.y + 1.2, player.z);                 // the rift leans: stay on its line
+      if (ln) { const dx = ln.x - player.x, dz = ln.z - player.z, L = Math.hypot(dx, dz); if (L > 0.02) { const k = Math.min(L, 0.7 * dt) / L; player.x += dx * k; player.z += dz * k; } }""")
 open(p,'w',encoding='utf-8').write(s); print('ok')

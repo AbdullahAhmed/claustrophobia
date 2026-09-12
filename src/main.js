@@ -958,7 +958,7 @@ function footstep(kind) {
 
 // ---------- player ----------
 let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2, ropeHintT = 0, blockedT = 0;
-let foulT = 0, lakeT = rr(20, 50), lakeFear = 0;
+let foulT = 0, lakeT = rr(20, 50), lakeFear = 0, climbing = false, climbT = 0;
 let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false;                      // stuck > 0: wedged, that many wiggles still needed
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
@@ -1014,7 +1014,7 @@ function updatePlayer(dt) {
   if (player.hurt) teach('hurt', 'something is broken. you’re slower now, and a second fall will finish you');
   if (player.cold > 0.6) teach('cold', 'you’re cold. keep moving to warm up. too long and your hands stop working');
   player.sprint = sprintKey && ml > 0 && stance === 1 && !player.swim && player.stamina > 0.05 && !player.hurt;
-  if (player.sprint) player.stamina = Math.max(0, player.stamina - dt / 7); else player.stamina = Math.min(1, player.stamina + dt / (12 * (1 + player.cold)));
+  if (player.sprint) player.stamina = Math.max(0, player.stamina - dt / 7); else if (!climbing) player.stamina = Math.min(1, player.stamina + dt / (12 * (1 + player.cold)));
   // water is cold; you warm up slowly, faster when moving
   if (player.swim || depthW > 0.3) player.cold = Math.min(1, player.cold + dt / (player.under ? 14 : 25)); else player.cold = Math.max(0, player.cold - dt / (ml > 0 ? 45 : 80));
   if (player.cold > 0.95) {
@@ -1051,8 +1051,23 @@ function updatePlayer(dt) {
   } else {
     const wx = -sy * mz + cy * mx, wz = -cy * mz - sy * mx;
     if (depthW > 0.25) { speed *= 0.55; stepKind = 'wade'; } else if (depthW > 0.02) stepKind = 'puddle';
-    if (keys.Space && player.grounded && player.h > 1.4 && !player.hurt) { player.vy = 4.0; player.grounded = false; }
-    player.vy = Math.max(player.vy - GRAV * dt, -25);
+    // a chimney: hold space between the walls to climb, slowly; it drains you, and if you run out you come off
+    const chimHere = G.chimneyAt(player.x, player.y + 1.5, player.z) || G.chimneyAt(player.x, player.y + 0.8, player.z);
+    const narrow = (h) => Math.min(G.rayToRock(player.x, player.y + h, player.z, 1, 0, 0, 1.6, 0.1) + G.rayToRock(player.x, player.y + h, player.z, -1, 0, 0, 1.6, 0.1), G.rayToRock(player.x, player.y + h, player.z, 0, 0, 1, 1.6, 0.1) + G.rayToRock(player.x, player.y + h, player.z, 0, 0, -1, 1.6, 0.1)) < 2.9;
+    const inChimney = chimHere && (climbing || narrow(1.5) || narrow(2.4));
+    if (inChimney && keys.Space && !player.hurt && player.stamina > 0.02) {
+      climbing = true; player.vy = 0.85; player.stamina = Math.max(0, player.stamina - dt / 13); player.grounded = false;
+      const ln = G.chimneyLineAt(player.x, player.y + 1.2, player.z);                 // the rift leans: stay on its line
+      if (ln) { const dx = ln.x - player.x, dz = ln.z - player.z, L = Math.hypot(dx, dz); if (L > 0.02) { const k = Math.min(L, 0.7 * dt) / L; player.x += dx * k; player.z += dz * k; } }
+      if (player.stamina <= 0.02) { showHint('your legs went', true); sfx.play('gasp', { vol: 0.8 }); player.vy = -0.5; climbing = false; }
+      climbT += dt; if (climbT > 0.5) { climbT = 0; sfx.play('scrape', { x: player.x, y: player.y + 0.5, z: player.z, vol: 0.4, rate: rr(0.8, 1.1), dur: 0.5, hrtf: false }); }
+      teach('chimney', 'a chimney. back on one wall, feet on the other: hold space to go up. it costs you, and if you run out, you come off');
+    } else {
+      if (inChimney && !climbing && player.grounded) teach('chimney', 'a chimney. back on one wall, feet on the other: hold space to go up. it costs you, and if you run out, you come off');
+      climbing = false;
+      if (keys.Space && player.grounded && player.h > 1.4 && !player.hurt) { player.vy = 4.0; player.grounded = false; }
+      player.vy = Math.max(player.vy - GRAV * dt, -25);
+    }
     const wasGrounded = player.grounded, preVy = player.vy;
     player.x += wx * speed * dt; player.z += wz * speed * dt; player.y += player.vy * dt;
     collide();

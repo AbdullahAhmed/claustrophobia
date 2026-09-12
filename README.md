@@ -15,7 +15,7 @@ Then http://localhost:8080/ — add `?seed=123` to fix the cave layout. Mouse + 
 |---|---|
 | W A S D / mouse | move / look |
 | C (hold) | crouch — low ceilings put you on your belly automatically; underwater: dive |
-| Space | hop / mantle; underwater: surface |
+| Space | hop / mantle; underwater: surface; in a chimney (a narrow rift going up): hold to climb — it drains you, and if you run out you come off |
 | F (tap repeatedly) | shake the torch to charge it — the bulb is dark while you do |
 | T | chalk a note on the rock you're looking at |
 | G | drop a glowstick (three per attempt) |
@@ -52,7 +52,7 @@ All recordings are **CC0** from Freesound; see [`sounds/CREDITS.md`](sounds/CRED
 
 ## Places
 
-Passages, chambers, crawls, squeezes, canyons, bedding planes; flooded sumps with air bells; pits with plunge pools;
+Passages, chambers, crawls, squeezes, canyons, bedding planes, chimneys; flooded sumps with air bells; pits with plunge pools;
 boulder caverns; crystal pockets; dripstone; bioluminescent algae; cascades; active streamways that run downhill in
 steps and sometimes go under; rimstone terraces — calcite dams holding clear pools, stepping down; black lakes in big chambers that you wade into, swim across in the cold, and wade out of; bat roosts; olms in the still pools, pale and blind, that flinch from the beam; mineral tints by region; bones, and the packs of the cavers who left them.
 Chambers you reach get names, written into the survey. Some packs hold a page from their owner's log — what they
