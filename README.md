@@ -9,7 +9,8 @@ hand-crank torch, sixteen seconds of breath (a little more with every sump you c
 python -m http.server 8080
 ```
 
-Then http://localhost:8080/ — add `?seed=123` to fix the cave layout. Mouse + keyboard, headphones recommended.
+Then http://localhost:8080/ — add `?seed=123` to fix the cave layout; the title screen links today's cave (the date as
+a seed, the same for everyone). Mouse + keyboard or a controller, headphones recommended.
 
 | key | action |
 |---|---|

@@ -917,6 +917,9 @@ BREATH_S = BREATH_BASE + Math.min(6, (record.sumps || 0) * 0.4);
 try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {}
 $('ov-rec').textContent = `cave ${SEED}${cave.tier ? ` (the ${['second', 'third', 'fourth', 'fifth', 'sixth', 'seventh'][Math.min(cave.tier, 6) - 1] || 'next'} cave: deeper)` : ''} · attempt ${cave.attempts}${cave.deaths.length ? ` · ${cave.deaths.length} of you lie in it` : ''} · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
 {
+  // today's cave: one seed for everyone, changing at midnight UTC
+  const d = new Date(), daySeed = d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+  if (SEED !== daySeed) { const a = document.createElement('div'); a.className = 'rec'; a.style.marginTop = '6px'; a.innerHTML = `<span style="cursor:pointer;text-decoration:underline dotted">today’s cave (${daySeed}) — the same one for everyone</span>`; a.onclick = (ev) => { ev.stopPropagation(); location.href = location.pathname + '?seed=' + daySeed; }; $('ov-rec').after(a); }
   const CAUSE = { drowned: 'drowned', fell: 'fell', froze: 'froze', crushed: 'buried', foul: 'bad air', wedged: 'wedged' };
   const last = cave.deaths.slice(-4).map(d => `✕ ${Math.hypot(d.x, d.z).toFixed(0)} m out, ${(-d.y).toFixed(0)} m down · ${CAUSE[d.cause] || d.cause}`);
   if (last.length) { const el = document.createElement('div'); el.className = 'rec'; el.style.marginTop = '6px'; el.style.opacity = '0.75'; el.textContent = last.join('   '); $('ov-rec').after(el); }
