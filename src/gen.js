@@ -346,7 +346,8 @@ class Worm {
       }
       else if (this.pinch === 0 && !this.stream) {                // the way out is through the water: one committed sump before the climb
         this.stream = null; this.flow = null; this.pickMode(MODE.sump);
-        if (this.sump) { this.sump.left = wr(11, 19); this.sump.bellAt = this.sump.left > 14 ? this.sump.left * wr(0.45, 0.6) : null; this.sump.trap = false; }
+        if (this.sump) { this.sump.left = wr(11, 19); this.sump.bellAt = this.sump.left > 14 ? this.sump.left * wr(0.45, 0.6) : null; this.sump.trap = false;
+          props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: ['the draught goes under here', 'this is the one. breathe first', 'air moves through the water', 'it goes through. we think'][(R() * 4) | 0] }); }
         else this.gated = true;                                    // too deep for a sump here: the depth was the price
       }
     }
