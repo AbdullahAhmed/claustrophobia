@@ -1000,7 +1000,7 @@ function closeTools(use = false) {
   const choice = toolChoice;
   toolsOpen = false; $('tools').hidden = true; selectTool(0, 0);
   if (!use || !canAct() || choice < 0) return;
-  if (choice === 0) openChalk();
+  if (choice === 0) { if (wheelSource === 'gamepad') placeMark(chalkArrow()); else openChalk(); }   // no keyboard on a pad: an arrow the way you face
   else if (choice === 1) whistle();
   else if (choice === 3) throwStone();
   else {
@@ -1056,7 +1056,7 @@ addEventListener('keydown', e => {
     return;
   }
   if (typing) {
-    if (e.code === 'Enter') { e.preventDefault(); const text = chalkIn.value.trim(); closeChalk(); if (text) placeMark(text); }
+    if (e.code === 'Enter') { e.preventDefault(); const text = chalkIn.value.trim(); closeChalk(); placeMark(text || chalkArrow()); }   // an empty note is an arrow the way you face
     return;
   }
   if (!canAct()) return;
@@ -1281,6 +1281,8 @@ function teach(key, text) {
   showHint(text, true);
 }
 const viewDir = new THREE.Vector3();
+// an arrow for the direction you are facing, as the eight compass words the survey uses
+function chalkArrow() { camera.getWorldDirection(viewDir); return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][((Math.round(Math.atan2(viewDir.x, -viewDir.z) / (Math.PI / 4)) % 8) + 8) % 8] + ' ->'; }
 async function placeMark(text) {
   try { await document.fonts.load('600 84px Caveat'); } catch (e) {}
   camera.getWorldDirection(viewDir);
