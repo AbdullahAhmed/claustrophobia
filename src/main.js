@@ -99,6 +99,7 @@ spot.shadow.camera.near = 0.15; spot.shadow.camera.far = 32; spot.shadow.bias = 
 spot.position.set(0.16, -0.14, 0); spot.target.position.set(0.05, -0.16, -8);
 torch.add(spot); torch.add(spot.target);
 const bounce = new THREE.PointLight(0xffc890, 0.9, 7, 1.5); scene.add(bounce);
+const touch = new THREE.PointLight(0x9fb0c8, 0, 1.6, 2.2); scene.add(touch);     // feeling your way: what an arm's reach of rock looks like to a dark-adapted eye
 // the hand that holds it: low-poly glove and torch, parented to the lagging rig so it sways and whips when you shake
 const hand = new THREE.Group();
 {
@@ -1345,6 +1346,9 @@ function updateTorch(dt) {
   level *= stutter * (shakeT > 0 ? 0.12 : 1) * (player.under ? 0.7 : 1);
   spot.intensity = 12 * (torchHeld ? adapt : 1) * level * (0.96 + 0.04 * Math.sin(t * 13.7) * Math.sin(t * 3.1));
   bounce.intensity = torchHeld ? 0.9 * adapt * level : 0;
+  const dark = !torchHeld || level < 0.04;
+  touch.intensity += ((dark && !player.under ? 0.32 : 0) - touch.intensity) * Math.min(1, dt * 0.5);
+  if (touch.intensity > 0.01) { camera.getWorldDirection(viewDir); touch.position.set(camera.position.x + viewDir.x * 0.5, camera.position.y - 0.2, camera.position.z + viewDir.z * 0.5); }
   bounce.position.copy(torchHeld ? camera.position : torch.position);
   hand.userData.lens.material.emissiveIntensity = 2.5 * level;
   updateMotes(dt, level * (0.5 + 0.5 * adapt));
