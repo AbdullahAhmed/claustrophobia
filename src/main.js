@@ -837,25 +837,35 @@ function updateCascades(dt) {
 }
 // the sinkhole overhead at the entrance: grey daylight far above, rain coming down the shaft
 let sinkhole = null;
+// the surface keeps real time: what comes down a shaft, or in at the mouth, is the light outside right now
+function daylight() {
+  const h = new Date().getHours() + new Date().getMinutes() / 60;
+  if (h < 5 || h >= 21.5) return { sky: 0x1c2436, k: 0.06, name: 'night' };
+  if (h < 7 || h >= 19.5) return { sky: 0xb07a5a, k: 0.35, name: 'dusk' };
+  return { sky: 0x8fa0b4, k: 1, name: 'day' };
+}
 function placeSinkhole(p) {
-  const sky = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color: 0x8fa0b4, fog: false }));
+  const dl = daylight();
+  const sky = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color: dl.sky, fog: false }));
   sky.position.set(p.x, p.y + 0.2, p.z); sky.rotation.x = Math.PI / 2; scene.add(sky);                    // seen from below
-  const shaft = borrowSpot(0x9fb2c8, 60, 26, 0.18, p.x, p.y, p.z, p.x, p.floor, p.z);
-  const pool = borrowLight(0x8fa4bc, 1.2, 6, 1.6, p.x, p.floor + 0.6, p.z); if (pool) pool.userData.keep = true;
+  const shaft = borrowSpot(dl.name === 'night' ? 0x6f7ea0 : dl.name === 'dusk' ? 0xd4a070 : 0x9fb2c8, 60 * Math.max(0.15, dl.k), 26, 0.18, p.x, p.y, p.z, p.x, p.floor, p.z);
+  const pool = borrowLight(0x8fa4bc, 1.2 * Math.max(0.2, dl.k), 6, 1.6, p.x, p.floor + 0.6, p.z); if (pool) pool.userData.keep = true;
   sinkhole = { ...p, sky, shaft, pool, dripT: 0 };
   // rain down the shaft, into a puddle
   placeCascade({ x: p.x, y: p.y - 0.5, z: p.z, wl: p.floor + 0.02, big: false, quiet: true });
-  if (p.window && soundsOn) { const b = sfx.loop('birds', { x: p.x, y: p.y + 1, z: p.z, rolloff: 1.2 }); b.setVol(0.5, 2); }
+  if (p.window && soundsOn) { const b = sfx.loop('birds', { x: p.x, y: p.y + 1, z: p.z, rolloff: 1.2 }); b.setVol(daylight().name === 'night' ? 0.08 : 0.5, 2); }
 }
-let exitInfo = null, exitLoops = null;
+let exitInfo = null, exitLoops = null, exitDaylight = 'day';
 function placeExit(e) {
   exitInfo = e;
   if (soundsOn) exitLoops = { wind: sfx.loop('wind', { x: e.x, y: e.y + 2, z: e.z, rolloff: 0.35, wet: 0.3 }), birds: sfx.loop('birds', { x: e.x + e.dx * 4, y: e.y + 3, z: e.z + e.dz * 4, rolloff: 0.6 }) };
-  const disc = new THREE.Mesh(new THREE.CircleGeometry(5.5, 40), new THREE.MeshBasicMaterial({ color: 0xfff4dc, fog: false }));
+  const dl = daylight();
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(5.5, 40), new THREE.MeshBasicMaterial({ color: dl.name === 'night' ? 0x2a3450 : dl.name === 'dusk' ? 0xe0a070 : 0xfff4dc, fog: false }));
   disc.position.set(e.x + e.dx * 4.6, e.y + 2.2, e.z + e.dz * 4.6); disc.lookAt(e.n1.x, e.n1.y + 1.5, e.n1.z);
   scene.add(disc);
-  const sun = borrowLight(0xfff1d6, 140, 60, 2, e.x + e.dx * 3, e.y + 3, e.z + e.dz * 3); if (sun) sun.userData.keep = true;
-  const sky = borrowLight(0x9fc4ff, 30, 40, 2, e.n1.x, e.n1.y + 1.8, e.n1.z); if (sky) sky.userData.keep = true;
+  const sun = borrowLight(dl.name === 'night' ? 0x7f90c0 : dl.name === 'dusk' ? 0xffb070 : 0xfff1d6, 140 * Math.max(0.12, dl.k), 60, 2, e.x + e.dx * 3, e.y + 3, e.z + e.dz * 3); if (sun) sun.userData.keep = true;
+  const sky = borrowLight(0x9fc4ff, 30 * Math.max(0.2, dl.k), 40, 2, e.n1.x, e.n1.y + 1.8, e.n1.z); if (sky) sky.userData.keep = true;
+  exitDaylight = dl.name;
 }
 let propTimer = 0;
 function processProps(dt) {
@@ -1192,7 +1202,7 @@ function escape() {
       $('ov-rec').after(el);
     }).catch(() => {});
   }
-  gameDelay(() => endScreen('DAYLIGHT', `you found the way out. ${Math.round(runTime / 60) >= 1 ? `you were down there ${Math.round(runTime / 60)} minute${Math.round(runTime / 60) > 1 ? 's' : ''}. ` : ''}the next one is deeper.`, 'CLICK FOR A NEW CAVE'), 2400);
+  gameDelay(() => endScreen(exitDaylight === 'night' ? 'STARS' : exitDaylight === 'dusk' ? 'THE LAST OF THE LIGHT' : 'DAYLIGHT', `you found the way out. ${Math.round(runTime / 60) >= 1 ? `you were down there ${Math.round(runTime / 60)} minute${Math.round(runTime / 60) > 1 ? 's' : ''}. ` : ''}the next one is deeper.`, 'CLICK FOR A NEW CAVE'), 2400);
 }
 function newCave() { location.href = location.pathname + '?seed=' + ((Math.random() * 1e9) | 0); }
 function sameCave() { location.href = location.pathname + '?seed=' + SEED; }
@@ -1358,7 +1368,7 @@ function updateSound(dt) {
     // stand still in the dark and you hear further: the draught and the birds reach you from twice as far
     const near = clamp(1 - d / (70 * (1 + listening)), 0, 1);
     if (exitLoops.wind) exitLoops.wind.setVol((1 - u) * (0.2 + 0.8 * near) * (player.out ? 1.6 : 1) * (1 + 0.6 * listening), 1);
-    if (exitLoops.birds) exitLoops.birds.setVol((1 - u) * (near > 0.3 ? (near - 0.3) * 1.2 : 0) * (player.out ? 1.5 : 1) * (1 + 0.6 * listening), 1);
+    if (exitLoops.birds) exitLoops.birds.setVol((1 - u) * (near > 0.3 ? (near - 0.3) * 1.2 : 0) * (player.out ? 1.5 : 1) * (1 + 0.6 * listening) * (exitDaylight === 'night' ? 0.15 : 1), 1);   // few birds at night
     if (listening > 0.9 && near > 0.05 && !player.out) teach('listen', 'still, and dark: you can hear a draught. air moves toward the way out');
   }
   // a pit nearby: the air moves, and it sounds like it comes from below
