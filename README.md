@@ -95,7 +95,8 @@ every later attempt at that cave.
 ## Risks (by design)
 
 Sumps you may not have the breath for. Streams whose current strengthens toward the place they sink — swim with it
-or don't get in. Pits you can't see until you're falling — about half the dry ones have a traverse from the ledge that winds down to
+or don't get in. Pits you can't see until you're falling — and some you can't see at all: a crust of sediment lies across the top,
+looks like floor, and takes your weight for about a second. About half the dry pits have a traverse from the ledge that winds down to
 the same place, if you find it (the chalk sometimes says which side). Some pitches still have a rope somebody rigged and
 left: most hold; the thin dark ones do not, about halfway down. Loose blocks in cavern roofs that come down when something
 moves under them — you get about a second's warning. Dead-end pockets where the air has gone bad. Low stretches of the main way that come down behind you
