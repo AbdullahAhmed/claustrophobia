@@ -57,3 +57,8 @@ All clips are Creative Commons 0 (public domain dedication). Sources are Freesou
 - `body_fall2.ogg` — "Body fall_01.wav" by deleted_user_2104797 — https://freesound.org/s/346695/ — CC0 1.0
 - `wind_loop.ogg` — "Looping Gentle Wind Ambience on an Open Desert Plain.wav" by dhallcomposer — https://freesound.org/s/697217/ — CC0 1.0
 - `birds_forest.ogg` — "Forest Day - Bird Chirps, Insects" by RealSquink — https://freesound.org/s/788118/ — CC0 1.0
+- `bats_colony.ogg` — "Bat Sounds, Lod Cave, Thailand (March 10, 2019)" by marc.om — https://freesound.org/s/806574/ — CC0 1.0
+- `bats_chirp.ogg` — "G12-35-Bats Chirping.wav" by craigsmith — https://freesound.org/s/437967/ — CC0 1.0
+- `flap1.ogg` — "Wing Flap 1.wav" by _stubb — https://freesound.org/s/389634/ — CC0 1.0
+- `flap2.ogg` — "Wing Flap 2.wav" by _stubb — https://freesound.org/s/389633/ — CC0 1.0
+- `flap3.ogg` — "Light Wing Flap" by TurboFool — https://freesound.org/s/561009/ — CC0 1.0

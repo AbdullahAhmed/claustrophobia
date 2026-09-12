@@ -104,6 +104,7 @@ class Worm {
     this.wander = 0; this.modeLeft = 0; this.target = null;
     this.mode = null; this.sump = null; this.pit = null; this.pinch = 0; this.exit = false; this.algae = 0;
     this.tint = node.tint !== undefined ? node.tint : 0;
+    this.roost = false;
   }
   pickMode(force) {
     R = this.rng;
@@ -118,6 +119,7 @@ class Worm {
     }
     if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal') && (this.age < 20 || this.exit)) m = MODES[0];
     if (this.tint === 5) this.tint = 0;                         // leaving a crystal pocket
+    if ((m.name === 'chamber' || m.name === 'cavern') && R() < 0.4) this.roost = true;   // something sleeps on the ceiling
     if (m.name === 'crystal') this.tint = 5;                    // gypsum-white rock in a crystal pocket
     if (m.name === 'sump' && this.y < -32) m = MODES[0];
     if (m.name === 'pit' && this.y < -28) m = MODES[0];
@@ -276,6 +278,7 @@ class Worm {
     if (n.algae > 0.4 && n.i % 3 === 0) algaeNodes.push(n);
     if (core && wl === undefined && this.rx < 3 && R() < 0.03) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: false, seed: R() });
     if (this.mode && this.mode.name === 'crystal' && !this.pit && !this.sump && R() < 0.75) props.push({ type: 'crystals', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, seed: R() });
+    if (this.roost && this.ry > 2.0 && !this.pit && !this.sump) { this.roost = false; props.push({ type: 'roost', x: n.x, y: n.y + (1 + CY) * this.ry - 0.4, z: n.z, floor: n.y, n: 25 + (R() * 45 | 0) }); }
     if (cavern && R() < 0.02) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: true, seed: R() });
     this.node = n; this.x = n.x; this.y = n.y; this.z = n.z;
     this.life -= STEP; this.age += STEP;

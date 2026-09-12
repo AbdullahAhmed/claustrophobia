@@ -143,6 +143,11 @@ oneshot('bone_crunch', ['bone_break', 'bone_crunch'], -4)
 loop('wind', 'wind_loop', 20.0, target_db=-24, xf=1.0)
 loop('birds', 'birds_forest', 20.0, target_db=-26, xf=1.0)
 
+# ---- bats ----
+loop('bats_colony', 'bats_colony', 16.0, target_db=-24, xf=0.8)
+oneshot('bats_burst', ['bats_chirp'], -6, 6.0)
+oneshot('flap', ['flap1', 'flap2', 'flap3'], -8)
+
 json.dump(manifest, open(os.path.join(OUT, 'manifest.json'), 'w'), indent=1)
 tot = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT))
 print(f'\n{len(os.listdir(OUT)) - 1} files, {tot / 1e6:.2f} MB total')

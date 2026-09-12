@@ -157,5 +157,16 @@
  ],
  "birds": [
   "birds.ogg"
+ ],
+ "bats_colony": [
+  "bats_colony.ogg"
+ ],
+ "bats_burst": [
+  "bats_burst.ogg"
+ ],
+ "flap": [
+  "flap1.ogg",
+  "flap2.ogg",
+  "flap3.ogg"
  ]
 }

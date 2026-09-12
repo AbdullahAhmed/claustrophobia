@@ -282,6 +282,54 @@ function placeRemains(p) {
   const light = new THREE.PointLight(0xffa050, 0.25, 4, 1.5); light.position.set(p.x + 0.35, y + 0.12, p.z - 0.2); scene.add(light);
   remains.push({ x: p.x + 0.35, y, z: p.z - 0.2, taken: false, light, lens, cause: p.cause, battery: p.battery });
 }
+// bats: a colony on a chamber ceiling; light or noise sends it past your face
+const roosts = [];           // {x,y,z, floor, n, loop, spooked}
+const BATS = 90;
+const batGeo = new THREE.BufferGeometry();
+batGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-0.21, 0, 0.03, 0, 0, -0.07, 0, 0, 0.06, 0.21, 0, 0.03, 0, 0, -0.07, 0, 0, 0.06]), 3));
+const bats = new THREE.InstancedMesh(batGeo, new THREE.MeshBasicMaterial({ color: 0x0b0907, side: THREE.DoubleSide }), BATS);
+bats.count = 0; bats.frustumCulled = false; scene.add(bats);
+const batList = [];          // {x,y,z, vx,vy,vz, t, phase}
+function placeRoost(p) {
+  const r = { ...p, spooked: false, loop: soundsOn ? sfx.loop('bats_colony', { x: p.x, y: p.y, z: p.z, rolloff: 1.4 }) : null };
+  if (r.loop) r.loop.setVol(0.35, 1);
+  roosts.push(r);
+}
+function spookRoost(r) {
+  r.spooked = true; if (r.loop) r.loop.setVol(0, 0.4);
+  sfx.play('bats_burst', { x: r.x, y: r.y, z: r.z, vol: 0.9, wet: 0.6, rolloff: 0.6 });
+  camera.getWorldDirection(viewDir);
+  for (let i = 0; i < r.n && batList.length < BATS; i++) {
+    // each bat leaves the roost toward a point near your head, then keeps going
+    const tx = camera.position.x + (Math.random() - 0.5) * 2.4, ty = camera.position.y + (Math.random() - 0.3) * 1.6, tz = camera.position.z + (Math.random() - 0.5) * 2.4;
+    const dx = tx - r.x, dy = ty - r.y, dz = tz - r.z, L = Math.hypot(dx, dy, dz) || 1, sp = 5 + Math.random() * 4;
+    batList.push({ x: r.x + (Math.random() - 0.5) * 2, y: r.y - Math.random() * 0.6, z: r.z + (Math.random() - 0.5) * 2, vx: dx / L * sp, vy: dy / L * sp, vz: dz / L * sp, t: -Math.random() * 1.4, phase: Math.random() * 6, life: 5 + Math.random() * 2 });
+  }
+  for (let k = 0; k < 6; k++) setTimeout(() => sfx.play('flap', { x: camera.position.x + (Math.random() - 0.5) * 2, y: camera.position.y + 0.3, z: camera.position.z + (Math.random() - 0.5) * 2, vol: 0.5, vary: 0.3 }), 600 + k * 260 + Math.random() * 200);
+  showHint('bats');
+}
+function updateBats(dt) {
+  camera.getWorldDirection(viewDir);
+  for (const r of roosts) {
+    if (r.spooked) continue;
+    const dx = r.x - camera.position.x, dy = r.y - camera.position.y, dz = r.z - camera.position.z, d = Math.hypot(dx, dy, dz);
+    if (d > 14) continue;
+    const lit = torchLevel(player.battery) > 0.35 && (dx * viewDir.x + dy * viewDir.y + dz * viewDir.z) / d > 0.9;
+    if (lit || player.sprint || d < 3.5) spookRoost(r);
+  }
+  let n = 0;
+  for (let i = batList.length - 1; i >= 0; i--) {
+    const b = batList[i]; b.t += dt; if (b.t < 0) { continue; }
+    b.life -= dt; if (b.life <= 0) { batList.splice(i, 1); continue; }
+    b.x += b.vx * dt; b.y += b.vy * dt + Math.sin(b.t * 9 + b.phase) * 0.02; b.z += b.vz * dt;
+    if (G.fieldAt(b.x, b.y, b.z) > -0.1) { b.vx *= -0.6; b.vz *= -0.6; b.vy = Math.abs(b.vy) * 0.5 + 1; }           // bounce off rock, upward
+    const flap = 0.6 + 0.6 * Math.abs(Math.sin(b.t * 18 + b.phase));
+    _p.set(b.x, b.y, b.z); _e.set(0, Math.atan2(b.vx, b.vz), 0); _q.setFromEuler(_e); _s.set(flap, 1, 1);
+    _m.compose(_p, _q, _s); bats.setMatrixAt(n++, _m);
+    if (Math.hypot(b.x - camera.position.x, b.y - camera.position.y, b.z - camera.position.z) < 0.5 && b.t > 0.2 && !b.hit) { b.hit = true; camera.rotation.z += (Math.random() - 0.5) * 0.06; }
+  }
+  bats.count = n; if (n) bats.instanceMatrix.needsUpdate = true;
+}
 let exitInfo = null, exitLoops = null;
 function placeExit(e) {
   exitInfo = e;
@@ -303,6 +351,7 @@ function processProps(dt) {
     if (!G.chunkReadyAt(p.x, p.y + 0.5, p.z)) continue;
     if (p.type === 'remains') placeRemains(p); else if (p.type === 'mark') drawMark(p.text, new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(p.nx, p.ny, p.nz), true);
     else if (p.type === 'crystals') placeCrystals(p);
+    else if (p.type === 'roost') placeRoost(p);
     else placeBones(p);
     G.props.splice(i, 1);
   }
@@ -506,7 +555,7 @@ function updateSound(dt) {
   }
   const u = player.under ? 1 : 0;
   const level = torchLevel(player.battery);
-  fear = clamp(Math.max(level < 0.05 ? 0.8 : (1 - level) * 0.45, player.breath < 0.6 ? (1 - player.breath) * 0.9 : 0, eyes ? 0.55 : 0, player.hurt ? 0.3 : 0, stuck > 0 ? Math.min(1, 0.5 + stuckT * 0.1) : 0), 0, 1);
+  fear = clamp(Math.max(level < 0.05 ? 0.8 : (1 - level) * 0.45, player.breath < 0.6 ? (1 - player.breath) * 0.9 : 0, eyes ? 0.55 : 0, player.hurt ? 0.3 : 0, stuck > 0 ? Math.min(1, 0.5 + stuckT * 0.1) : 0, batList.length ? 0.5 : 0), 0, 1);
   const set = (k, v) => loops[k] && loops[k].setVol(v, 0.6);
   set('amb_cave', (1 - u) * (0.45 + 0.5 * clamp((open - 2) / 10, 0, 1)));
   set('amb_grotto', (1 - u) * nearWater * 0.7);
@@ -1020,6 +1069,7 @@ function stepFrame(dt) {
   processProps(dt);
   updateTorch(dt);
   updateEyes(dt);
+  updateBats(dt);
   updateSound(dt);
   renderer.render(scene, camera);
   grain(); hud(dt);
