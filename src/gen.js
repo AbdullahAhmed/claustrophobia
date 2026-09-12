@@ -384,6 +384,9 @@ class Worm {
     // an unstable stretch of a low trunk passage: it can come down behind you once you are through
     if (this.kind === 'trunk' && core && wl === undefined && !this.pit && !this.sump && this.age > 30 && this.mode &&
         (this.mode.name === 'crawl' || this.mode.name === 'squeeze' || this.mode.name === 'bedding') && R() < 0.05) n.unstable = true;
+    // fossils in the bedding: an ammonite, a crinoid stem, a shell, pressed into the wall at eye height
+    if (core && wl === undefined && !this.pit && !this.sump && this.mode && (this.mode.name === 'bedding' || this.mode.name === 'passage' || this.mode.name === 'canyon') && R() < 0.025)
+      props.push({ type: 'fossil', x: n.x, y: n.y, z: n.z, kind: (R() * 3) | 0, seed: R(), size: wr(0.25, 0.7) });
     // a window: a second hole to the sky in a shallow chamber roof — daylight, roots, birds, and no way up it
     if (core && wl === undefined && !this.pit && !this.sump && this.ry > 2.2 && this.rx > 2.5 && n.y > -16 && n.y < 4 && R() < 0.03 && windows < 6) {
       windows++;
