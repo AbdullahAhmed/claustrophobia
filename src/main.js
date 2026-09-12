@@ -1113,6 +1113,11 @@ function pollGamepad(dt) {
   if (padCharge) restRequested = false;
   finish();
 }
+// controller rumble, when there is a controller and it can
+function rumble(strong, weak, ms) {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (const g of pads) if (g && g.connected && g.vibrationActuator && g.vibrationActuator.playEffect) { try { g.vibrationActuator.playEffect('dual-rumble', { duration: ms, strongMagnitude: strong, weakMagnitude: weak }); } catch (e) {} break; }
+}
 function updateHeldControls(dt) {
   const available = canAct() && !typing && !toolsOpen && !notebookOpen;
   const focus = available && torchHeld && (mouseFocus || padFocus);
@@ -1186,7 +1191,7 @@ function endScreen(title, sub, go) {
   if (document.exitPointerLock) document.exitPointerLock();
 }
 function die(title, why, stat) {
-  if (!player.alive) return; player.alive = false; record[stat]++;
+  if (!player.alive) return; player.alive = false; record[stat]++; rumble(1, 1, 900);
   cave.deaths.push({ x: player.x, y: player.y, z: player.z, cause: stat, battery: player.battery, t: Date.now(), trail: player.trail.filter((p, i) => i % 3 === 0).slice(-700) });
   // the last thing you wrote: the next one of you will find it on the wall, if there is a wall
   if (stat !== 'drowned') { const words = { fell: ['fell here', 'the floor. careful', 'no floor'], froze: ['so cold', 'could not stop shaking', 'sat down for a minute'], crushed: ['the roof', 'do not run in here'], foul: ['bad air. get out', 'head hurts. air'], wedged: ['too tight', 'breathe out'] }[stat];
@@ -1582,7 +1587,7 @@ function updatePlayer(dt) {
         sfx.play('body_fall', { vol: 0.9 }); sfx.play('gasping', { vol: 0.7 });
         if (player.hurt) die('THE SECOND FALL', 'something gave way, then you did', 'fell');
         else {
-          player.hurt = true; $('hurt').style.opacity = 0.7; gameDelay(() => { $('hurt').style.opacity = 0; }, 900);
+          player.hurt = true; $('hurt').style.opacity = 0.7; gameDelay(() => { $('hurt').style.opacity = 0; }, 900); rumble(0.8, 0.4, 400);
           if (torchHeld && Math.random() < 0.45) dropTorch(); else showHint('something is broken');
           if (player.kit) gameDelay(() => { if (player.hurt && player.alive) { player.hurt = false; player.kit = false; showHint('you use the kit. it holds, for now', true); } }, 4000);
         }
@@ -1753,7 +1758,7 @@ function shakeTorch() {
   const tired = 1 - 0.45 * clamp((runTime - 900) / 1500, 0, 1) * (1 - 0.5 * clamp((resting ? 1 : 0), 0, 1));   // after fifteen minutes the arm gives less; resting helps a little
   player.battery = Math.min(1, player.battery + 0.025 * tired * (player.battery > 0.6 ? 0.5 : 1) * (player.hurt ? 0.7 : 1));
   if (tired < 0.8) teach('tired', 'your arm is tired. the shake gives less than it did');
-  shakeT = 0.22;
+  shakeT = 0.22; rumble(0.15, 0.35, 90);
   shakeE.set(rr(-0.4, 0.4), rr(-0.4, 0.4), rr(-0.5, 0.5)); shakeQ.setFromEuler(shakeE);
   torch.quaternion.multiply(shakeQ);
   sfx.play('rattle', { vol: 0.5, vary: 0.2 });
@@ -1948,7 +1953,7 @@ function updateLoose(dt) {
     } else if (L.state === 'falling') {
       L.vy -= GRAV * dt; L.mesh.position.y += L.vy * dt; L.mesh.rotation.x += dt * 2.2; L.mesh.rotation.z += dt * 1.1;
       if (L.mesh.position.y <= L.rest) {
-        L.mesh.position.y = L.rest; L.state = 'down';
+        L.mesh.position.y = L.rest; L.state = 'down'; rumble(0.9, 0.6, 500);
         cave.fallen = (cave.fallen || []).concat([L.key]); saveCave();
         sfx.play('rockslide', { x: L.x, y: L.rest, z: L.z, vol: 1.0, wet: 0.9, rolloff: 0.35 });
         sfx.play('rumble', { x: L.x, y: L.rest, z: L.z, vol: 0.8, rate: 0.9, dur: 2.5, wet: 0.8, rolloff: 0.3 });
@@ -1973,7 +1978,7 @@ function updateFalseFloors(dt) {
     if (f.state === 'gone' || !f.slab) continue;
     const hd = Math.hypot(player.x - f.x, player.z - f.z), onIt = hd < f.r - 0.4 && Math.abs(player.y - f.y) < 0.9 && player.grounded;
     if (f.state === 'whole') {
-      if (onIt) { f.state = 'cracking'; f.t = 0; sfx.play('rattle', { x: f.x, y: f.y, z: f.z, vol: 0.8, rate: 0.7, wet: 0.5 }); sfx.play('rockfall', { x: f.x, y: f.y - 3, z: f.z, vol: 0.4, rate: 1.4, dur: 0.6, wet: 0.9 }); showHint('the floor moved', true); }
+      if (onIt) { f.state = 'cracking'; f.t = 0; rumble(0.3, 0.7, 700); sfx.play('rattle', { x: f.x, y: f.y, z: f.z, vol: 0.8, rate: 0.7, wet: 0.5 }); sfx.play('rockfall', { x: f.x, y: f.y - 3, z: f.z, vol: 0.4, rate: 1.4, dur: 0.6, wet: 0.9 }); showHint('the floor moved', true); }
     } else if (f.state === 'cracking') {
       f.t += dt; camera.rotation.z += (Math.random() - 0.5) * 0.01;
       if (f.t > 0.75) {
@@ -2003,7 +2008,7 @@ function updateCollapse(dt) {
     if (d < 1.4) n.passed = true;
     else if (n.passed && d > 3.5 && d < 9 && Math.hypot(player.x, player.z) > Math.hypot(n.x, n.z) + 1.5 && player.grounded) {
       // you are through, and farther in than it is: it comes down behind you
-      collapsed.add(key); cave.collapsed = (cave.collapsed || []).concat([key]); saveCave();
+      collapsed.add(key); cave.collapsed = (cave.collapsed || []).concat([key]); saveCave(); gameDelay(() => rumble(0.8, 0.8, 1200), 700);
       sfx.play('rattle', { x: n.x, y: n.y + 0.5, z: n.z, vol: 0.8, rate: 0.8, wet: 0.7, rolloff: 0.5 });
       gameDelay(() => { sfx.play('rockslide', { x: n.x, y: n.y + 0.5, z: n.z, vol: 1.0, wet: 0.9, rolloff: 0.3 }); sfx.play('rumble', { x: n.x, y: n.y + 0.5, z: n.z, vol: 0.9, rate: 0.8, dur: 3, wet: 0.8, rolloff: 0.3 }); G.collapseAt(n); }, 700);
       for (let k = 0; k < 6; k++) gameDelay(() => sfx.play('rockfall', { x: n.x + rr(-1.5, 1.5), y: n.y + 0.3, z: n.z + rr(-1.5, 1.5), vol: 0.4, rate: rr(0.8, 1.2), dur: 0.8, wet: 0.7 }), 900 + k * 220);
@@ -2084,7 +2089,7 @@ function updateTremor(dt) {
   if (!running || !player.alive || player.out) return;
   if (tremorT > 0) { tremorT -= dt; camera.rotation.z += (Math.random() - 0.5) * 0.02 * Math.min(1, tremorT); camera.position.y += (Math.random() - 0.5) * 0.012 * Math.min(1, tremorT); return; }
   if (runTime < tremorAt) return;
-  tremorAt = runTime + rr(600, 1200); tremorT = 4.5;
+  tremorAt = runTime + rr(600, 1200); tremorT = 4.5; rumble(0.5, 0.9, 3500);
   sfx.play('rumble', { vol: 1.0, rate: 0.55, dur: 6, wet: 1.0 });
   for (let k = 0; k < 7; k++) gameDelay(() => sfx.play('rockfall', { x: player.x + rr(-14, 14), y: player.y + rr(0, 4), z: player.z + rr(-14, 14), vol: rr(0.3, 0.6), rate: rr(0.8, 1.2), dur: 1.0, wet: 0.9, rolloff: 0.5 }), 400 + k * rr(200, 600));
   gameDelay(() => sfx.play('gasp', { vol: 0.6 }), 700);
