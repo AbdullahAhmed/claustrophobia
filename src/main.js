@@ -1181,6 +1181,9 @@ $('ov-rec').textContent = `cave ${SEED}${cave.tier ? ` (the ${['second', 'third'
   const CAUSE = { drowned: 'drowned', fell: 'fell', froze: 'froze', crushed: 'buried', foul: 'bad air', wedged: 'wedged' };
   const last = cave.deaths.slice(-4).map(d => `✕ ${Math.hypot(d.x, d.z).toFixed(0)} m out, ${(-d.y).toFixed(0)} m down · ${CAUSE[d.cause] || d.cause}`);
   if (last.length) { const el = document.createElement('div'); el.className = 'rec'; el.style.marginTop = '6px'; el.style.opacity = '0.75'; el.textContent = last.join('   '); $('ov-rec').after(el); }
+  // the whole record, all caves: how the others went
+  const tally = Object.entries(CAUSE).map(([k, v]) => record[k] ? `${record[k]} ${v}` : '').filter(Boolean);
+  if (tally.length && record.runs > 3) { const el = document.createElement('div'); el.className = 'rec'; el.style.marginTop = '4px'; el.style.opacity = '0.55'; el.textContent = `${record.runs} attempts, all caves · ${tally.join(' · ')}${record.rescued ? ` · found ${record.rescued}×` : ''}${record.sumps ? ` · ${record.sumps} sumps swum` : ''}`; $('ov-rec').after(el); }
 }
 if (cave.attempts > 1) $('ov-sub').textContent = 'the same cave. it remembers.';
 function saveRecord() { record.best = Math.max(record.best, player.dist); try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {} }
