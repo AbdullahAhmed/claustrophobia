@@ -553,6 +553,7 @@ function placeNote(p) {
   if (!best) return;
   G.gradAt(best.x, best.y, best.z); const g = G.G, gl = Math.hypot(g.x, g.y, g.z) || 1;
   drawMark(p.text, best, new THREE.Vector3(-g.x / gl, -g.y / gl, -g.z / gl), true);
+  if (p.lasting) { cave.marks.push({ text: p.text, x: best.x, y: best.y, z: best.z, nx: -g.x / gl, ny: -g.y / gl, nz: -g.z / gl }); saveCave(); }
 }
 // cascades: water falling from the ceiling into a pool
 const cascades = [];         // {x,y,z, wl, drops: Float32Array phases, inst, foam, loop}
@@ -764,6 +765,9 @@ function endScreen(title, sub, go) {
 function die(title, why, stat) {
   if (!player.alive) return; player.alive = false; record[stat]++;
   cave.deaths.push({ x: player.x, y: player.y, z: player.z, cause: stat, battery: player.battery, t: Date.now(), trail: player.trail.filter((p, i) => i % 3 === 0).slice(-700) });
+  // the last thing you wrote: the next one of you will find it on the wall, if there is a wall
+  if (stat !== 'drowned') { const words = { fell: ['fell here', 'the floor. careful', 'no floor'], froze: ['so cold', 'could not stop shaking', 'sat down for a minute'], crushed: ['the roof', 'do not run in here'], foul: ['bad air. get out', 'head hurts. air'], wedged: ['too tight', 'breathe out'] }[stat];
+    if (words) G.props.push({ type: 'note', x: player.x, y: player.y, z: player.z, text: words[cave.attempts % words.length], lasting: true }); }
   cave.marks.push(...runMarks); cave.places = (cave.places || []).concat(places.filter(p => !(cave.places || []).some(q => q.name === p.name)));
   cave.notes = (cave.notes || []).concat(notes.filter(n => !(cave.notes || []).some(q => q.t === n.t && Math.hypot(q.x - n.x, q.z - n.z) < 9))); saveCave();
   $('hurt').style.opacity = 0.9;
