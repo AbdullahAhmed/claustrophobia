@@ -16,7 +16,7 @@ For development without stale browser caching, run `python tools/serve.py 8793` 
 http://127.0.0.1:8793/. Opening `index.html` directly from File Explorer will not load the ES modules.
 
 Regression checks: `node --experimental-vm-modules --no-warnings tools/check.cjs` checks source syntax,
-30 cave seeds against commit `06adfdb` (bump that hash in tools/check.cjs when generation changes on purpose), intact slab collision, slab removal, stale worker results, and audio files.
+30 cave seeds against commit `dfabfd2` (bump that hash in tools/check.cjs when generation changes on purpose), intact slab collision, slab removal, stale worker results, and audio files.
 For browser smoke checks, run `python tools/serve.py 8794`, open http://127.0.0.1:8794/tools/smoke.html,
 and click **Run checks in this test tab**. Use this separate test port: the checks create a saved attempt there.
 The browser checks cover rendering, sound decoding, walking, torch charging, the survey, autosave, and resume.
@@ -60,7 +60,7 @@ stopped. Choose **New cave** in the pause or death menu to abandon it.
 
 `src/gen.js` — **worm graph → distance field → marching cubes.** Worm agents walk *floor lines* through space carrying a
 width/height that drifts through modes (passage, chamber, crawl, squeeze, canyon, bedding plane, sump, pit, cavern,
-stream, lake, duck, chimney, gour, crystal). Every 120-200 m a trunk line changes *theme* — dry, wet, broken, old —
+stream, lake, duck, chimney, gour, crystal). Every 120-200 m a trunk line changes *theme* — dry, wet, broken, old, maze —
 which biases the modes it picks, its colour, and what it leaves lying about (bones, loose blocks, calcite, fossils).
 Every point's density is the distance to the nearest ellipsoidal capsule plus rock noise, with sediment fill for walkable
 floors, a guaranteed 0.68 m crawl core so intended passages are always passable, boulders unioned in for caverns, and a

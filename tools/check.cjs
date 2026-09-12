@@ -3,7 +3,7 @@
 const fs = require('fs'), vm = require('vm'), cp = require('child_process'), assert = require('assert');
 process.chdir(require('path').join(__dirname, '..'));
 async function load(committed) {
-  const read = p => committed ? cp.execFileSync('git', ['show', '06adfdb:' + p], { encoding: 'utf8' }) : fs.readFileSync(p, 'utf8');
+  const read = p => committed ? cp.execFileSync('git', ['show', 'dfabfd2:' + p], { encoding: 'utf8' }) : fs.readFileSync(p, 'utf8');
   const field = new vm.SourceTextModule(read('src/field.js'));
   const gen = new vm.SourceTextModule(read('src/gen.js'));
   const tables = new vm.SyntheticModule(['edgeTable', 'triTable'], function () { this.setExport('edgeTable', []); this.setExport('triTable', []); });
