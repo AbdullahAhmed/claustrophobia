@@ -1,33 +1,25 @@
-p='src/gen.js'; s=open(p,encoding='utf-8').read()
+p='src/main.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
-rep("""SEED = seed; setSeed(seed); rand = mulberry32(seed); EXIT_AT = rr(200, 320);""",
-    """SEED = seed; setSeed(seed); rand = mulberry32(seed); EXIT_AT = rr(340, 500);""")
-rep("""    this.roost = false; this.stream = null; this.flow = null;
-  }""","""    this.roost = false; this.stream = null; this.flow = null;
-    this.gated = false;                                          // trunks: has this line been through water or over a drop yet?
-  }""")
-# the trunk wanders more: the way out is not a straight line
-rep("""          const away = Math.atan2(this.x, this.z);              // trunks head away from the entrance
-          this.yaw += angDiff(away, this.yaw) * 0.06;""",
-    """          const away = Math.atan2(this.x, this.z);              // trunks head away from the entrance, loosely
-          this.yaw += angDiff(away, this.yaw) * 0.035;""")
-# sumps and pits count as the gate
-rep("""        if (this.y > S.wl + 0.3) { this.sump = null; this.flow = null; this.pickMode(MODE.passage); }""",
-    """        if (this.y > S.wl + 0.3) { this.sump = null; this.flow = null; this.gated = true; this.pickMode(MODE.passage); }""")
-rep("""          if (P.cavern) this.pickMode(MODE.cavern); else this.pickMode(MODE.passage);
-          this.pit = null;""",
-    """          if (P.cavern) this.pickMode(MODE.cavern); else this.pickMode(MODE.passage);
-          this.pit = null; this.gated = true;""")
-# the exit is claimed only past a sump or a pit; if the line has had neither, it gets one now
-rep("""    if (this.kind === 'trunk' && !exitClaimed && !this.sump && !this.pit && Math.hypot(this.x, this.z) > EXIT_AT) { exitClaimed = true; this.exit = true; this.target = null; this.stream = null; this.flow = null; }""",
-    """    if (this.kind === 'trunk' && !exitClaimed && !this.sump && !this.pit && Math.hypot(this.x, this.z) > EXIT_AT) {
-      if (this.gated) { exitClaimed = true; this.exit = true; this.target = null; this.stream = null; this.flow = null; }
-      else if (this.pinch === 0 && !this.stream) {                // the way out is through the water: one committed sump before the climb
-        this.stream = null; this.flow = null; this.pickMode(MODE.sump);
-        if (this.sump) { this.sump.left = wr(11, 19); this.sump.bellAt = this.sump.left > 14 ? this.sump.left * wr(0.45, 0.6) : null; this.sump.trap = false; }
-        else this.gated = true;                                    // too deep for a sump here: the depth was the price
-      }
-    }""")
+rep("""  // breath
+  if (player.under) player.breath -= dt / BREATH_S; else player.breath = Math.min(1, player.breath + dt / 4);
+  if (player.breath <= 0) { player.breath = 0; die('DROWNED', 'the water took you', 'drowned'); }""",
+"""  // breath — and bad air: some dead ends have none worth breathing
+  player.foul = !player.under && G.foulAt(player.x, player.y + 0.5, player.z);
+  if (player.under) player.breath -= dt / BREATH_S;
+  else if (player.foul) { player.breath -= dt / (BREATH_S * 3.2); foulT += dt; if (foulT > 4) teach('foul', 'the air is thick and your head hurts. this pocket has no air in it. back out'); }
+  else { player.breath = Math.min(1, player.breath + dt / (foulT > 0 ? 12 : 4)); foulT = 0; }
+  if (player.breath <= 0) { player.breath = 0; if (player.foul) die('BAD AIR', 'you sat down for a moment. the air in that pocket had nothing in it', 'foul'); else die('DROWNED', 'the water took you', 'drowned'); }""")
+rep("""let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false;""", """let foulT = 0;
+let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false;""")
+rep("""let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0, froze: 0, crushed: 0 };""",
+    """let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0, froze: 0, crushed: 0, foul: 0 };""")
+rep("""  set('breath_labored', (1 - u) * (player.hurt ? 0.7 : 0));""",
+    """  set('breath_labored', (1 - u) * Math.max(player.hurt ? 0.7 : 0, player.foul ? 0.4 + (1 - player.breath) * 0.8 : 0));""")
+rep("""  breathM.classList.toggle('low', player.breath < 0.35);""",
+    """  breathM.classList.toggle('low', player.breath < 0.35);
+  breathM.querySelector('.tag').textContent = player.foul ? 'bad air' : 'air';""")
+rep("""r.cause === 'crushed' ? 'were buried' : 'fell'}. +25%`);""",
+    """r.cause === 'crushed' ? 'were buried' : r.cause === 'foul' ? 'stopped breathing' : 'fell'}. +25%`);""")
 open(p,'w',encoding='utf-8').write(s); print('ok')

@@ -59,7 +59,9 @@ Chambers you reach get names, written into the survey.
 ## Risks (by design)
 
 Sumps you may not have the breath for. Streams whose current strengthens toward the place they sink — swim with it
-or don't get in. Pits you can't see until you're falling. Crawls that pinch shut. Caverns whose
+or don't get in. Pits you can't see until you're falling. Loose blocks in cavern roofs that come down when something
+moves under them — you get about a second's warning. Dead-end pockets where the air has gone bad. The way out is
+never less than 340 m from where you fell in, and it is through the water. Crawls that pinch shut. Caverns whose
 far walls your torch never reaches. A torch that dies in about two minutes unless you keep shaking it — blind while you
 do. Getting wedged in a crawl. Cold that shakes the torch out of your hand. Bats. And sometimes, down the passage, a
 pair of eyes — more often the longer this cave has known you. Sometimes the beam finds something low on the floor

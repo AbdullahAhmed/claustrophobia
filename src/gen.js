@@ -45,7 +45,7 @@ function addSeg(a, b) {
               rx, ry, sy, y0: a.y, y1: b.y, rmin: Math.min(rx, ry),
               wl: a.wl !== undefined ? a.wl : b.wl, core: a.core !== false && b.core !== false,
               steep: Math.abs(b.y - a.y) > 0.6 * len,          // shafts: no sediment floor
-              algae: Math.max(a.algae || 0, b.algae || 0), tint: b.tint || a.tint || 0,
+              algae: Math.max(a.algae || 0, b.algae || 0), tint: b.tint || a.tint || 0, foul: !!(a.foul && b.foul),
               boulders: (a.boulders || []).concat(b.boulders || []),
               spel: (a.spel || []).concat(b.spel || []),
               fx: a.x, fy: a.y + CORE_H, fz: a.z, fdx: b.x - a.x, fdy: b.y - a.y, fdz: b.z - a.z, nb: b };
@@ -114,6 +114,7 @@ class Worm {
     this.tint = node.tint !== undefined ? node.tint : 0;
     this.roost = false; this.stream = null; this.flow = null;
     this.gated = false;                                          // trunks: has this line been through water or over a drop yet?
+    this.foul = false;                                           // side passages that end in still, bad air
   }
   pickMode(force) {
     R = this.rng;
@@ -232,6 +233,11 @@ class Worm {
           this.yaw += angDiff(away, this.yaw) * 0.035;
         }
       }
+      // deep dead-end pockets where the air has gone bad: nothing lives there, and neither will you
+      if (this.kind !== 'trunk' && !this.foul && this.life < 12 && (this.y < -6 || (this.mode && this.mode.name === 'crawl')) && R() < 0.06) {
+        this.foul = true; this.algae = 0;
+        if (R() < 0.4) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: R() < 0.7 ? 'bad air' : 'can\'t breathe here' });
+      }
       // a crawl that continues past a slot you can't get through
       if (this.kind !== 'trunk' && this.mode && this.mode.name === 'crawl' && R() < 0.04) { this.ry = 0.2; this.rx = 0.5; core = false; }
       if (this.stream && !this.exit) {                            // water runs downhill, gently; faster where it is about to go under
@@ -293,7 +299,7 @@ class Worm {
     const cp = Math.cos(this.pitch);
     const n = { x: this.x + Math.sin(this.yaw) * cp * STEP, y: this.y + Math.sin(this.pitch) * STEP,
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
-                algae: core ? this.algae : 0, tint: this.tint };
+                algae: core ? this.algae : 0, tint: this.tint, foul: this.foul };
     if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; }
     else if (core && this.mode && (this.mode.name === 'passage' || this.mode.name === 'bedding' || this.mode.name === 'chamber') && Math.abs(this.pitch) < 0.12 && R() < 0.07) n.wl = n.y + 0.07;   // a puddle in a low spot
     const cavern = this.mode && this.mode.name === 'cavern' && !this.pit && !this.sump;
@@ -318,6 +324,12 @@ class Worm {
         n.spel.push({ x, z, top: ceil + 0.3, len: column && this.rx > 2.0 ? ceil - n.y + 0.6 : Math.min(len, ceil - n.y - clear), r: column ? r * 1.3 : r, up: false });
         if (!column && R() < 0.6) n.spel.push({ x: x + wr(-0.3, 0.3), z: z + wr(-0.3, 0.3), top: n.y - 0.25, len: wr(0.3, 1.0) * big, r: wr(0.15, 0.4) * big, up: true });
       }
+    }
+    // a loose block in the roof of a cavern (or a big chamber): it comes down when something moves under it
+    if (core && wl === undefined && !this.pit && !this.sump && this.ry > 2.3 && R() < (cavern ? 0.12 : 0.04)) {
+      const a = R() * Math.PI * 2, d = R() * this.rx * 0.5;
+      const ceil = n.y + (1 + CY) * this.ry * Math.sqrt(Math.max(0.2, 1 - (d / this.rx) ** 2));
+      props.push({ type: 'loose', x: n.x + Math.sin(a) * d, y: ceil, z: n.z + Math.cos(a) * d, floor: n.y, r: wr(0.45, 1.0), patience: wr(1.2, 4.0), seed: R() });
     }
     addSeg(this.node, n); nodes.push(n);
     if (n.algae > 0.4 && n.i % 3 === 0) algaeNodes.push(n);
@@ -438,6 +450,10 @@ export function chunkReadyAt(x, y, z) {
 export function waterLevelAt(x, y, z) {
   const s = nearestSegAt(x, y, z);
   return s && s.wl !== undefined ? s.wl : -Infinity;
+}
+export function foulAt(x, y, z) {                          // still air with no oxygen in it
+  const s = nearestSegAt(x, y, z);
+  return !!(s && s.foul);
 }
 export function flowAt(x, y, z) {                          // {x,z,s} of moving water here, or null
   const s = nearestSegAt(x, y, z);

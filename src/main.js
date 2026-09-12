@@ -523,6 +523,7 @@ function processProps(dt) {
     else if (p.type === 'sinkhole') placeSinkhole(p);
     else if (p.type === 'roots') placeRoots(p);
     else if (p.type === 'note') placeNote(p);
+    else if (p.type === 'loose') placeLoose(p);
     else placeBones(p);
     G.props.splice(i, 1);
   }
@@ -617,7 +618,7 @@ function start() { overlay.classList.add('hidden'); running = true; }
 if (matchMedia('(pointer: coarse)').matches) $('warn').style.display = 'block';
 
 // ---------- run record ----------
-let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0, froze: 0 };
+let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0, froze: 0, crushed: 0, foul: 0 };
 try { record = Object.assign(record, JSON.parse(localStorage.getItem('karst.record') || '{}')); } catch (e) {}
 record.runs++;
 try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {}
@@ -757,7 +758,7 @@ function updateSound(dt) {
   const puff = 1 - player.stamina;
   set('breath_calm', (1 - u) * (player.hurt ? 0 : (0.35 + (player.h < 0.8 ? 0.35 : 0)) * (1 - fear) * (1 - puff)));
   set('breath_scared', (1 - u) * Math.max(fear, puff * 0.9, player.cold > 0.5 ? (player.cold - 0.5) * 1.2 : 0) * (player.hurt ? 0.5 : 1));
-  set('breath_labored', (1 - u) * (player.hurt ? 0.7 : 0));
+  set('breath_labored', (1 - u) * Math.max(player.hurt ? 0.7 : 0, player.foul ? 0.4 + (1 - player.breath) * 0.8 : 0));
   set('heartbeat', u * (0.35 + (1 - player.breath) * 0.8) + (1 - u) * fear * 0.35);
   if (loops.heartbeat) loops.heartbeat.setRate(0.9 + (1 - player.breath) * 0.6 + fear * 0.2, 1);
   // drips, somewhere on the ceiling nearby
@@ -843,6 +844,7 @@ function footstep(kind) {
 
 // ---------- player ----------
 let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2, ropeHintT = 0, blockedT = 0;
+let foulT = 0;
 let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false;                      // stuck > 0: wedged, that many wiggles still needed
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
@@ -1004,9 +1006,12 @@ function updatePlayer(dt) {
   }
   if (player.under) { player.underT += dt; bubbleT -= dt; if (bubbleT <= 0) { bubbleT = rr(2.5, 5); sfx.play('bubbles', { vol: 0.25, rate: rr(0.9, 1.2), dur: 1.0 }); } }
 
-  // breath
-  if (player.under) player.breath -= dt / BREATH_S; else player.breath = Math.min(1, player.breath + dt / 4);
-  if (player.breath <= 0) { player.breath = 0; die('DROWNED', 'the water took you', 'drowned'); }
+  // breath — and bad air: some dead ends have none worth breathing
+  player.foul = !player.under && G.foulAt(player.x, player.y + 0.5, player.z);
+  if (player.under) player.breath -= dt / BREATH_S;
+  else if (player.foul) { player.breath -= dt / (BREATH_S * 3.2); foulT += dt; if (foulT > 4) teach('foul', 'the air is thick and your head hurts. this pocket has no air in it. back out'); }
+  else { player.breath = Math.min(1, player.breath + dt / (foulT > 0 ? 12 : 4)); foulT = 0; }
+  if (player.breath <= 0) { player.breath = 0; if (player.foul) die('BAD AIR', 'you sat down for a moment. the air in that pocket had nothing in it', 'foul'); else die('DROWNED', 'the water took you', 'drowned'); }
 
   const moved = Math.hypot(player.x - px0, player.z - pz0);
   player.dist += moved;
@@ -1041,7 +1046,7 @@ function updatePlayer(dt) {
     if (!r.taken && Math.hypot(r.x - player.x, r.z - player.z) < 1.0 && Math.abs(r.y - player.y) < 1.5) {
       r.taken = true; scene.remove(r.light); scene.remove(r.lens);
       player.battery = Math.min(1, player.battery + 0.25);
-      showHint(`your own torch. still ${(r.battery * 100).toFixed(0)}% when you ${r.cause === 'drowned' ? 'drowned' : r.cause === 'froze' ? 'froze' : 'fell'}. +25%`);
+      showHint(`your own torch. still ${(r.battery * 100).toFixed(0)}% when you ${r.cause === 'drowned' ? 'drowned' : r.cause === 'froze' ? 'froze' : r.cause === 'crushed' ? 'were buried' : r.cause === 'foul' ? 'stopped breathing' : 'fell'}. +25%`);
       sfx.play('torch_click', { vol: 0.6 }); sfx.play('bones_rattle', { x: r.x, y: r.y, z: r.z, vol: 0.4, rate: 0.9 });
     }
   }
@@ -1183,6 +1188,56 @@ function updateCrosser(dt) {
   for (const c of crosserMesh.children) if (c.userData.i !== undefined) c.rotation.z = Math.sin(crosser.t * 42 + c.userData.i * 1.6) * 0.7;
   if (k >= 1) { crosser = null; crosserMesh.visible = false; }
 }
+// ---------- loose rock: the roof is not all attached ----------
+const looseGeo = new THREE.DodecahedronGeometry(1, 0), looseMat = new THREE.MeshStandardMaterial({ color: 0x8a7d6c, roughness: 0.95, flatShading: true });
+const loose = [];
+function placeLoose(p) {
+  const key = `${p.x.toFixed(0)},${p.z.toFixed(0)}`, fallen = (cave.fallen || []).includes(key);
+  const m = new THREE.Mesh(looseGeo, looseMat); m.scale.setScalar(p.r); m.rotation.set(p.seed * 6, p.seed * 17, p.seed * 3);
+  m.castShadow = true; m.receiveShadow = true; scene.add(m);
+  const fy = floorBelow(p.x, p.floor + 1.5, p.z);
+  const rest = (fy !== null ? fy : p.floor) + p.r * 0.55;
+  m.position.set(p.x, fallen ? rest : p.y - p.r * 0.25, p.z);
+  loose.push({ ...p, key, mesh: m, rest, strain: 0, state: fallen ? 'down' : 'hanging', t: 0, vy: 0 });
+}
+function updateLoose(dt) {
+  for (const L of loose) {
+    if (L.state === 'down') continue;
+    const dx = player.x - L.x, dz = player.z - L.z, hd = Math.hypot(dx, dz);
+    if (L.state === 'hanging') {
+      if (hd > 4.5 || player.y > L.y) continue;
+      const moving = Math.hypot(player.x - lastLooseX, player.z - lastLooseZ) > 0.01;
+      const load = player.sprint ? 3.0 : moving ? 1.0 : 0.15;                          // running under it is what brings it down
+      L.strain += dt * load * (1 - hd / 4.5);
+      if (L.strain > L.patience) {
+        L.state = 'warning'; L.t = 0;
+        sfx.play('rattle', { x: L.x, y: L.y, z: L.z, vol: 0.9, rate: 0.85, wet: 0.7, rolloff: 0.5 });
+        setTimeout(() => sfx.play('rockfall', { x: L.x, y: L.y, z: L.z, vol: 0.5, rate: 1.2, dur: 0.9, wet: 0.7 }), 350);
+        teach('loose', 'something moved up there. do not stand under it');
+      }
+    } else if (L.state === 'warning') {
+      L.t += dt; L.mesh.position.y = L.y - L.r * 0.25 - Math.sin(L.t * 40) * 0.02;
+      if (L.t > 1.15) { L.state = 'falling'; L.vy = 0; }
+    } else if (L.state === 'falling') {
+      L.vy -= GRAV * dt; L.mesh.position.y += L.vy * dt; L.mesh.rotation.x += dt * 2.2; L.mesh.rotation.z += dt * 1.1;
+      if (L.mesh.position.y <= L.rest) {
+        L.mesh.position.y = L.rest; L.state = 'down';
+        cave.fallen = (cave.fallen || []).concat([L.key]); saveCave();
+        sfx.play('rockslide', { x: L.x, y: L.rest, z: L.z, vol: 1.0, wet: 0.9, rolloff: 0.35 });
+        sfx.play('rumble', { x: L.x, y: L.rest, z: L.z, vol: 0.8, rate: 0.9, dur: 2.5, wet: 0.8, rolloff: 0.3 });
+        const near = hd < L.r + 0.55, close = hd < L.r + 2.2;
+        if (near && Math.abs(player.y - L.rest) < 2.2) {
+          if (L.r > 0.7 || player.hurt) { sfx.play('body_fall', { vol: 1 }); die('THE ROOF CAME DOWN', `a block the size of a car, from ${(L.y - L.rest).toFixed(0)} metres up`, 'crushed'); }
+          else { player.hurt = true; $('hurt').style.opacity = 0.8; setTimeout(() => { $('hurt').style.opacity = 0; }, 900); sfx.play('gasping', { vol: 0.8 }); showHint('it caught your leg. something is broken'); if (torchHeld && Math.random() < 0.5) dropTorch(); }
+        } else if (close) { sfx.play('gasp', { vol: 0.7 }); showHint('that was close'); }
+        for (let k = 0; k < 5; k++) setTimeout(() => sfx.play('rockfall', { x: L.x + rr(-2, 2), y: L.rest, z: L.z + rr(-2, 2), vol: 0.35, rate: rr(0.9, 1.3), dur: 0.8, wet: 0.7 }), 300 + k * 260);
+      }
+    }
+  }
+  lastLooseX = player.x; lastLooseZ = player.z;
+}
+let lastLooseX = 0, lastLooseZ = 0;
+
 // ---------- eyes ----------
 let eyes = null, eyesT = rr(90, 200);
 const eyeMat = new THREE.MeshBasicMaterial({ color: 0xd8ff9c, fog: false });
@@ -1353,6 +1408,7 @@ function hud(dt) {
   $('breathbar').style.width = (player.breath * 100).toFixed(0) + '%';
   breathM.style.opacity = player.under || player.breath < 1 ? 1 : 0;
   breathM.classList.toggle('low', player.breath < 0.35);
+  breathM.querySelector('.tag').textContent = player.foul ? 'bad air' : 'air';
   if (showDebug) {
     let meshes = 0; for (const c of G.chunks.values()) if (c.mesh) meshes++;
     const stance = player.swim ? (player.under ? 'diving' : 'swimming') : player.h > 1.4 ? 'walking' : player.h > 0.8 ? 'crouched' : 'crawling';
@@ -1387,7 +1443,7 @@ function init() {
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
-               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places };
+               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose };
 }
 init();
 
@@ -1409,6 +1465,7 @@ function stepFrame(dt) {
   processProps(dt);
   updateTorch(dt);
   updateEyes(dt);
+  updateLoose(dt);
   updateStreamSound(dt);
   waterUniforms.uTime.value += dt;
   updatePlaces(dt);
