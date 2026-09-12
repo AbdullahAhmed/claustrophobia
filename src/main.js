@@ -1526,6 +1526,23 @@ function updateFlood(dt) {
 }
 function floodFlowMul() { return 1 + 1.6 * floodLevel; }
 
+// ---------- a tremor: the whole hill shifts, once in a while ----------
+let tremorAt = rr(420, 900), tremorT = 0;
+function updateTremor(dt) {
+  if (!running || !player.alive || player.out) return;
+  if (tremorT > 0) { tremorT -= dt; camera.rotation.z += (Math.random() - 0.5) * 0.02 * Math.min(1, tremorT); camera.position.y += (Math.random() - 0.5) * 0.012 * Math.min(1, tremorT); return; }
+  if (runTime < tremorAt) return;
+  tremorAt = runTime + rr(600, 1200); tremorT = 4.5;
+  sfx.play('rumble', { vol: 1.0, rate: 0.55, dur: 6, wet: 1.0 });
+  for (let k = 0; k < 7; k++) setTimeout(() => sfx.play('rockfall', { x: player.x + rr(-14, 14), y: player.y + rr(0, 4), z: player.z + rr(-14, 14), vol: rr(0.3, 0.6), rate: rr(0.8, 1.2), dur: 1.0, wet: 0.9, rolloff: 0.5 }), 400 + k * rr(200, 600));
+  setTimeout(() => sfx.play('gasp', { vol: 0.6 }), 700);
+  // anything loose within earshot lets go
+  for (const L of loose) if (L.state === 'hanging' && Math.hypot(L.x - player.x, L.z - player.z) < 30) { L.state = 'warning'; L.t = Math.random() * 0.6; }
+  for (const r of roosts) if (!r.spooked && Math.hypot(r.x - player.x, r.z - player.z) < 25) setTimeout(() => spookRoost(r), 600);
+  showHint('the rock moved. all of it', true);
+  teach('tremor', 'that was the hill settling. it happens. what it shakes loose is the problem');
+}
+
 // ---------- the sound of moving water ----------
 let streamLoop = null, rapidsLoop = null, streamT = 0;
 function updateStreamSound(dt) {
@@ -1714,7 +1731,7 @@ function init() {
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
-               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; }, tight: (n) => { stuck = n; stuckTight = true; wiggles = 0; exhaleT = 0; } };
+               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, tremor: () => { tremorAt = 0; }, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; }, tight: (n) => { stuck = n; stuckTight = true; wiggles = 0; exhaleT = 0; } };
 }
 init();
 // warm the shaders now, not the first time a lake or a loose block comes into view (a compile can cost a quarter second)
@@ -1754,6 +1771,7 @@ function stepFrame(dt) {
   whistleT -= dt;
   updateFollower(dt);
   updateFlood(dt);
+  updateTremor(dt);
   updateOlms(dt);
   updateCollapse(dt);
   updateStreamSound(dt);
