@@ -26,7 +26,7 @@ const GRAV = 14;
 const player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, h: H_STAND, grounded: false, bob: 0, stamina: 1, sprint: false,
                  wl: -Infinity, swim: false, under: false, breath: 1, battery: 1, hurt: false,
                  airT: 0, whooshed: false, underT: 0, stepPhase: 0,
-                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false };
+                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null };
 G.focus.x = 0; G.focus.y = 0; G.focus.z = 0;
 
 // ---------- scene ----------
@@ -302,6 +302,7 @@ addEventListener('keydown', e => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'Backquote') showDebug = !showDebug;
   if (e.code === 'KeyN' && !player.alive) { newCave(); return; }
+  if (e.code === 'KeyM' && !e.repeat && running) toggleNotebook();
   if (!running || !player.alive || player.out) return;
   if (e.code === 'KeyF' && !e.repeat) shakeTorch();
   if (e.code === 'KeyT' && !e.repeat) { e.preventDefault(); openChalk(); }
@@ -349,7 +350,7 @@ function endScreen(title, sub, go) {
 }
 function die(title, why, stat) {
   if (!player.alive) return; player.alive = false; record[stat]++;
-  cave.deaths.push({ x: player.x, y: player.y, z: player.z, cause: stat, battery: player.battery, t: Date.now() });
+  cave.deaths.push({ x: player.x, y: player.y, z: player.z, cause: stat, battery: player.battery, t: Date.now(), trail: player.trail.filter((p, i) => i % 3 === 0).slice(-700) });
   cave.marks.push(...runMarks); saveCave();
   $('hurt').style.opacity = 0.9;
   setTimeout(() => endScreen(title, why, 'CLICK TO GO BACK DOWN &nbsp;·&nbsp; <span style="opacity:.6">N for a new cave</span>'), 1400);
@@ -521,8 +522,9 @@ function footstep(kind) {
 let duckT = 0, duckLevel = 0, duckHold = 0;
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
-  const f = keys.KeyW || keys.ArrowUp ? 1 : 0, b = keys.KeyS || keys.ArrowDown ? 1 : 0;
-  const l = keys.KeyA || keys.ArrowLeft ? 1 : 0, r = keys.KeyD || keys.ArrowRight ? 1 : 0;
+  const still = notebookOpen;                                 // you stop walking to write
+  const f = !still && (keys.KeyW || keys.ArrowUp) ? 1 : 0, b = !still && (keys.KeyS || keys.ArrowDown) ? 1 : 0;
+  const l = !still && (keys.KeyA || keys.ArrowLeft) ? 1 : 0, r = !still && (keys.KeyD || keys.ArrowRight) ? 1 : 0;
   const crouchKey = keys.KeyC || keys.ControlLeft;
   const sprintKey = keys.ShiftLeft || keys.ShiftRight;
   let mx = r - l, mz = f - b; const ml = Math.hypot(mx, mz); if (ml > 0) { mx /= ml; mz /= ml; }
@@ -637,6 +639,11 @@ function updatePlayer(dt) {
 
   const moved = Math.hypot(player.x - px0, player.z - pz0);
   player.dist += moved;
+  const lt = player.lastTrail;
+  if (!lt || Math.hypot(player.x - lt.x, player.z - lt.z) > 0.7 || Math.abs(player.y - lt.y) > 0.7) {
+    const pt = { x: +player.x.toFixed(1), y: +player.y.toFixed(1), z: +player.z.toFixed(1), k: player.under ? 2 : player.swim || depthW > 0.25 ? 1 : player.h < 0.8 ? 3 : 0 };
+    player.trail.push(pt); player.lastTrail = pt;
+  }
   for (const r of remains) {
     if (!r.taken && Math.hypot(r.x - player.x, r.z - player.z) < 1.0 && Math.abs(r.y - player.y) < 1.5) {
       r.taken = true; scene.remove(r.light); scene.remove(r.lens);
@@ -751,6 +758,68 @@ function updateEyes(dt) {
   }
 }
 
+// ---------- survey notebook ----------
+let notebookOpen = false, nbTimer = 0;
+const nb = $('notebook'), nbc = $('nbc');
+function toggleNotebook() {
+  notebookOpen = !notebookOpen; nb.style.display = notebookOpen ? 'block' : 'none';
+  if (notebookOpen) { drawNotebook(); sfx.play('scrape', { vol: 0.15, rate: 2.2, dur: 0.3 }); }
+}
+function drawNotebook() {
+  const ctx = nbc.getContext('2d'), W = nbc.width, H = nbc.height;
+  ctx.clearRect(0, 0, W, H);
+  // faint ruled paper
+  ctx.strokeStyle = 'rgba(120,110,95,0.18)'; ctx.lineWidth = 2;
+  for (let y = 120; y < H; y += 56) { ctx.beginPath(); ctx.moveTo(60, y); ctx.lineTo(W - 60, y); ctx.stroke(); }
+  // fit everything I know about on the page: my route, the entrance, the marks — the page scale shrinks as the survey grows
+  let x0 = Math.min(0, player.x), x1 = Math.max(0, player.x), z0 = Math.min(0, player.z), z1 = Math.max(0, player.z);
+  for (const q of player.trail) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.z < z0) z0 = q.z; if (q.z > z1) z1 = q.z; }
+  for (const d of cave.deaths) for (const q of (d.trail || [])) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.z < z0) z0 = q.z; if (q.z > z1) z1 = q.z; }
+  const S = clamp(Math.min((W - 320) / Math.max(1, x1 - x0), (H - 300) / Math.max(1, z1 - z0)), 2.5, 12);   // px per metre
+  const cx = W / 2 - (x0 + x1) / 2 * S, cz = H / 2 - (z0 + z1) / 2 * S;
+  const X = x => cx + x * S, Z = z => cz + z * S;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // surveys of the ones who came before, faint
+  for (const d of cave.deaths) {
+    if (!d.trail || d.trail.length < 2) continue;
+    ctx.strokeStyle = 'rgba(70,60,50,0.22)'; ctx.lineWidth = 2.5; ctx.setLineDash([6, 8]);
+    ctx.beginPath(); ctx.moveTo(X(d.trail[0].x), Z(d.trail[0].z));
+    for (let i = 1; i < d.trail.length; i++) ctx.lineTo(X(d.trail[i].x), Z(d.trail[i].z));
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(70,60,50,0.7)'; ctx.font = '600 30px Caveat'; ctx.fillText('✕', X(d.x) - 9, Z(d.z) + 11);
+  }
+  // my trail: pencil; blue where it was water; dotted where I crawled
+  const t = player.trail;
+  for (let i = 1; i < t.length; i++) {
+    const a = t[i - 1], b = t[i];
+    if (Math.hypot(b.x - a.x, b.z - a.z) > 6) continue;
+    ctx.strokeStyle = b.k === 1 || b.k === 2 ? 'rgba(40,90,130,0.85)' : 'rgba(45,38,32,0.85)';
+    ctx.lineWidth = b.k === 2 ? 5 : 3; ctx.setLineDash(b.k === 3 ? [4, 7] : []);
+    ctx.beginPath(); ctx.moveTo(X(a.x), Z(a.z)); ctx.lineTo(X(b.x), Z(b.z)); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // depth ticks every ~25 m of trail
+  ctx.fillStyle = 'rgba(60,52,44,0.8)'; ctx.font = '500 22px Caveat';
+  for (let i = 0; i < t.length; i += 36) ctx.fillText((-t[i].y).toFixed(0) + ' m', X(t[i].x) + 8, Z(t[i].z) - 8);
+  // chalk, in my hand
+  ctx.font = '600 26px Caveat'; ctx.fillStyle = 'rgba(40,34,28,0.9)';
+  for (const m of runMarks.concat(cave.marks)) ctx.fillText(m.text, X(m.x) + 10, Z(m.z) + 8);
+  // me
+  ctx.save(); ctx.translate(X(player.x), Z(player.z)); ctx.rotate(-player.yaw);
+  ctx.fillStyle = 'rgba(160,40,30,0.9)'; ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(9, 10); ctx.lineTo(-9, 10); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // entrance
+  ctx.font = '600 24px Caveat'; ctx.fillStyle = 'rgba(60,52,44,0.9)'; ctx.fillText('entrance', X(0) + 12, Z(0) + 8);
+  ctx.beginPath(); ctx.arc(X(0), Z(0), 7, 0, Math.PI * 2); ctx.stroke();
+  // compass rose
+  ctx.save(); ctx.translate(W - 120, 130); ctx.strokeStyle = 'rgba(60,52,44,0.8)'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(0, 0, 44, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, -44); ctx.lineTo(0, 44); ctx.moveTo(-44, 0); ctx.lineTo(44, 0); ctx.stroke();
+  ctx.fillStyle = 'rgba(60,52,44,0.9)'; ctx.font = '600 26px Caveat'; ctx.fillText('N', -8, -52); ctx.restore();
+  $('nb-title').textContent = `survey · attempt ${cave.attempts}`;
+  const dist = Math.hypot(player.x, player.z);
+  $('nb-foot').textContent = `${player.dist.toFixed(0)} m walked · ${(-player.y).toFixed(0)} m deep · ${dist.toFixed(0)} m from the entrance as the bat flies`;
+}
+
 // ---------- overlays / hud ----------
 const grainCtx = $('grain').getContext('2d');
 const grainImg = grainCtx.createImageData(320, 180);
@@ -767,6 +836,7 @@ function hud(dt) {
   fpsAcc += dt; fpsN++;
   if (fpsAcc >= 0.5) { fps = Math.round(fpsN / fpsAcc); fpsAcc = 0; fpsN = 0; }
   if (hintT > 0) { hintT -= dt; if (hintT <= 0) hint.style.opacity = 0; }
+  if (notebookOpen) { nbTimer -= dt; if (nbTimer <= 0) { nbTimer = 0.5; drawNotebook(); } }
   if (frameNo % 6) return;
   $('torchbar').style.width = (player.battery * 100).toFixed(0) + '%';
   torchM.classList.toggle('low', player.battery < 0.3);

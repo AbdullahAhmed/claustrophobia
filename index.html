@@ -40,6 +40,11 @@
   #breathm { left: 50%; top: 14px; transform: translateX(-50%); opacity: 0; transition: opacity .3s; }
   #breathm .bar i { background: var(--water); }
   #breathm.low .bar i { background: var(--warn); }
+  #notebook { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-1.2deg); width: min(72vw, 900px); height: min(78vh, 640px);
+    background: #e6dfcc; box-shadow: 0 30px 80px rgba(0,0,0,.7), inset 0 0 60px rgba(90,70,40,.25); display: none; pointer-events: none; }
+  #notebook canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #notebook .nb-title { position: absolute; left: 22px; top: 14px; font-family: var(--hand); font-size: 26px; color: #3a332c; }
+  #notebook .nb-foot { position: absolute; right: 22px; bottom: 12px; font-family: var(--hand); font-size: 18px; color: #6b6154; }
   #chalk { position: fixed; left: 50%; bottom: 18%; transform: translateX(-50%); width: 300px; padding: 8px 12px;
     background: rgba(0,0,0,.72); border: 1px solid #4a423a; color: #efe9da; font-family: var(--hand); font-size: 30px;
     outline: none; display: none; }
@@ -71,12 +76,14 @@
 <div id="hint"></div>
 <div id="hud"></div>
 <input id="chalk" maxlength="26" spellcheck="false" autocomplete="off" placeholder="chalk…">
+<div id="notebook"><canvas id="nbc" width="1800" height="1280"></canvas><div class="nb-title" id="nb-title">survey</div><div class="nb-foot" id="nb-foot"></div></div>
 <div id="overlay"><div class="box">
   <h1 id="ov-title">KARST</h1>
   <div class="sub" id="ov-sub">the cave does not end. somewhere, it opens.</div>
   <p id="ov-body"><b>W A S D</b> walk &nbsp;·&nbsp; <b>mouse</b> look &nbsp;·&nbsp; <b>C</b> crouch / dive<br>
      low ceilings put you on your belly &nbsp;·&nbsp; <b>space</b> hop / surface<br>
-     <b>shift</b> run (you will not see the hole) &nbsp;·&nbsp; <b>F</b> shake the torch (blind while you do) &nbsp;·&nbsp; <b>T</b> chalk<br>
+     <b>shift</b> run (you will not see the hole) &nbsp;·&nbsp; <b>F</b> shake the torch (blind while you do)<br>
+     <b>T</b> chalk on the wall &nbsp;·&nbsp; <b>M</b> your survey — only where you have been<br>
      the water takes you if you run out of breath. the floor is not always there.<br>
      <b>esc</b> lets go of the mouse &nbsp;·&nbsp; headphones help</p>
   <div class="rec" id="ov-rec"></div>
