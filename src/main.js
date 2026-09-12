@@ -1158,6 +1158,15 @@ function updatePlayer(dt) {
   player.dist += moved;
   ropeHintT -= dt;
   if (ropeHintT <= 0) { ropeHintT = 1.5; const v = nearestVoid(); if (v && player.grounded) { showHint(player.rope > 0 ? 'a drop. E to rig the rope' : 'a drop. no rope'); surveyNote('drop', v.x, v.z); } }
+  // a stone goes over the edge; you hear it land, later, further down than you would like
+  if (moved > 0 && player.grounded) for (const v of G.voids) {
+    if (v.kicked || Math.hypot(v.x - player.x, v.z - player.z) > 2.6 || Math.abs(v.top - player.y) > 1.5) continue;
+    v.kicked = true; const h = Math.max(1, v.top - v.y), delay = Math.sqrt(2 * h / 9.8);
+    sfx.play('step_gravel', { x: v.x, y: v.top, z: v.z, vol: 0.5, rate: 1.3 });
+    setTimeout(() => sfx.play(v.wet ? 'splash_small' : 'rockfall', { x: v.x, y: v.y, z: v.z, vol: v.wet ? 0.6 : 0.45, rate: 1.2, dur: 0.7, wet: 0.9, rolloff: 0.5 }), delay * 1000);
+    if (h > 5) setTimeout(() => sfx.play('rockfall', { x: v.x, y: v.y, z: v.z, vol: 0.25, rate: 1.5, dur: 0.5, wet: 1.0, rolloff: 0.4 }), delay * 1000 + 350);
+    teach('edge', h > 5 ? 'that stone took a while to land. there is a drop here' : 'a stone went over an edge, close by');
+  }
   if (player.under && !wasUnder) surveyNote('sump', player.x, player.z);
   if (player.foul && foulT > 3) surveyNote('bad air', player.x, player.z);
   if (stuck === 0 && player.h <= 0.52 && ml > 0 && moved > 0 && !player.swim && clear < 0.62 && Math.random() < dt * 0.06) {
