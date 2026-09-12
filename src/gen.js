@@ -96,6 +96,7 @@ export const MODES = [
   { name: 'crystal', rx: [2.0, 3.4], ry: [1.8, 2.8],   len: [6, 12],  w: 0.025 },
   { name: 'stream',  rx: [1.0, 1.6], ry: [1.6, 2.6],   len: [30, 80], w: 0.10 },   // an active streamway: knee-deep, flowing, going somewhere
   { name: 'gour',    rx: [1.8, 3.2], ry: [1.5, 2.6],   len: [12, 30], w: 0.035 },  // rimstone terraces: calcite dams holding shallow pools, stepping down
+  { name: 'lake',    rx: [5.0, 9.0], ry: [3.5, 6.0],   len: [24, 44], w: 0.03 },   // a black lake in a big chamber: you swim it, in the cold, under algae
 ];
 const MODE = Object.fromEntries(MODES.map(m => [m.name, m]));
 const NOTES = {
@@ -115,7 +116,7 @@ class Worm {
     this.wander = 0; this.modeLeft = 0; this.target = null;
     this.mode = null; this.sump = null; this.pit = null; this.pinch = 0; this.exit = false; this.algae = 0;
     this.tint = node.tint !== undefined ? node.tint : 0;
-    this.roost = false; this.stream = null; this.flow = null;
+    this.roost = false; this.stream = null; this.flow = null; this.lake = null;
     this.gated = false;                                          // trunks: has this line been through water or over a drop yet?
     this.foul = false;                                           // side passages that end in still, bad air
   }
@@ -135,7 +136,9 @@ class Worm {
       for (let k = 0; k < MODES.length; k++) { r -= ws[k]; if (r <= 0) { m = MODES[k]; break; } }
       m = m || MODES[0];
     }
-    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal' || m.name === 'stream' || m.name === 'gour') && (this.age < 20 || this.exit)) m = MODES[0];
+    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal' || m.name === 'stream' || m.name === 'gour' || m.name === 'lake') && (this.age < 20 || this.exit)) m = MODES[0];
+    if (m.name === 'lake' && this.kind !== 'trunk' && this.life < 50) m = MODES[0];
+    this.lake = null;
     if (m.name === 'stream' && this.y < -30) m = MODES[0];
     if (this.tint === 5) this.tint = 0;                         // leaving a crystal pocket
     if ((m.name === 'chamber' || m.name === 'cavern') && R() < 0.4) this.roost = true;   // something sleeps on the ceiling
@@ -147,6 +150,7 @@ class Worm {
     this.modeLeft = wr(m.len[0], m.len[1]);
     this.algae = R() < (m.name === 'chamber' || m.name === 'cavern' ? 0.35 : 0.07) ? wr(0.5, 1) : 0;
     if (R() < 0.3) this.tint = (R() * 5) | 0;                    // 0 plain limestone, 1 rust, 2 ochre, 3 grey-blue, 4 copper-green
+    if (m.name === 'lake') { this.lake = { wl: this.y + 0.35, total: this.modeLeft, left: this.modeLeft }; this.algae = wr(0.7, 1); this.roost = R() < 0.5; if (R() < 0.4) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: R() < 0.5 ? 'deep. cold. swim it fast' : 'the lake. keep left' }); }
     if (m.name === 'gour') { this.algae = 0; this.tint = 0; this.pitch = Math.min(this.pitch, -0.05); props.push({ type: 'cascade', x: this.x, y: this.y + 0.6, z: this.z, wl: Math.ceil(this.y / GOUR_STEP) * GOUR_STEP + GOUR_POOL, big: false, quiet: true }); }
     if (m.name === 'stream') {
       this.stream = { s: wr(0.6, 1.1), toSump: R() < 0.55, left: this.modeLeft, wl: this.y + 0.3 };
@@ -246,6 +250,12 @@ class Worm {
       }
       // a crawl that continues past a slot you can't get through
       if (this.kind !== 'trunk' && this.mode && this.mode.name === 'crawl' && R() < 0.04) { this.ry = 0.2; this.rx = 0.5; core = false; }
+      if (this.lake && !this.exit) {                              // down into the water, along under it, and up out the far side
+        const L = this.lake; L.left -= STEP;
+        this.pitch = clamp(this.pitch * 0.6 + (L.left > L.total * 0.55 ? -0.2 : 0.2) * 0.4, -0.3, 0.3);   // wade in, swim the deep middle, wade out
+        this.wander = clamp(this.wander, -0.05, 0.05);
+        wl = L.wl;
+      }
       if (this.mode && this.mode.name === 'gour' && !this.exit) {  // terraces step down gently; each holds a pool
         this.pitch = clamp(this.pitch * 0.7 + -0.07 * 0.3 + gauss() * 0.01, -0.12, -0.03);
         this.wander = clamp(this.wander, -0.08, 0.08);
@@ -311,7 +321,7 @@ class Worm {
     const n = { x: this.x + Math.sin(this.yaw) * cp * STEP, y: this.y + Math.sin(this.pitch) * STEP,
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
                 algae: core ? this.algae : 0, tint: this.tint, foul: this.foul, gour: !!(this.mode && this.mode.name === 'gour' && !this.pit && !this.sump) };
-    if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; if (this.stream || this.sump || this.pit) n.floods = true; }   // live water: it rises when it rains up top
+    if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; if (this.stream || this.sump || this.pit || this.lake) n.floods = true; }   // live water: it rises when it rains up top
     if (this.sump && !this.sump.marked) { this.sump.marked = true; n.sump = { len: this.sump.left, bell: this.sump.bellAt !== null, trap: this.sump.trap }; sumpNodes.push(n); }
     else if (core && this.mode && (this.mode.name === 'passage' || this.mode.name === 'bedding' || this.mode.name === 'chamber') && Math.abs(this.pitch) < 0.12 && R() < 0.07) n.wl = n.y + 0.07;   // a puddle in a low spot
     const cavern = this.mode && this.mode.name === 'cavern' && !this.pit && !this.sump;

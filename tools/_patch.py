@@ -1,68 +1,34 @@
-p='src/main.js'; s=open(p,encoding='utf-8').read()
+p='src/gen.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
-# the follower: steps behind yours, when the light is low
-rep("""function footstep(kind) {
-  if (!soundsOn) return;
-  const o = { x: player.x, y: player.y, z: player.z, wet: 0.5, vary: 0.15, hrtf: false };""",
-"""let followT = rr(70, 160), following = 0, followLookedT = 0;
-function updateFollower(dt) {
-  if (!running || !player.alive || player.out) return;
-  if (following > 0) {
-    following -= dt;
-    camera.getWorldDirection(viewDir);
-    const back = -(viewDir.x * lastMoveX + viewDir.z * lastMoveZ);           // looking back along the way you came
-    if (back > 0.6 && Math.hypot(lastMoveX, lastMoveZ) > 0.01) { followLookedT += dt; if (followLookedT > 0.8) { following = 0; followT = rr(120, 260); } }
-    else followLookedT = 0;
-    return;
-  }
-  const dim = !torchHeld || torchLevel(player.battery) < 0.35;
-  if (dread > 0.25 && dim && open < 7 && !player.swim) { followT -= dt; if (followT <= 0) { following = rr(18, 40); followLookedT = 0; teach('follow', 'those are not your steps'); } }
-}
-let lastMoveX = 0, lastMoveZ = 0;
-function footstep(kind) {
-  if (!soundsOn) return;
-  const o = { x: player.x, y: player.y, z: player.z, wet: 0.5, vary: 0.15, hrtf: false };
-  lastMoveX = player.x - lastStepX; lastMoveZ = player.z - lastStepZ; lastStepX = player.x; lastStepZ = player.z;
-  if (following > 0 && kind !== 'swim' && kind !== 'crawl') {
-    // one step behind, a little late, a little heavier — six or seven metres back along the passage
-    const L = Math.hypot(lastMoveX, lastMoveZ) || 1, bx = player.x - lastMoveX / L * 6.5, bz = player.z - lastMoveZ / L * 6.5;
-    setTimeout(() => sfx.play(kind === 'wade' || kind === 'puddle' ? 'wade' : 'step_rock', { x: bx, y: player.y, z: bz, vol: 0.5, rate: 0.85, vary: 0.1, wet: 0.8, rolloff: 0.7 }), 260 + Math.random() * 120);
-  }""")
-rep("""let open = 5, openT = 0, dripT = 2, rockT = rr(60, 160), nearWater = 0, fear = 0, gaspT = 0, lastPx = 0, lastPz = 0;""",
-    """let open = 5, openT = 0, dripT = 2, rockT = rr(60, 160), nearWater = 0, fear = 0, gaspT = 0, lastPx = 0, lastPz = 0, lastStepX = 0, lastStepZ = 0;""")
-rep("""  updateLoose(dt);
-  updateFlood(dt);""", """  updateLoose(dt);
-  updateFollower(dt);
-  updateFlood(dt);""")
-# survey auto-notes: drops and sumps you have stood at
-rep("""  if (ropeHintT <= 0) { ropeHintT = 1.5; const v = nearestVoid(); if (v && player.grounded) showHint(player.rope > 0 ? 'a drop. E to rig the rope' : 'a drop. no rope'); }""",
-    """  if (ropeHintT <= 0) { ropeHintT = 1.5; const v = nearestVoid(); if (v && player.grounded) { showHint(player.rope > 0 ? 'a drop. E to rig the rope' : 'a drop. no rope'); surveyNote('drop', v.x, v.z); } }
-  if (player.under && !wasUnder) surveyNote('sump', player.x, player.z);
-  if (player.foul && foulT > 3) surveyNote('bad air', player.x, player.z);""")
-rep("""// ---------- place names: cavers name what they find ----------""",
-    """// ---------- survey notes: things worth a word on the map ----------
-const notes = [];            // {x,z,t}
-function surveyNote(t, x, z) {
-  for (const n of notes) if (n.t === t && Math.hypot(n.x - x, n.z - z) < 9) return;
-  notes.push({ t, x, z });
-}
+rep("""  { name: 'gour',    rx: [1.8, 3.2], ry: [1.5, 2.6],   len: [12, 30], w: 0.035 },  // rimstone terraces: calcite dams holding shallow pools, stepping down""",
+    """  { name: 'gour',    rx: [1.8, 3.2], ry: [1.5, 2.6],   len: [12, 30], w: 0.035 },  // rimstone terraces: calcite dams holding shallow pools, stepping down
+  { name: 'lake',    rx: [5.0, 9.0], ry: [3.5, 6.0],   len: [24, 44], w: 0.03 },   // a black lake in a big chamber: you swim it, in the cold, under algae""")
+rep("""    this.roost = false; this.stream = null; this.flow = null;""",
+    """    this.roost = false; this.stream = null; this.flow = null; this.lake = null;""")
+rep("""    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal' || m.name === 'stream' || m.name === 'gour') && (this.age < 20 || this.exit)) m = MODES[0];""",
+    """    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal' || m.name === 'stream' || m.name === 'gour' || m.name === 'lake') && (this.age < 20 || this.exit)) m = MODES[0];
+    if (m.name === 'lake' && this.kind !== 'trunk' && this.life < 50) m = MODES[0];
+    this.lake = null;""")
+rep("""    if (m.name === 'gour') { this.algae = 0;""",
+    """    if (m.name === 'lake') { this.lake = { wl: this.y + 1.9, total: this.modeLeft, left: this.modeLeft }; this.algae = wr(0.7, 1); this.roost = R() < 0.5; if (R() < 0.4) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: R() < 0.5 ? 'deep. cold. swim it fast' : 'the lake. keep left' }); }
+    if (m.name === 'gour') { this.algae = 0;""")
+rep("""      if (this.mode && this.mode.name === 'gour' && !this.exit) {  // terraces step down gently; each holds a pool""",
+    """      if (this.lake && !this.exit) {                              // down into the water, along under it, and up out the far side
+        const L = this.lake; L.left -= STEP;
+        this.pitch = clamp(this.pitch * 0.6 + (L.left > L.total * 0.5 ? -0.16 : 0.18) * 0.4, -0.3, 0.3);
+        if (this.y > L.wl - 0.6 && L.left > L.total * 0.5) this.pitch = -0.16;
+        this.wander = clamp(this.wander, -0.05, 0.05);
+        if (this.y < L.wl - 0.2) wl = L.wl;
+      }
+      if (this.mode && this.mode.name === 'gour' && !this.exit) {  // terraces step down gently; each holds a pool""")
+rep("""if (this.stream || this.sump || this.pit) n.floods = true; }""", """if (this.stream || this.sump || this.pit || this.lake) n.floods = true; }""")
+open(p,'w',encoding='utf-8').write(s)
 
-// ---------- place names: cavers name what they find ----------""")
-rep("""  // places
-  ctx.font = '600 30px Caveat'; ctx.fillStyle = 'rgba(45,38,32,0.85)';""",
-    """  // notes: drops, sumps, bad air
-  ctx.font = '500 22px Caveat'; ctx.fillStyle = 'rgba(120,40,30,0.85)';
-  for (const n of notes) ctx.fillText(n.t, X(n.x) + 8, Z(n.z) + 6);
-  // places
-  ctx.font = '600 30px Caveat'; ctx.fillStyle = 'rgba(45,38,32,0.85)';""")
-rep("""               glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })), places, pages: player.pages,""",
-    """               glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })), places, pages: player.pages, notes,""")
-rep("""if (r.places) places.push(...r.places);""", """if (r.places) places.push(...r.places); if (r.notes) notes.push(...r.notes);""")
-rep("""  cave.marks.push(...runMarks); cave.places = (cave.places || []).concat(places.filter(p => !(cave.places || []).some(q => q.name === p.name))); saveCave();""",
-    """  cave.marks.push(...runMarks); cave.places = (cave.places || []).concat(places.filter(p => !(cave.places || []).some(q => q.name === p.name)));
-  cave.notes = (cave.notes || []).concat(notes.filter(n => !(cave.notes || []).some(q => q.t === n.t && Math.hypot(q.x - n.x, q.z - n.z) < 9))); saveCave();""")
-rep("""  if (cave.pages) player.pages.push(...cave.pages);""", """  if (cave.pages) player.pages.push(...cave.pages);
-  if (cave.notes) notes.push(...cave.notes);""")
+p='src/main.js'; s=open(p,encoding='utf-8').read()
+rep("""const NAME_B = { cavern: ['Hall', 'Cathedral', 'Vault', 'Hollow', 'Chamber'],""",
+    """const NAME_B = { lake: ['Lake', 'Water', 'Mere', 'Pool'], cavern: ['Hall', 'Cathedral', 'Vault', 'Hollow', 'Chamber'],""")
+rep("""const n = sg.nb, kind = n.rx > 8 ? 'cavern' : n.tint === 5 ? 'crystal' : n.gour ? 'gour' : n.rx > 3.4 && n.ry > 2.6 ? 'chamber' : null;""",
+    """const n = sg.nb, kind = n.wl !== undefined && n.wl - n.y > 1.2 && n.rx > 4 ? 'lake' : n.rx > 8 ? 'cavern' : n.tint === 5 ? 'crystal' : n.gour ? 'gour' : n.rx > 3.4 && n.ry > 2.6 ? 'chamber' : null;""")
 open(p,'w',encoding='utf-8').write(s); print('ok')
