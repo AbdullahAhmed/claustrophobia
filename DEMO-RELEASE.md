@@ -1,6 +1,6 @@
 # Claustrophobia browser demo release candidate
 
-Validated locally on 12 September 2026. Public publication is pending browser file-upload access; this document does not certify a live deployment.
+Published and verified on 12 September 2026 at https://claustro.alphasquaredgames.com/.
 
 ## Release
 
@@ -36,8 +36,10 @@ GPU instance pools are bounded and selected unique geometries unload when distan
 
 ## Checkout and publication handoff
 
-Work is isolated at `C:\dev\claustrophobia-demo`, branch `codex/demo-release`, based on `981e748`. Another process changed and committed the original `C:\dev\claustrophobia` checkout during implementation, including newly added demo assets/modules. Its work was preserved; the original checkout was not reset or overwritten. The earlier dirty-state backup is in `artifacts\pre-visual-overhaul-20260912` under the workspace.
+Work is isolated at `C:\dev\claustrophobia-demo`, branch `codex/claustrophobia-visual-demo-v0.2`, based on `981e748`, with runtime implementation committed as `d0b35ed`. This separate branch is pushed to `AbdullahAhmed/claustrophobia` on GitHub. Another process changed and committed the original `C:\dev\claustrophobia` checkout during implementation, including newly added demo assets/modules. Its work was preserved; the original checkout was not reset or overwritten. The earlier dirty-state backup is in `artifacts\pre-visual-overhaul-20260912` under the workspace.
 
-Target: `https://claustro.alphasquaredgames.com/`. Hostinger document root was verified as `/home/u481134120/domains/alphasquaredgames.com/public_html/claustro`, containing only `default.php` at inspection. Selecting the upload archive failed with `Not allowed`; no release files were uploaded. The browser extension requires the user to enable **Allow access to file URLs** before the upload can proceed. Do not claim this release is live until public HTTPS file hashes and the public entry point have been verified.
+Target: `https://claustro.alphasquaredgames.com/`. Hostinger document root was verified as `/home/u481134120/domains/alphasquaredgames.com/public_html/claustro`, containing only `default.php` before upload. Publication used the signed-in Codex in-app browser: `runtime-first.zip` was uploaded and extracted, all 140 versioned runtime files matched their SHA-256 over cache-busted public HTTPS requests, and `index.html` was uploaded last. Both `/` and `/index.html` returned HTTP 200 with the expected SHA-256 `d758606845feec5e1f100ca1c8b58274e88b55f8342236b8a9c8cdd8990eab0f`. The public game loaded, started and paused in the Codex browser without captured warning/error logs. Pointer lock was unavailable there and the game offered its existing middle-drag fallback. The public tab was left paused.
+
+Machine-readable verification results are saved beside the release package as `public-assets-verification.json` and `public-entry-verification.json`. The original placeholder and uploaded runtime archive remain in the document root; the verified root URL serves the new demo entry page. Claude's later gameplay branch has not been merged into this visual-demo release.
 
 Two accidental nested copy directories, `assets/assets` and `vendor/vendor`, were left ignored after automatic approval review blocked deletion. They are excluded by the release allowlist. Development scripts, Blender source, repository metadata and these duplicates are not in the web package.
