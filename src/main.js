@@ -36,7 +36,7 @@ const dread = Math.min(1, (cave.attempts - 1) * 0.18 + cave.deaths.length * 0.08
 let saveT = 0;
 function saveRun() {
   if (!player.alive || player.out) return;
-  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks, rope: player.rope, cells: player.cells, kit: player.kit,
+  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks, rope: player.rope, cells: player.cells, kit: player.kit, suit: player.suit,
                glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })), places, pages: player.pages, notes,
                dist: player.dist, maxDepth: player.maxDepth, marks: runMarks, trail: player.trail.slice(-3000), t: runTime };
   saveCave();
@@ -52,7 +52,7 @@ const GRAV = 14;
 const player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, h: H_STAND, grounded: false, bob: 0, stamina: 1, sprint: false,
                  wl: -Infinity, swim: false, under: false, breath: 1, battery: 1, hurt: false,
                  airT: 0, whooshed: false, underT: 0, stepPhase: 0,
-                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0, sticks: 3, rope: 0, cells: false, kit: false, pages: [] };
+                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0, sticks: 3, rope: 0, cells: false, kit: false, suit: false, pages: [] };
 G.focus.x = 0; G.focus.y = 0; G.focus.z = 0;
 
 // ---------- scene ----------
@@ -353,7 +353,7 @@ function placeBones(p) {
   bonePiles.push({ x: p.x, y: p.y, z: p.z, r: p.rx * 0.7 + (p.big ? 3 : 0), crunched: 0, taught: false });
   if (!p.big && R() < 0.3) {
     const ax = p.x + (R() - 0.5) * 0.8, az = p.z + (R() - 0.5) * 0.8, fy = floorBelow(ax, p.y + 1.0, az);
-    if (fy !== null) { const k = R() < 0.3 ? 'page' : R() < 0.15 ? 'kit' : R() < 0.4 ? 'battery' : R() < 0.62 ? 'sticks' : R() < 0.85 ? 'rope' : 'cells'; placeCache(ax, fy, az, k, k === 'page' ? (R() < 0.35 ? composeSurvey(ax, fy, az, R) : composePage(ax, fy, az, R)) : null); }
+    if (fy !== null) { const k = R() < 0.3 ? 'page' : R() < 0.15 ? 'kit' : R() < 0.08 ? 'suit' : R() < 0.4 ? 'battery' : R() < 0.62 ? 'sticks' : R() < 0.85 ? 'rope' : 'cells'; placeCache(ax, fy, az, k, k === 'page' ? (R() < 0.35 ? composeSurvey(ax, fy, az, R) : composePage(ax, fy, az, R)) : null); }
   }
 }
 const remains = [];          // {x,y,z, taken, light}
@@ -653,7 +653,7 @@ function placeCamp(p) {
   for (let k = 0; k < 3; k++) { const q = spot(p.rx * 0.5); if (!q) continue; const m = new THREE.Mesh(bagGeo, bagMat); m.position.set(q.x, q.y + 0.2, q.z); m.rotation.y = R() * 6.28; m.scale.set(1, 0.55, 1); m.castShadow = true; scene.add(m); }
   const st = spot(p.rx * 0.3); if (st) { const m = new THREE.Mesh(stoveGeo, stoveMat); m.position.set(st.x, st.y + 0.07, st.z); scene.add(m); }
   // what they left, and what they knew
-  const kinds = ['kit', 'cells', 'rope', 'page', 'page', 'sticks'];
+  const kinds = ['kit', 'cells', 'rope', 'page', 'page', 'sticks', 'suit'];
   for (const k of kinds) { const q = spot(p.rx * 0.6); if (!q) continue; placeCache(q.x, q.y, q.z, k, k === 'page' ? (R() < 0.5 ? composeSurvey(q.x, q.y, q.z, R) : { text: ['day 11. nobody has come. we stop here tonight and decide in the morning', 'day 12. the torch is the problem. we take turns in the dark to save it', 'day 14. it rained. the way we came is under water. we are going on', 'day 9. the far side of the sump has a chamber and air. it is the only way we have not tried', 'the water rises here. do not camp low'][(R() * 5) | 0] }) : null); }
   // chalk everywhere: names, days, arrows, the last count
   const names = CAVER_NAMES.slice().sort(() => R() - 0.5).slice(0, 3);
@@ -674,7 +674,7 @@ const packGeo = new THREE.BoxGeometry(0.28, 0.2, 0.16), packMat = new THREE.Mesh
 function placeCache(x, y, z, kind, text) {
   if (kind === 'page' && (cave.pages || []).some(pg => pg.key === `${x.toFixed(0)},${z.toFixed(0)}`)) return;   // already read, on an earlier attempt
   const mesh = new THREE.Mesh(kind === 'page' ? pageGeo : packGeo, kind === 'page' ? pageMat : packMat); mesh.position.set(x, y + (kind === 'page' ? 0.015 : 0.1), z); mesh.rotation.y = rr(0, 6); if (kind !== 'page') mesh.rotation.z = rr(-0.3, 0.3); scene.add(mesh);
-  const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : kind === 'rope' ? 0xff7a5c : kind === 'cells' ? 0xffffff : kind === 'page' ? 0xf1e6cc : kind === 'kit' ? 0xff4d4d : 0x9dffb0, fog: false }));
+  const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : kind === 'rope' ? 0xff7a5c : kind === 'cells' ? 0xffffff : kind === 'page' ? 0xf1e6cc : kind === 'kit' ? 0xff4d4d : kind === 'suit' ? 0x3a6fd8 : 0x9dffb0, fog: false }));
   tag.position.set(x, y + 0.22, z); scene.add(tag);
   caches.push({ x, y, z, kind, text, taken: false, mesh, tag });
 }
@@ -1588,7 +1588,7 @@ function updatePlayer(dt) {
   player.sprint = sprintKey && ml > 0 && stance === 1 && !player.swim && player.stamina > 0.05 && !player.hurt;
   if (player.sprint) player.stamina = Math.max(0, player.stamina - dt / 7); else if (!climbing) player.stamina = Math.min(1, player.stamina + dt / (12 * (1 + player.cold)));
   // water is cold; you warm up slowly, faster when moving
-  if (player.swim || depthW > 0.3) player.cold = Math.min(1, player.cold + dt / (player.under ? 14 : 25)); else player.cold = Math.max(0, player.cold - dt / (ml > 0 ? 45 : 80));
+  if (player.swim || depthW > 0.3) player.cold = Math.min(1, player.cold + dt / ((player.under ? 14 : 25) * (player.suit ? 2.2 : 1))); else player.cold = Math.max(0, player.cold - dt / (ml > 0 ? 45 : 80));
   if (player.cold > 0.95) {
     coldT += dt;
     if (coldT > 40 && torchHeld && !coldDropped) { coldDropped = true; dropTorch(); showHint('your hands are shaking too hard to hold it'); }
@@ -1766,6 +1766,7 @@ function updatePlayer(dt) {
       if (c.kind === 'battery') { player.battery = Math.min(1, player.battery + 0.4); showHint('a dead caver\'s spare cells. +40%'); }
       else if (c.kind === 'rope') { player.rope++; showHint('a coil of rope. E at a drop to rig it'); }
       else if (c.kind === 'cells') { player.cells = true; player.battery = Math.min(1, player.battery + 0.2); showHint('lithium cells. the torch will last longer now'); }
+      else if (c.kind === 'suit') { if (player.suit) showHint('another wetsuit. you have one on'); else { player.suit = true; showHint('a wetsuit, someone’s size. the water will be half as cold', true); } }
       else if (c.kind === 'kit') { if (player.hurt) { player.hurt = false; showHint('a first-aid kit. you strap it up. it will hold', true); sfx.play('gasping', { vol: 0.4, rate: 1.1 }); } else { player.kit = true; showHint('a first-aid kit. for later'); } }
       else if (c.kind === 'page') { const pg = { key: `${c.x.toFixed(0)},${c.z.toFixed(0)}`, text: typeof c.text === 'object' ? c.text.text : c.text, survey: typeof c.text === 'object' ? c.text.survey : undefined, x: c.x, z: c.z }; player.pages.push(pg); cave.pages = (cave.pages || []).concat([pg]); saveCave(); showHint(pg.survey ? pg.text : `a page from someone\u2019s log: \u201c${pg.text}\u201d`, true); hintT = 9; sfx.play('scrape', { vol: 0.2, rate: 2.5, dur: 0.4 }); continue; }
       else { player.sticks += 2; showHint(`two glowsticks in the pack · ${player.sticks} now`); }
@@ -2308,7 +2309,7 @@ function drawNotebook() {
   ctx.fillStyle = 'rgba(60,52,44,0.9)'; ctx.font = '600 26px Caveat'; ctx.fillText('N', -8, -52); ctx.restore();
   $('nb-title').textContent = `survey · attempt ${cave.attempts}`;
   const dist = Math.hypot(player.x, player.z);
-  $('nb-foot').textContent = `${player.dist.toFixed(0)} m walked · ${(-player.y).toFixed(0)} m deep · ${dist.toFixed(0)} m from the entrance as the bat flies · ${player.sticks} glowsticks · ${player.rope} rope${player.kit ? ' · a kit' : ''}${player.cells ? ' · lithium' : ''}`;
+  $('nb-foot').textContent = `${player.dist.toFixed(0)} m walked · ${(-player.y).toFixed(0)} m deep · ${dist.toFixed(0)} m from the entrance as the bat flies · ${player.sticks} glowsticks · ${player.rope} rope${player.kit ? ' · a kit' : ''}${player.cells ? ' · lithium' : ''}${player.suit ? ' · wetsuit' : ''}`;
 }
 
 // your own bubbles, when you are under
@@ -2396,7 +2397,7 @@ function init() {
     const r = cave.run;
     player.x = r.x; player.y = r.y; player.z = r.z; player.yaw = r.yaw; player.battery = r.battery; player.breath = r.breath; player.hurt = r.hurt;
     player.dist = r.dist; player.maxDepth = r.maxDepth; player.trail = r.trail || []; runMarks.push(...(r.marks || [])); runTime = r.t || 0;
-    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.places) places.push(...r.places); if (r.notes) notes.push(...r.notes); if (r.pages) for (const pg of r.pages) if (!player.pages.some(q => q.key === pg.key)) player.pages.push(pg); if (r.rope !== undefined) player.rope = r.rope; if (r.cells) player.cells = true; if (r.kit) player.kit = true;
+    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.places) places.push(...r.places); if (r.notes) notes.push(...r.notes); if (r.pages) for (const pg of r.pages) if (!player.pages.some(q => q.key === pg.key)) player.pages.push(pg); if (r.rope !== undefined) player.rope = r.rope; if (r.cells) player.cells = true; if (r.kit) player.kit = true; if (r.suit) player.suit = true;
     for (const g of (r.glow || [])) { const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(g.x, g.y, g.z); mesh.rotation.x = Math.PI / 2; scene.add(mesh); const light = borrowLight(0x5cff7a, 1.1, 9, 1.7, g.x, g.y + 0.15, g.z); const gl = { ...g, light, mesh }; if (light) light.userData.owner = gl; glow.push(gl); }
     for (const m of runMarks) G.props.push({ type: 'mark', ...m });
     G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
