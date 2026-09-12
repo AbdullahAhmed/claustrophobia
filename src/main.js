@@ -23,7 +23,7 @@ let saveT = 0;
 function saveRun() {
   if (!player.alive || player.out) return;
   cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks, rope: player.rope, cells: player.cells,
-               glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })), places,
+               glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })), places, pages: player.pages,
                dist: player.dist, maxDepth: player.maxDepth, marks: runMarks, trail: player.trail.slice(-3000), t: runTime };
   saveCave();
 }
@@ -37,7 +37,7 @@ const GRAV = 14;
 const player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, h: H_STAND, grounded: false, bob: 0, stamina: 1, sprint: false,
                  wl: -Infinity, swim: false, under: false, breath: 1, battery: 1, hurt: false,
                  airT: 0, whooshed: false, underT: 0, stepPhase: 0,
-                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0, sticks: 3, rope: 0, cells: false };
+                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0, sticks: 3, rope: 0, cells: false, pages: [] };
 G.focus.x = 0; G.focus.y = 0; G.focus.z = 0;
 
 // ---------- scene ----------
@@ -299,7 +299,7 @@ function placeBones(p) {
   bonePiles.push({ x: p.x, y: p.y, z: p.z, r: p.rx * 0.7 + (p.big ? 3 : 0), crunched: 0, taught: false });
   if (!p.big && R() < 0.3) {
     const ax = p.x + (R() - 0.5) * 0.8, az = p.z + (R() - 0.5) * 0.8, fy = floorBelow(ax, p.y + 1.0, az);
-    if (fy !== null) placeCache(ax, fy, az, R() < 0.4 ? 'battery' : R() < 0.62 ? 'sticks' : R() < 0.85 ? 'rope' : 'cells');
+    if (fy !== null) { const k = R() < 0.3 ? 'page' : R() < 0.4 ? 'battery' : R() < 0.62 ? 'sticks' : R() < 0.85 ? 'rope' : 'cells'; placeCache(ax, fy, az, k, k === 'page' ? composePage(ax, fy, az, R) : null); }
   }
 }
 const remains = [];          // {x,y,z, taken, light}
@@ -435,11 +435,37 @@ function dropGlowstick() {
 // caches: a dead caver's pack next to some bones
 const caches = [];           // {x,y,z, kind, taken, mesh}
 const packGeo = new THREE.BoxGeometry(0.28, 0.2, 0.16), packMat = new THREE.MeshStandardMaterial({ color: 0x3b3a36, roughness: 0.9, flatShading: true });
-function placeCache(x, y, z, kind) {
-  const mesh = new THREE.Mesh(packGeo, packMat); mesh.position.set(x, y + 0.1, z); mesh.rotation.y = rr(0, 6); mesh.rotation.z = rr(-0.3, 0.3); scene.add(mesh);
-  const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : kind === 'rope' ? 0xff7a5c : kind === 'cells' ? 0xffffff : 0x9dffb0, fog: false }));
+function placeCache(x, y, z, kind, text) {
+  if (kind === 'page' && (cave.pages || []).some(pg => pg.key === `${x.toFixed(0)},${z.toFixed(0)}`)) return;   // already read, on an earlier attempt
+  const mesh = new THREE.Mesh(kind === 'page' ? pageGeo : packGeo, kind === 'page' ? pageMat : packMat); mesh.position.set(x, y + (kind === 'page' ? 0.015 : 0.1), z); mesh.rotation.y = rr(0, 6); if (kind !== 'page') mesh.rotation.z = rr(-0.3, 0.3); scene.add(mesh);
+  const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : kind === 'rope' ? 0xff7a5c : kind === 'cells' ? 0xffffff : kind === 'page' ? 0xf1e6cc : 0x9dffb0, fog: false }));
   tag.position.set(x, y + 0.22, z); scene.add(tag);
-  caches.push({ x, y, z, kind, taken: false, mesh, tag });
+  caches.push({ x, y, z, kind, text, taken: false, mesh, tag });
+}
+const pageGeo = new THREE.PlaneGeometry(0.21, 0.28).rotateX(-Math.PI / 2), pageMat = new THREE.MeshStandardMaterial({ color: 0xd9ccb0, roughness: 0.9, side: THREE.DoubleSide });
+// a page from someone's log: what they learned about the rock near where they stopped
+const DIRS8 = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+function bearing(dx, dz) { const a = Math.atan2(dx, -dz); return DIRS8[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8]; }
+const CAVER_NAMES = ['Anna', 'Tomas', 'Priya', 'Dan', 'Lise', 'Marek', 'Ola', 'Ben', 'Ines', 'Kit'];
+function composePage(x, y, z, R) {
+  const near = (arr, lim) => { let b = null, bd = lim; for (const n of arr) { const d = Math.hypot(n.x - x, n.z - z); if (d < bd && d > 4) { bd = d; b = n; } } return b; };
+  const name = CAVER_NAMES[(R() * CAVER_NAMES.length) | 0], day = 2 + ((R() * 9) | 0);
+  const opts = [];
+  const sp = near(G.sumpNodes, 70);
+  if (sp) opts.push(sp.sump.trap ? `the sump ${bearing(sp.x - x, sp.z - z)} of here does not come up again. ${name} went in first. don\u2019t`
+                                : `the sump ${bearing(sp.x - x, sp.z - z)} of here goes about ${Math.round(sp.sump.len / 5) * 5} m under. ${sp.sump.bell ? 'there is air about halfway' : 'no air till the far side'}`);
+  const vd = near(G.voids, 70);
+  if (vd) opts.push(`the drop ${bearing(vd.x - x, vd.z - z)} of here is ${Math.round(vd.top - vd.y)} m. ${vd.wet ? 'deep water at the bottom' : 'rock at the bottom. we lowered ' + name + ' on the rope'}`);
+  const fl = near(G.nodes.filter(n => n.foul), 60);
+  if (fl) opts.push(`the passage ${bearing(fl.x - x, fl.z - z)} of here has bad air. ${name}\u2019s head hurt after a minute. we came out`);
+  const lo = near(G.props.filter(pp => pp.type === 'loose').concat(loose), 60);
+  if (lo) opts.push(`the roof of the chamber ${bearing(lo.x - x, lo.z - z)} moves when you walk under it. don\u2019t run in there`);
+  const st = near(G.streamNodes, 70);
+  if (st) opts.push(`there is a stream ${bearing(st.x - x, st.z - z)} of here. it goes downhill. ${R() < 0.5 ? 'we did not follow it' : 'follow the water'}`);
+  if (opts.length && R() < 0.85) return `day ${day}. ` + opts[(R() * opts.length) | 0];
+  const tr = near(G.nodes.filter(n => G.trunkIds.has(n.w)), 80);
+  if (tr) { const nx = G.nodes.find(n => n.w === tr.w && n.i === tr.i + 8); if (nx) return `day ${day}. the main way runs ${bearing(nx.x - tr.x, nx.z - tr.z)} from here. it keeps going. ${name} thinks it opens`; }
+  return [`day ${day}. torch at ${(R() * 30 + 5) | 0}%. ${name} has stopped talking`, `day ${day}. we heard something walking. it was not one of us`, `day ${day}. ${name} says leave the pack. i am leaving the pack`][(R() * 3) | 0];
 }
 // notes from the ones who came before, written on the nearest wall at head height
 function placeNote(p) {
@@ -1032,6 +1058,7 @@ function updatePlayer(dt) {
       if (c.kind === 'battery') { player.battery = Math.min(1, player.battery + 0.4); showHint('a dead caver\'s spare cells. +40%'); }
       else if (c.kind === 'rope') { player.rope++; showHint('a coil of rope. E at a drop to rig it'); }
       else if (c.kind === 'cells') { player.cells = true; player.battery = Math.min(1, player.battery + 0.2); showHint('lithium cells. the torch will last longer now'); }
+      else if (c.kind === 'page') { const pg = { key: `${c.x.toFixed(0)},${c.z.toFixed(0)}`, text: c.text, x: c.x, z: c.z }; player.pages.push(pg); cave.pages = (cave.pages || []).concat([pg]); saveCave(); showHint(`a page from someone\u2019s log: \u201c${c.text}\u201d`, true); hintT = 9; sfx.play('scrape', { vol: 0.2, rate: 2.5, dur: 0.4 }); continue; }
       else { player.sticks += 2; showHint(`two glowsticks in the pack · ${player.sticks} now`); }
       sfx.play('rattle', { vol: 0.5, rate: 0.7 }); sfx.play('torch_click', { vol: 0.4 });
     }
@@ -1334,8 +1361,9 @@ function drawNotebook() {
   let x0 = Math.min(0, player.x), x1 = Math.max(0, player.x), z0 = Math.min(0, player.z), z1 = Math.max(0, player.z);
   for (const q of player.trail) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.z < z0) z0 = q.z; if (q.z > z1) z1 = q.z; }
   for (const d of cave.deaths) for (const q of (d.trail || [])) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.z < z0) z0 = q.z; if (q.z > z1) z1 = q.z; }
-  const S = clamp(Math.min((W - 320) / Math.max(1, x1 - x0), (H - 300) / Math.max(1, z1 - z0)), 2.5, 12);   // px per metre
-  const cx = W / 2 - (x0 + x1) / 2 * S, cz = H / 2 - (z0 + z1) / 2 * S;
+  const margin = player.pages.length ? 400 : 0;                                                          // pages I found go down the right-hand side
+  const S = clamp(Math.min((W - 320 - margin) / Math.max(1, x1 - x0), (H - 300) / Math.max(1, z1 - z0)), 2.5, 12);   // px per metre
+  const cx = (W - margin) / 2 - (x0 + x1) / 2 * S, cz = H / 2 - (z0 + z1) / 2 * S;
   const X = x => cx + x * S, Z = z => cz + z * S;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   // surveys of the ones who came before, faint
@@ -1376,6 +1404,20 @@ function drawNotebook() {
   // entrance
   ctx.font = '600 24px Caveat'; ctx.fillStyle = 'rgba(60,52,44,0.9)'; ctx.fillText('entrance', X(0) + 12, Z(0) + 8);
   ctx.beginPath(); ctx.arc(X(0), Z(0), 7, 0, Math.PI * 2); ctx.stroke();
+  // found pages, copied out
+  if (player.pages.length) {
+    const px = W - 400, maxW = 330; let py = 230;
+    ctx.strokeStyle = 'rgba(60,52,44,0.35)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px - 30, 120); ctx.lineTo(px - 30, H - 90); ctx.stroke();
+    ctx.font = '600 26px Caveat'; ctx.fillStyle = 'rgba(60,52,44,0.9)'; ctx.fillText('pages we found', px, 200);
+    ctx.font = '500 24px Caveat'; ctx.fillStyle = 'rgba(45,38,32,0.85)';
+    for (const pg of player.pages) {
+      const words = pg.text.split(' '); let line = '';
+      for (const w of words) { const test = line ? line + ' ' + w : w; if (ctx.measureText(test).width > maxW) { ctx.fillText(line, px, py); py += 30; line = w; } else line = test; }
+      if (line) { ctx.fillText(line, px, py); py += 30; }
+      ctx.font = '600 30px Caveat'; ctx.fillText('\u00b7', X(pg.x) - 5, Z(pg.z) + 10); ctx.font = '500 24px Caveat';
+      py += 22; if (py > H - 120) break;
+    }
+  }
   // compass rose
   ctx.save(); ctx.translate(W - 120, 130); ctx.strokeStyle = 'rgba(60,52,44,0.8)'; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.arc(0, 0, 44, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, -44); ctx.lineTo(0, 44); ctx.moveTo(-44, 0); ctx.lineTo(44, 0); ctx.stroke();
@@ -1423,6 +1465,7 @@ function init() {
   for (const d of cave.deaths) G.props.push({ type: 'remains', ...d });
   for (const m of cave.marks) G.props.push({ type: 'mark', ...m });
   if (cave.places) places.push(...cave.places);
+  if (cave.pages) player.pages.push(...cave.pages);
   G.scanChunks(1, true, disposeChunk); processQueue(1e9, true);
   for (let y = -3; y < 3; y += 0.1) if (G.fieldAt(0, y + 0.35, 0) < -0.3 && G.fieldAt(0, y + 1.2, 0) < -0.3) { player.y = y; break; }
   player.yaw = Math.PI;
@@ -1430,7 +1473,7 @@ function init() {
     const r = cave.run;
     player.x = r.x; player.y = r.y; player.z = r.z; player.yaw = r.yaw; player.battery = r.battery; player.breath = r.breath; player.hurt = r.hurt;
     player.dist = r.dist; player.maxDepth = r.maxDepth; player.trail = r.trail || []; runMarks.push(...(r.marks || [])); runTime = r.t || 0;
-    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.places) places.push(...r.places); if (r.rope !== undefined) player.rope = r.rope; if (r.cells) player.cells = true;
+    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.places) places.push(...r.places); if (r.pages) for (const pg of r.pages) if (!player.pages.some(q => q.key === pg.key)) player.pages.push(pg); if (r.rope !== undefined) player.rope = r.rope; if (r.cells) player.cells = true;
     for (const g of (r.glow || [])) { const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(g.x, g.y, g.z); mesh.rotation.x = Math.PI / 2; scene.add(mesh); const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.set(g.x, g.y + 0.15, g.z); scene.add(light); glow.push({ ...g, light, mesh }); }
     for (const m of runMarks) G.props.push({ type: 'mark', ...m });
     G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
@@ -1443,7 +1486,7 @@ function init() {
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
-               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose };
+               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage };
 }
 init();
 

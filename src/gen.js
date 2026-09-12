@@ -33,6 +33,8 @@ export const props = [];                       // things for main.js to place: {
 export const algaeNodes = [];
 export const streamNodes = [];          // flowing-water nodes, for the sound of it
 export const voids = [];                       // pit bottoms: {x,y,z, top}
+export const sumpNodes = [];                   // where each sump begins, with what it is: {len, bell, trap}
+export const trunkIds = new Set();
 export let exit = null;
 let exitClaimed = false;
 export const ckey = (cx, cy, cz) => cx + ',' + cy + ',' + cz;
@@ -108,7 +110,7 @@ class Worm {
     this.node = node; this.x = node.x; this.y = node.y; this.z = node.z;
     this.yaw = yaw; this.pitch = pitch;
     this.rx = node.rx; this.ry = node.ry; this.trx = node.rx; this.try = node.ry;
-    this.kind = kind; this.life = life; this.age = 0; this.n = 0;
+    this.kind = kind; this.life = life; this.age = 0; this.n = 0; if (kind === 'trunk') trunkIds.add(id);
     this.wander = 0; this.modeLeft = 0; this.target = null;
     this.mode = null; this.sump = null; this.pit = null; this.pinch = 0; this.exit = false; this.algae = 0;
     this.tint = node.tint !== undefined ? node.tint : 0;
@@ -301,6 +303,7 @@ class Worm {
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
                 algae: core ? this.algae : 0, tint: this.tint, foul: this.foul };
     if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; }
+    if (this.sump && !this.sump.marked) { this.sump.marked = true; n.sump = { len: this.sump.left, bell: this.sump.bellAt !== null, trap: this.sump.trap }; sumpNodes.push(n); }
     else if (core && this.mode && (this.mode.name === 'passage' || this.mode.name === 'bedding' || this.mode.name === 'chamber') && Math.abs(this.pitch) < 0.12 && R() < 0.07) n.wl = n.y + 0.07;   // a puddle in a low spot
     const cavern = this.mode && this.mode.name === 'cavern' && !this.pit && !this.sump;
     if (cavern && R() < 0.6) {

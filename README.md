@@ -54,7 +54,9 @@ All recordings are **CC0** from Freesound; see [`sounds/CREDITS.md`](sounds/CRED
 Passages, chambers, crawls, squeezes, canyons, bedding planes; flooded sumps with air bells; pits with plunge pools;
 boulder caverns; crystal pockets; dripstone; bioluminescent algae; cascades; active streamways that run downhill in
 steps and sometimes go under; bat roosts; mineral tints by region; bones, and the packs of the cavers who left them.
-Chambers you reach get names, written into the survey.
+Chambers you reach get names, written into the survey. Some packs hold a page from their owner's log — what they
+learned about the sump, the drop, the roof or the air nearby — copied into the margin of your survey and kept for
+every later attempt at that cave.
 
 ## Risks (by design)
 
