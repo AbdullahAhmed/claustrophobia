@@ -775,7 +775,7 @@ function updateSound(dt) {
     for (const v of G.voids) { const d = Math.hypot(v.x - player.x, v.top - player.y, v.z - player.z); if (d < bd && player.y > v.y + 1) { bd = d; best = v; } }
     if (best) {
       if (!voidLoop) voidLoop = sfx.loop('rumble', { x: best.x, y: best.y + 1, z: best.z, rolloff: 0.6, wet: 0.8 });
-      if (bd < 8) teach('pit', 'hear that? the air moves where the floor doesn't. look down before you step');
+      if (bd < 8) teach('pit', 'hear that? the air moves where the floor doesn’t. look down before you step');
       voidLoop.setPos(best.x, best.y + 1, best.z);
       voidLoop.setVol(0.55 * clamp(1 - bd / 14, 0, 1) * (1 - u), 0.5);
     } else if (voidLoop) voidLoop.setVol(0, 0.5);
@@ -792,7 +792,7 @@ function footstep(kind) {
   for (const b of bonePiles) {
     if (Math.hypot(b.x - player.x, b.z - player.z) < b.r && Math.abs(b.y - player.y) < 2 && b.crunched < performance.now() - 4000) {
       b.crunched = performance.now(); sfx.play('bone_crunch', { ...o, vol: 0.6 });
-      teach('bones', 'bones. someone came this way. their pack, if it's here, is worth a look — and T writes on the wall');
+      teach('bones', 'bones. someone came this way. their pack, if it’s here, is worth a look — and T writes on the wall');
     }
   }
 }
@@ -847,11 +847,11 @@ function updatePlayer(dt) {
   player.under = player.wl > eyeY;
   const stance = player.h > 1.4 ? 1 : player.h > 0.8 ? 0.55 : 0.3;
   if (stance < 1 && !player.swim) teach('low', 'low ceiling — you duck on your own. lower still and you crawl. hold C to stay down');
-  if (player.swim) teach('swim', 'chest deep: you're swimming. look down + W or C to dive. space to surface. watch your breath');
-  if (player.under) teach('under', 'under. the bar at the top is your breath. turn back at half if you can't see air');
-  if (player.battery < 0.3) teach('torch', 'the torch is dying. tap F to shake it — you're blind while you do');
-  if (player.hurt) teach('hurt', 'something is broken. you're slower now, and a second fall will finish you');
-  if (player.cold > 0.6) teach('cold', 'you're cold. keep moving to warm up. too long and your hands stop working');
+  if (player.swim) teach('swim', 'chest deep: you’re swimming. look down + W or C to dive. space to surface. watch your breath');
+  if (player.under) teach('under', 'under. the bar at the top is your breath. turn back at half if you can’t see air');
+  if (player.battery < 0.3) teach('torch', 'the torch is dying. tap F to shake it — you’re blind while you do');
+  if (player.hurt) teach('hurt', 'something is broken. you’re slower now, and a second fall will finish you');
+  if (player.cold > 0.6) teach('cold', 'you’re cold. keep moving to warm up. too long and your hands stop working');
   player.sprint = sprintKey && ml > 0 && stance === 1 && !player.swim && player.stamina > 0.05 && !player.hurt;
   if (player.sprint) player.stamina = Math.max(0, player.stamina - dt / 7); else player.stamina = Math.min(1, player.stamina + dt / (12 * (1 + player.cold)));
   // water is cold; you warm up slowly, faster when moving
