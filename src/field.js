@@ -3,6 +3,7 @@
 export const VOXEL = 0.4, N = 20, M = N + 1, CHUNK = VOXEL * N;   // 8 m chunks of 0.4 m voxels
 export const CY = 0.62;                                           // capsule centre sits this * ry above the floor line
 export const NOISE_AMP = 0.28;
+export const GOUR_STEP = 0.5, GOUR_POOL = 0.2;                    // rimstone terrace height; pool depth behind each lip (coarse: the voxels are 0.4 m)
 export const CORE_R = 0.42, CORE_H = 0.34;                        // guaranteed crawl tube along every unpinched passage (wider than a voxel: the grid has to be able to hold it)
 
 let SEED = 1;
@@ -99,7 +100,13 @@ export function buildField(list, cx, cy, cz, into) {
           const amp = NOISE_AMP * clamp((bs.rmin - 0.35) / 0.9, 0.25, 1);   // narrow passages get less noise: they have no width to spare
           v += amp * fbm(x * 1.1, y * 1.1, z * 1.1);
           if (!bs.steep) {
-            const floorY = lerp(bs.y0, bs.y1, bt) + (0.08 + 0.03 * bs.ry) * vnoise(x * 0.9 + 3, y * 0.9, z * 0.9 + 7);
+            let floorY;
+            if (bs.gour) {                                          // rimstone: flat calcite terraces stepping down, each with a lip at its lower edge holding a pool
+              const fl = lerp(bs.y0, bs.y1, bt) + 0.05 * vnoise(x * 1.3, y, z * 1.3), q = fl / GOUR_STEP, tq = Math.ceil(q), frac = tq - q;
+              const lip = 0.34 * (1 - smooth(0.0, 0.13, frac)) * (0.75 + 0.25 * vnoise(x * 4, 0, z * 4));
+              floorY = tq * GOUR_STEP + lip;
+              const above = y - floorY; if (above < 0.6) cal = Math.max(cal, clamp(1 - above / 0.6, 0, 1));
+            } else floorY = lerp(bs.y0, bs.y1, bt) + (0.08 + 0.03 * bs.ry) * vnoise(x * 0.9 + 3, y * 0.9, z * 0.9 + 7);
             const f = floorY - y; if (f > v) v = f;                 // sediment fill -> walkable floor
           }
           for (let q = 0; q < bs.boulders.length; q++) {            // breakdown blocks on cavern floors: a sphere with a skirt down into the floor, so nothing can wedge under it

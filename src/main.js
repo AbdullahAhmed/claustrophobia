@@ -64,7 +64,7 @@ rockMat.onBeforeCompile = (sh) => {
     .replace('#include <common>', 'varying float vGlow;\n#include <common>')
     .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.10, 0.75, 0.55) * vGlow * vGlow * 0.32;');
 };
-const waterMat = new THREE.MeshStandardMaterial({ color: 0x0a2226, roughness: 0.08, metalness: 0.3, emissive: 0x03120f,
+const waterMat = new THREE.MeshStandardMaterial({ color: 0x0a2226, roughness: 0.08, metalness: 0.3, emissive: 0x03120f, vertexColors: true,
                                                   transparent: true, opacity: 0.84, side: THREE.DoubleSide, depthWrite: false });
 const waterUniforms = { uTime: { value: 0 } };
 waterMat.onBeforeCompile = (sh) => {
@@ -209,12 +209,14 @@ function meshChunk(ch, out) {
   }
   if (out.water) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(out.water, 3));
-    const fl = new Float32Array(out.water.length), W = out.water;
+    const fl = new Float32Array(out.water.length), col = new Float32Array(out.water.length / 3 * 4).fill(1), W = out.water;
     for (let i = 0; i < W.length; i += 18) {                        // one lookup per quad
       const f = G.flowAt(W[i] + 0.2, W[i + 1], W[i + 2] + 0.2);
       if (f) for (let k = 0; k < 18; k += 3) { fl[i + k] = f.x * f.s; fl[i + k + 2] = f.z * f.s; }
+      const sg = G.nearestSegAt(W[i] + 0.2, W[i + 1], W[i + 2] + 0.2);
+      if (sg && sg.gour) for (let k = 0; k < 6; k++) { const c = (i / 3 + k) * 4; col[c] = 1.9; col[c + 1] = 2.3; col[c + 2] = 2.1; col[c + 3] = 0.45; }   // shallow clear water over white calcite
     }
-    g.setAttribute('aFlow', new THREE.BufferAttribute(fl, 3));
+    g.setAttribute('aFlow', new THREE.BufferAttribute(fl, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 4));
     g.computeVertexNormals(); g.computeBoundingSphere();
     ch.water = new THREE.Mesh(g, waterMat); waterGroup.add(ch.water);
   }
@@ -1348,13 +1350,13 @@ function updateStreamSound(dt) {
 
 // ---------- place names: cavers name what they find ----------
 const NAME_A = ['Long', 'Broken', 'Quiet', 'Black', 'High', 'Wet', 'Low', 'Cold', 'Far', 'Old', 'Grey', 'Lost'];
-const NAME_B = { cavern: ['Hall', 'Cathedral', 'Vault', 'Hollow', 'Chamber'], chamber: ['Room', 'Chamber', 'Alcove', 'Gallery'], crystal: ['Pocket', 'Grotto', 'Vein'] };
+const NAME_B = { cavern: ['Hall', 'Cathedral', 'Vault', 'Hollow', 'Chamber'], chamber: ['Room', 'Chamber', 'Alcove', 'Gallery'], crystal: ['Pocket', 'Grotto', 'Vein'], gour: ['Terraces', 'Steps', 'Pools', 'Stairs'] };
 const places = [];           // {x,y,z, name, kind}
 let placeT = 0, lastNamed = -1e9;
 function updatePlaces(dt) {
   placeT -= dt; if (placeT > 0) return; placeT = 1.0;
   const sg = G.nearestSegAt(player.x, player.y + 0.5, player.z); if (!sg || !sg.nb) return;
-  const n = sg.nb, kind = n.rx > 8 ? 'cavern' : n.tint === 5 ? 'crystal' : n.rx > 3.4 && n.ry > 2.6 ? 'chamber' : null;
+  const n = sg.nb, kind = n.rx > 8 ? 'cavern' : n.tint === 5 ? 'crystal' : n.gour ? 'gour' : n.rx > 3.4 && n.ry > 2.6 ? 'chamber' : null;
   if (!kind) return;
   if (kind !== 'cavern' && runTime - lastNamed < 75) return;               // naming is an event, not a label printer
   for (const pl of places) if (Math.hypot(pl.x - player.x, pl.z - player.z) < (kind === 'cavern' ? 60 : 35)) return;

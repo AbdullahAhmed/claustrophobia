@@ -1,7 +1,7 @@
 // Karst — cave generator. Worm graph (floor lines) → distance field → marching cubes.
 // Pure data: no three.js objects here. main.js turns the arrays into meshes.
 import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
-import { VOXEL, N, M, CHUNK, CY, NOISE_AMP, CORE_H, setSeed, lerp, clamp, hash3, vnoise, fbm, segDist, coreDist, nearestSeg, gridAt, buildChunkData } from './field.js';
+import { VOXEL, N, M, CHUNK, CY, NOISE_AMP, CORE_H, GOUR_STEP, GOUR_POOL, setSeed, lerp, clamp, hash3, vnoise, fbm, segDist, coreDist, nearestSeg, gridAt, buildChunkData } from './field.js';
 export { VOXEL, N, M, CHUNK, CY, lerp, clamp, hash3, vnoise, fbm, nearestSeg, gridAt };
 
 // ---------- tunables ----------
@@ -47,7 +47,7 @@ function addSeg(a, b) {
               rx, ry, sy, y0: a.y, y1: b.y, rmin: Math.min(rx, ry),
               wl: a.wl !== undefined ? a.wl : b.wl, core: a.core !== false && b.core !== false,
               steep: Math.abs(b.y - a.y) > 0.6 * len,          // shafts: no sediment floor
-              algae: Math.max(a.algae || 0, b.algae || 0), tint: b.tint || a.tint || 0, foul: !!(a.foul && b.foul),
+              algae: Math.max(a.algae || 0, b.algae || 0), tint: b.tint || a.tint || 0, foul: !!(a.foul && b.foul), gour: !!(a.gour && b.gour),
               boulders: (a.boulders || []).concat(b.boulders || []),
               spel: (a.spel || []).concat(b.spel || []),
               fx: a.x, fy: a.y + CORE_H, fz: a.z, fdx: b.x - a.x, fdy: b.y - a.y, fdz: b.z - a.z, nb: b };
@@ -95,6 +95,7 @@ export const MODES = [
   { name: 'cavern',  rx: [9, 16],    ry: [7, 12],      len: [25, 50], w: 0.03 },
   { name: 'crystal', rx: [2.0, 3.4], ry: [1.8, 2.8],   len: [6, 12],  w: 0.025 },
   { name: 'stream',  rx: [1.0, 1.6], ry: [1.6, 2.6],   len: [30, 80], w: 0.10 },   // an active streamway: knee-deep, flowing, going somewhere
+  { name: 'gour',    rx: [1.8, 3.2], ry: [1.5, 2.6],   len: [12, 30], w: 0.035 },  // rimstone terraces: calcite dams holding shallow pools, stepping down
 ];
 const MODE = Object.fromEntries(MODES.map(m => [m.name, m]));
 const NOTES = {
@@ -133,7 +134,7 @@ class Worm {
       for (let k = 0; k < MODES.length; k++) { r -= ws[k]; if (r <= 0) { m = MODES[k]; break; } }
       m = m || MODES[0];
     }
-    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal' || m.name === 'stream') && (this.age < 20 || this.exit)) m = MODES[0];
+    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal' || m.name === 'stream' || m.name === 'gour') && (this.age < 20 || this.exit)) m = MODES[0];
     if (m.name === 'stream' && this.y < -30) m = MODES[0];
     if (this.tint === 5) this.tint = 0;                         // leaving a crystal pocket
     if ((m.name === 'chamber' || m.name === 'cavern') && R() < 0.4) this.roost = true;   // something sleeps on the ceiling
@@ -145,6 +146,7 @@ class Worm {
     this.modeLeft = wr(m.len[0], m.len[1]);
     this.algae = R() < (m.name === 'chamber' || m.name === 'cavern' ? 0.35 : 0.07) ? wr(0.5, 1) : 0;
     if (R() < 0.3) this.tint = (R() * 5) | 0;                    // 0 plain limestone, 1 rust, 2 ochre, 3 grey-blue, 4 copper-green
+    if (m.name === 'gour') { this.algae = 0; this.tint = 0; this.pitch = Math.min(this.pitch, -0.05); props.push({ type: 'cascade', x: this.x, y: this.y + 0.6, z: this.z, wl: Math.ceil(this.y / GOUR_STEP) * GOUR_STEP + GOUR_POOL, big: false, quiet: true }); }
     if (m.name === 'stream') {
       this.stream = { s: wr(0.6, 1.1), toSump: R() < 0.55, left: this.modeLeft, wl: this.y + 0.3 };
       this.pitch = Math.min(this.pitch, -0.02);
@@ -242,6 +244,11 @@ class Worm {
       }
       // a crawl that continues past a slot you can't get through
       if (this.kind !== 'trunk' && this.mode && this.mode.name === 'crawl' && R() < 0.04) { this.ry = 0.2; this.rx = 0.5; core = false; }
+      if (this.mode && this.mode.name === 'gour' && !this.exit) {  // terraces step down gently; each holds a pool
+        this.pitch = clamp(this.pitch * 0.7 + -0.07 * 0.3 + gauss() * 0.01, -0.12, -0.03);
+        this.wander = clamp(this.wander, -0.08, 0.08);
+        wl = Math.ceil((this.y + 0.02) / GOUR_STEP) * GOUR_STEP + GOUR_POOL;
+      }
       if (this.stream && !this.exit) {                            // water runs downhill, gently; faster where it is about to go under
         const S = this.stream; S.left -= STEP;
         this.pitch = clamp(this.pitch * 0.7 + -0.045 * 0.3 + gauss() * 0.012, -0.10, -0.01);
@@ -301,7 +308,7 @@ class Worm {
     const cp = Math.cos(this.pitch);
     const n = { x: this.x + Math.sin(this.yaw) * cp * STEP, y: this.y + Math.sin(this.pitch) * STEP,
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
-                algae: core ? this.algae : 0, tint: this.tint, foul: this.foul };
+                algae: core ? this.algae : 0, tint: this.tint, foul: this.foul, gour: !!(this.mode && this.mode.name === 'gour' && !this.pit && !this.sump) };
     if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; }
     if (this.sump && !this.sump.marked) { this.sump.marked = true; n.sump = { len: this.sump.left, bell: this.sump.bellAt !== null, trap: this.sump.trap }; sumpNodes.push(n); }
     else if (core && this.mode && (this.mode.name === 'passage' || this.mode.name === 'bedding' || this.mode.name === 'chamber') && Math.abs(this.pitch) < 0.12 && R() < 0.07) n.wl = n.y + 0.07;   // a puddle in a low spot
