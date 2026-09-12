@@ -663,7 +663,7 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'Backquote') showDebug = !showDebug;
-  if (e.code === 'KeyN' && !player.alive) { newCave(); return; }
+  if (e.code === 'KeyN' && (!player.alive || !running)) { newCave(); return; }
   if (e.code === 'KeyM' && !e.repeat && running) toggleNotebook();
   if (!running || !player.alive || player.out) return;
   if (e.code === 'KeyF' && !e.repeat) shakeTorch();
@@ -698,7 +698,7 @@ overlay.addEventListener('click', () => {
 });
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === canvas) start();
-  else if (!dragLook && player.alive && !player.out) { running = false; overlay.classList.remove('hidden'); $('go').textContent = 'CLICK TO CONTINUE'; }
+  else if (!dragLook && player.alive && !player.out) { running = false; overlay.classList.remove('hidden'); $('go').innerHTML = 'CLICK TO CONTINUE &nbsp;·&nbsp; <span style="opacity:.6">N to give this cave up</span>'; }
 });
 document.addEventListener('pointerlockerror', () => { dragLook = true; start(); });
 let introDone = false, resumed = false;
