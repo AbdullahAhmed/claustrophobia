@@ -1308,7 +1308,7 @@ function updateSound(dt) {
   // drips, somewhere on the ceiling nearby
   dripT -= dt;
   if (dripT <= 0) {
-    dripT = rr(1.5, 6) / (nearWater ? 2.2 : 1);
+    dripT = rr(1.5, 6) / (nearWater ? 2.2 : 1) / (lastTheme === 'wet' ? 1.8 : lastTheme === 'dry' ? 0.5 : 1);   // the wet rock drips; the dry rock hardly does
     const list = G.cellSegs.get(G.ckey(Math.floor(player.x / G.CHUNK), Math.floor(player.y / G.CHUNK), Math.floor(player.z / G.CHUNK)));
     if (list && list.length) {
       const s = list[Math.floor(Math.random() * list.length)], t = Math.random();
@@ -1322,7 +1322,7 @@ function updateSound(dt) {
   // the mountain settling, far off
   rockT -= dt;
   if (rockT <= 0) {
-    rockT = rr(70, 200);
+    rockT = rr(70, 200) / (lastTheme === 'broken' ? 2.5 : 1);                                                  // broken ground settles, audibly
     const a = Math.random() * Math.PI * 2, d = rr(18, 40);
     sfx.play(Math.random() < 0.7 ? 'rockfall' : 'rumble', { x: player.x + Math.sin(a) * d, y: player.y + rr(-4, 6), z: player.z + Math.cos(a) * d, vol: 0.5, wet: 1, rolloff: 0.5 });
   }
