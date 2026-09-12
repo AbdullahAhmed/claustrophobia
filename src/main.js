@@ -840,7 +840,8 @@ function updateSound(dt) {
   }
   const u = player.under ? 1 : 0;
   const level = torchLevel(player.battery);
-  fear = clamp(Math.max(level < 0.05 ? 0.8 : (1 - level) * 0.45, player.breath < 0.6 ? (1 - player.breath) * 0.9 : 0, eyes ? 0.55 : 0, player.hurt ? 0.3 : 0, stuck > 0 ? Math.min(1, 0.5 + stuckT * 0.1) : 0, batList.length ? 0.5 : 0), 0, 1);
+  fear = clamp(Math.max(level < 0.05 ? 0.8 : (1 - level) * 0.45, player.breath < 0.6 ? (1 - player.breath) * 0.9 : 0, eyes ? 0.55 : 0, player.hurt ? 0.3 : 0, stuck > 0 ? Math.min(1, 0.5 + stuckT * 0.1) : 0, batList.length ? 0.5 : 0, lakeFear * 0.8), 0, 1);
+  lakeFear = Math.max(0, lakeFear - dt * 0.08);
   const set = (k, v) => loops[k] && loops[k].setVol(v, 0.6);
   set('amb_cave', (1 - u) * (0.45 + 0.5 * clamp((open - 2) / 10, 0, 1)));
   set('amb_grotto', (1 - u) * nearWater * 0.7);
@@ -957,7 +958,7 @@ function footstep(kind) {
 
 // ---------- player ----------
 let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2, ropeHintT = 0, blockedT = 0;
-let foulT = 0;
+let foulT = 0, lakeT = rr(20, 50), lakeFear = 0;
 let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false;                      // stuck > 0: wedged, that many wiggles still needed
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
@@ -1025,6 +1026,17 @@ function updatePlayer(dt) {
   let stepKind = stance === 1 ? 'walk' : stance > 0.4 ? 'crouch' : 'crawl';
 
   if (player.swim) {
+    // deep, black water, and you are not the only thing in it
+    if (!player.under && dread > 0.15 && G.fieldAt(player.x, player.y - 0.5, player.z) < -0.15) {   // nothing under your feet
+      lakeT -= dt;
+      if (lakeT <= 0) {
+        lakeT = rr(35, 80);
+        const a = Math.random() * Math.PI * 2, d = rr(4, 9);
+        if (Math.random() < 0.65) { sfx.play('splash', { x: player.x + Math.sin(a) * d, y: player.wl, z: player.z + Math.cos(a) * d, vol: 0.7, rate: 0.85, wet: 0.7, rolloff: 0.5 }); setTimeout(() => sfx.play('stroke', { x: player.x + Math.sin(a) * d * 0.7, y: player.wl, z: player.z + Math.cos(a) * d * 0.7, vol: 0.4, rate: 0.7, wet: 0.7 }), 900); showHint('something moved in the water'); }
+        else { sfx.play('bubbles', { vol: 0.5, rate: 0.8, dur: 1.4 }); camera.rotation.z += (Math.random() - 0.5) * 0.08; player.vy -= 0.6; showHint('something touched your leg'); sfx.play('gasp', { vol: 0.7 }); }
+        lakeFear = 1;
+      }
+    }
     const cp = Math.cos(player.pitch), sp = Math.sin(player.pitch);
     let dx = -sy * cp * mz + cy * mx, dz = -cy * cp * mz - sy * mx, dy = sp * mz;
     if (!player.under && dy > 0) dy = 0;
@@ -1630,7 +1642,7 @@ function init() {
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
-               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, follow: (t) => { following = t; } };
+               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; } };
 }
 init();
 
