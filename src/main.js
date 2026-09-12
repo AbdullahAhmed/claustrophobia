@@ -188,6 +188,25 @@ function updateMotes(dt, level) {
 }
 // algae light pool
 const algaeLights = []; for (let i = 0; i < 6; i++) { const l = new THREE.PointLight(0x2fd8b0, 0, 7, 1.6); scene.add(l); algaeLights.push(l); }
+// a fixed pool of lights: three.js recompiles every shader when the number of lights changes, so the count never does.
+// glowsticks, remains, glow-worm sites, the exit and the shafts all borrow from here; when it runs dry, the light furthest from you is taken back.
+const lightPool = [], spotPool = [];
+for (let i = 0; i < 14; i++) { const l = new THREE.PointLight(0xffffff, 0, 1, 2); l.userData.free = true; scene.add(l); lightPool.push(l); }
+for (let i = 0; i < 3; i++) { const l = new THREE.SpotLight(0xffffff, 0, 1, 0.3, 0.9, 1.2); l.userData.free = true; scene.add(l); scene.add(l.target); spotPool.push(l); }
+function borrowLight(color, intensity, distance, decay, x, y, z) {
+  let l = lightPool.find(q => q.userData.free);
+  if (!l) { let far = -1; for (const q of lightPool) { if (q.userData.keep) continue; const d = Math.hypot(q.position.x - player.x, q.position.z - player.z); if (d > far) { far = d; l = q; } } if (l && l.userData.owner) l.userData.owner.light = null; }
+  if (!l) return null;
+  l.userData.free = false; l.userData.keep = false; l.userData.owner = null;
+  l.color.set(color); l.intensity = intensity; l.distance = distance; l.decay = decay; l.position.set(x, y, z);
+  return l;
+}
+function returnLight(l) { if (!l) return; l.intensity = 0; l.userData.free = true; l.userData.keep = false; l.userData.owner = null; }
+function borrowSpot(color, intensity, distance, angle, x, y, z, tx, ty, tz) {
+  const l = spotPool.find(q => q.userData.free); if (!l) return null;
+  l.userData.free = false; l.color.set(color); l.intensity = intensity; l.distance = distance; l.angle = angle; l.position.set(x, y, z); l.target.position.set(tx, ty, tz);
+  return l;
+}
 
 let lastW = -1, lastH = -1;
 function resize() { const w = innerWidth || 1280, h = innerHeight || 800; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
@@ -346,8 +365,9 @@ function placeRemains(p) {
   placeBones({ x: p.x, y, z: p.z, rx: 0.9, ry: 1, big: false, seed: (p.t % 1000) / 1000 });
   const t = new THREE.Mesh(torchGeo, torchMat); t.position.set(p.x + 0.35, y + 0.04, p.z - 0.2); t.rotation.set(Math.PI / 2, 0, rr(0, 6)); scene.add(t);
   const lens = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), lensMat); lens.position.set(p.x + 0.35, y + 0.05, p.z - 0.2); scene.add(lens);
-  const light = new THREE.PointLight(0xffa050, 0.25, 4, 1.5); light.position.set(p.x + 0.35, y + 0.12, p.z - 0.2); scene.add(light);
-  remains.push({ x: p.x + 0.35, y, z: p.z - 0.2, taken: false, light, lens, cause: p.cause, battery: p.battery });
+  const light = borrowLight(0xffa050, 0.25, 4, 1.5, p.x + 0.35, y + 0.12, p.z - 0.2);
+  const rem = { x: p.x + 0.35, y, z: p.z - 0.2, taken: false, light, lens, cause: p.cause, battery: p.battery }; if (light) light.userData.owner = rem;
+  remains.push(rem);
 }
 // bats: a colony on a chamber ceiling; light or noise sends it past your face
 const roosts = [];           // {x,y,z, floor, n, loop, spooked}
@@ -532,8 +552,8 @@ function dropGlowstick() {
   const fy = floorBelow(player.x, player.y + 0.5, player.z), y = (fy === null ? player.y : fy) + 0.03;
   const x = player.x + (Math.random() - 0.5) * 0.3, z = player.z + (Math.random() - 0.5) * 0.3;
   const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(x, y, z); mesh.rotation.set(Math.PI / 2 + rr(-0.2, 0.2), rr(0, 6), 0); scene.add(mesh);
-  const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.set(x, y + 0.15, z); scene.add(light);
-  glow.push({ x, y, z, light, mesh });
+  const light = borrowLight(0x5cff7a, 1.1, 9, 1.7, x, y + 0.15, z);
+  const g = { x, y, z, light, mesh }; if (light) light.userData.owner = g; glow.push(g);
   sfx.play('torch_click', { vol: 0.5, rate: 1.4 });
   showHint(`glowstick down · ${player.sticks} left`);
 }
@@ -545,8 +565,8 @@ function throwGlowstick(power) {
   camera.getWorldDirection(_fwd);
   const sp = 5 + power * 9;
   const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.copy(camera.position).addScaledVector(_fwd, 0.4); scene.add(mesh);
-  const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.copy(mesh.position); scene.add(light);
-  thrown.push({ mesh, light, x: mesh.position.x, y: mesh.position.y, z: mesh.position.z, vx: _fwd.x * sp, vy: _fwd.y * sp + 1.5, vz: _fwd.z * sp, t: 0, spin: rr(4, 9) });
+  const light = borrowLight(0x5cff7a, 1.1, 9, 1.7, mesh.position.x, mesh.position.y, mesh.position.z);
+  const th = { mesh, light, x: mesh.position.x, y: mesh.position.y, z: mesh.position.z, vx: _fwd.x * sp, vy: _fwd.y * sp + 1.5, vz: _fwd.z * sp, t: 0, spin: rr(4, 9) }; if (light) { light.userData.owner = th; light.userData.keep = true; } thrown.push(th);
   sfx.play('whoosh', { vol: 0.3, rate: 1.6 });
   showHint(`thrown · ${player.sticks} left`);
   teach('throw', 'hold G to throw a glowstick: down a pit, across a chamber. you hear where it lands');
@@ -569,8 +589,8 @@ function updateThrown(dt) {
       const wl = G.waterLevelAt(g.x, g.y, g.z);
       if (Number.isFinite(wl) && g.y < wl) { sfx.play('splash_small', { x: g.x, y: wl, z: g.z, vol: 0.5, wet: 0.6 }); g.vx *= 0.1; g.vz *= 0.1; g.vy = 0; g.y = wl - 0.05; hit = true; }
     }
-    g.mesh.position.set(g.x, g.y, g.z); g.mesh.rotation.x += dt * g.spin; g.light.position.set(g.x, g.y + 0.1, g.z);
-    if (hit) { thrown.splice(i, 1); glow.push({ x: g.x, y: g.y, z: g.z, light: g.light, mesh: g.mesh }); }
+    g.mesh.position.set(g.x, g.y, g.z); g.mesh.rotation.x += dt * g.spin; if (g.light) g.light.position.set(g.x, g.y + 0.1, g.z);
+    if (hit) { thrown.splice(i, 1); const gl = { x: g.x, y: g.y, z: g.z, light: g.light, mesh: g.mesh }; if (g.light) { g.light.userData.owner = gl; g.light.userData.keep = false; } glow.push(gl); }
   }
 }
 // caches: a dead caver's pack next to some bones
@@ -760,9 +780,8 @@ let sinkhole = null;
 function placeSinkhole(p) {
   const sky = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color: 0x8fa0b4, fog: false }));
   sky.position.set(p.x, p.y + 0.2, p.z); sky.rotation.x = Math.PI / 2; scene.add(sky);                    // seen from below
-  const shaft = new THREE.SpotLight(0x9fb2c8, 60, 26, 0.18, 0.9, 1.2); shaft.position.set(p.x, p.y, p.z);
-  shaft.target.position.set(p.x, p.floor, p.z); scene.add(shaft); scene.add(shaft.target);
-  const pool = new THREE.PointLight(0x8fa4bc, 1.2, 6, 1.6); pool.position.set(p.x, p.floor + 0.6, p.z); scene.add(pool);
+  const shaft = borrowSpot(0x9fb2c8, 60, 26, 0.18, p.x, p.y, p.z, p.x, p.floor, p.z);
+  const pool = borrowLight(0x8fa4bc, 1.2, 6, 1.6, p.x, p.floor + 0.6, p.z); if (pool) pool.userData.keep = true;
   sinkhole = { ...p, sky, shaft, pool, dripT: 0 };
   // rain down the shaft, into a puddle
   placeCascade({ x: p.x, y: p.y - 0.5, z: p.z, wl: p.floor + 0.02, big: false, quiet: true });
@@ -775,8 +794,8 @@ function placeExit(e) {
   const disc = new THREE.Mesh(new THREE.CircleGeometry(5.5, 40), new THREE.MeshBasicMaterial({ color: 0xfff4dc, fog: false }));
   disc.position.set(e.x + e.dx * 4.6, e.y + 2.2, e.z + e.dz * 4.6); disc.lookAt(e.n1.x, e.n1.y + 1.5, e.n1.z);
   scene.add(disc);
-  const sun = new THREE.PointLight(0xfff1d6, 140, 60, 2); sun.position.set(e.x + e.dx * 3, e.y + 3, e.z + e.dz * 3); scene.add(sun);
-  const sky = new THREE.PointLight(0x9fc4ff, 30, 40, 2); sky.position.set(e.n1.x, e.n1.y + 1.8, e.n1.z); scene.add(sky);
+  const sun = borrowLight(0xfff1d6, 140, 60, 2, e.x + e.dx * 3, e.y + 3, e.z + e.dz * 3); if (sun) sun.userData.keep = true;
+  const sky = borrowLight(0x9fc4ff, 30, 40, 2, e.n1.x, e.n1.y + 1.8, e.n1.z); if (sky) sky.userData.keep = true;
 }
 let propTimer = 0;
 function processProps(dt) {
@@ -789,16 +808,16 @@ function processProps(dt) {
     if (d > 45) continue;
     if (!G.chunkReadyAt(p.x, p.y + 0.5, p.z)) continue;
     placed++;
-    if (p.type === 'remains') placeRemains(p); else if (p.type === 'mark') drawMark(p.text, new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(p.nx, p.ny, p.nz), true);
+    if (p.type === 'remains') placeRemains(p); else if (p.type === 'mark') { drawMark(p.text, new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(p.nx, p.ny, p.nz), true); placed = 4; }
     else if (p.type === 'crystals') placeCrystals(p);
     else if (p.type === 'roost') placeRoost(p);
     else if (p.type === 'cascade') placeCascade(p);
     else if (p.type === 'sinkhole') placeSinkhole(p);
     else if (p.type === 'roots') placeRoots(p);
-    else if (p.type === 'note') placeNote(p);
+    else if (p.type === 'note') { placeNote(p); placed = 4; }                 // a decal walks every triangle of the chunk mesh: one per call
     else if (p.type === 'loose') placeLoose(p);
-    else if (p.type === 'glowworms') placeGlowworms(p);
-    else if (p.type === 'fossil') placeFossil(p);
+    else if (p.type === 'glowworms') { if (!placeGlowworms(p)) continue; }
+    else if (p.type === 'fossil') { placeFossil(p); placed = 4; }
     else if (p.type === 'curtain') placeCurtain(p);
     else if (p.type === 'oldrope') placeOldRope(p);
     else if (p.type === 'pearls') placePearls(p);
@@ -1596,7 +1615,7 @@ function updatePlayer(dt) {
   }
   for (const r of remains) {
     if (!r.taken && Math.hypot(r.x - player.x, r.z - player.z) < 1.0 && Math.abs(r.y - player.y) < 1.5) {
-      r.taken = true; scene.remove(r.light); scene.remove(r.lens);
+      r.taken = true; returnLight(r.light); scene.remove(r.lens);
       player.battery = Math.min(1, player.battery + 0.25);
       showHint(`your own torch. still ${(r.battery * 100).toFixed(0)}% when you ${r.cause === 'drowned' ? 'drowned' : r.cause === 'froze' ? 'froze' : r.cause === 'crushed' ? 'were buried' : r.cause === 'foul' ? 'stopped breathing' : r.cause === 'wedged' ? 'stuck' : 'fell'}. +25%`);
       sfx.play('torch_click', { vol: 0.6 }); sfx.play('bones_rattle', { x: r.x, y: r.y, z: r.z, vol: 0.4, rate: 0.9 });
@@ -1720,7 +1739,7 @@ function updateTorch(dt) {
   if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15 + 0.22 * floodLevel + (player.flow ? 0.05 : 0) + 0.3 * Math.min(1, siltT / 12); $('water').style.opacity = 1; updateBubbles(dt); }
   else { scene.fog.color.copy(FOG_AIR); scene.fog.density = 0.048; $('water').style.opacity = 0; }
   waterGroup.position.y = Math.sin(t * 1.1) * 0.012;
-  for (const r of remains) if (!r.taken) r.light.intensity = 0.18 + 0.1 * Math.sin(t * 7 + r.x) * Math.sin(t * 2.3);
+  for (const r of remains) if (!r.taken && r.light) r.light.intensity = 0.18 + 0.1 * Math.sin(t * 7 + r.x) * Math.sin(t * 2.3);
 }
 
 // ---------- something crosses the passage ----------
@@ -1782,21 +1801,25 @@ const wormInst = new THREE.InstancedMesh(new THREE.SphereGeometry(0.018, 5, 4), 
 const wormThreads = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x9fe8d4, transparent: true, opacity: 0.35 }));
 const threadPos = []; wormThreads.frustumCulled = false; scene.add(wormThreads);
 const wormSites = [];
+// placed a few dozen per call, so a big roof spreads over several frames; returns true when the prop is finished
 function placeGlowworms(p) {
-  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
-  let placed = 0;
-  for (let i = 0; i < p.n && wormInst.count < 4000; i++) {
+  if (p.sd === undefined) { p.sd = p.seed * 233280 | 0; p.done = 0; p.placed = 0; }
+  const R = () => (p.sd = (p.sd * 9301 + 49297) % 233280) / 233280;
+  const stop = Math.min(p.n, p.done + 60);
+  for (; p.done < stop && wormInst.count < 4000; p.done++) {
     const a = R() * Math.PI * 2, d = Math.sqrt(R()) * p.rx, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
-    // the roof above this spot
-    let cy = null; for (let h = 0; h < 6; h += 0.12) { const yy = p.floor + 1.2 + h; if (G.fieldAt(x, yy, z) > -0.04) { cy = yy - 0.06; break; } }
+    // the roof above this spot: a coarse climb, then a fine one
+    let cy = null; for (let h = 0; h < 6; h += 0.3) { const yy = p.floor + 1.2 + h; if (G.fieldAt(x, yy, z) > -0.04) { for (let f = yy - 0.3; f <= yy; f += 0.06) if (G.fieldAt(x, f, z) > -0.04) { cy = f - 0.06; break; } break; } }
     if (cy === null) continue;
     const drop = 0.05 + R() * 0.35, y = cy - drop;
     _m.compose(_p.set(x, y, z), _q.identity(), _s.set(1, 1, 1)); wormInst.setMatrixAt(wormInst.count++, _m);
-    threadPos.push(x, cy, z, x, y, z); placed++;
+    threadPos.push(x, cy, z, x, y, z); p.placed++;
   }
   wormInst.instanceMatrix.needsUpdate = true;
   wormThreads.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(threadPos), 3));
-  if (placed > 20) { wormSites.push({ x: p.x, y: p.y, z: p.z, n: placed, light: new THREE.PointLight(0x5fd8b8, 2.2, p.rx * 3, 1.4) }); const L = wormSites[wormSites.length - 1].light; L.position.set(p.x, p.y - 0.8, p.z); scene.add(L); }
+  if (p.done < p.n && wormInst.count < 4000) return false;
+  if (p.placed > 20) { const site = { x: p.x, y: p.y, z: p.z, n: p.placed, light: borrowLight(0x5fd8b8, 2.2, p.rx * 3, 1.4, p.x, p.y - 0.8, p.z) }; if (site.light) site.light.userData.owner = site; wormSites.push(site); }
+  return true;
 }
 let wormSeenT = 0;
 function updateGlowworms(dt) {
@@ -2208,7 +2231,7 @@ function init() {
     player.x = r.x; player.y = r.y; player.z = r.z; player.yaw = r.yaw; player.battery = r.battery; player.breath = r.breath; player.hurt = r.hurt;
     player.dist = r.dist; player.maxDepth = r.maxDepth; player.trail = r.trail || []; runMarks.push(...(r.marks || [])); runTime = r.t || 0;
     if (r.sticks !== undefined) player.sticks = r.sticks; if (r.places) places.push(...r.places); if (r.notes) notes.push(...r.notes); if (r.pages) for (const pg of r.pages) if (!player.pages.some(q => q.key === pg.key)) player.pages.push(pg); if (r.rope !== undefined) player.rope = r.rope; if (r.cells) player.cells = true; if (r.kit) player.kit = true;
-    for (const g of (r.glow || [])) { const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(g.x, g.y, g.z); mesh.rotation.x = Math.PI / 2; scene.add(mesh); const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.set(g.x, g.y + 0.15, g.z); scene.add(light); glow.push({ ...g, light, mesh }); }
+    for (const g of (r.glow || [])) { const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(g.x, g.y, g.z); mesh.rotation.x = Math.PI / 2; scene.add(mesh); const light = borrowLight(0x5cff7a, 1.1, 9, 1.7, g.x, g.y + 0.15, g.z); const gl = { ...g, light, mesh }; if (light) light.userData.owner = gl; glow.push(gl); }
     for (const m of runMarks) G.props.push({ type: 'mark', ...m });
     G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
     G.advanceWorms(4000);                                           // the same rounds give the same cave

@@ -1,0 +1,17 @@
+{
+  "assets/fonts/caveat-OFL.txt": "1f9d81d094273d82f3898a1ee8b598a717d050ecbf5ff7bede105b704880157b",
+  "assets/fonts/cormorant-OFL.txt": "60700d351cac4650c51f3f9db318d2a420f8b45052dba2715eb5fec41f0f6956",
+  "assets/fonts/font-0.ttf": "e5be0a7ef2eb97414937cb70d079c8c9fb2e472cf74eab5b8fe9dfa2f6fb2704",
+  "assets/fonts/font-1.ttf": "6d37a86241a25d63f8fe6018b4c083449886b7165c1acb15edd0f574f690ecf7",
+  "assets/fonts/font-2.ttf": "1724047c8988ca5155bff667bc48fa52e97d57aabc6b42eebbf986f21a4be20b",
+  "assets/fonts/font-3.ttf": "a7fdc993f9f0387caedba4e42521136fa97e4c0837ae6239bf0413ccf8af00c2",
+  "assets/fonts/font-4.ttf": "4fc14a73ca53ba9d32fd759ae1ca1a3133326035d0dd337862b3ee1633cc156e",
+  "assets/fonts/fonts.css": "3a34ae37a6fc9ddab58ba08f7dce11cf7b833d518c023f28f034a7b833c06905",
+  "assets/fonts/ibm-plex-mono-OFL.txt": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
+  "vendor/three/build/three.module.js": "76dea8151bc9352aef3528b4262e249b2604f62543828328db978d060d61a495",
+  "vendor/three/examples/jsm/geometries/DecalGeometry.js": "b2b958a5ba4faf08fe60f7a91fe8489139b43d139e3d036e53ba1b70661cc888",
+  "vendor/three/examples/jsm/loaders/GLTFLoader.js": "d073b438e6a07e1359741dd5d6c76c953420cc0d4fd84eb1bdde94315540e6a3",
+  "vendor/three/examples/jsm/objects/MarchingCubes.js": "b1c67207e4d2ab22c6550e57a8b9104896df2598e9bc513ffc4dc50238975e7b",
+  "vendor/three/examples/jsm/utils/BufferGeometryUtils.js": "9be041e96308775d00e2695cc607645b9a9b64fd7c0e759dd8f7c00a8d92becb",
+  "vendor/three/LICENSE": "852e0e8699169bf9f6fdc6bda3e682d078dcbc738b5d33e74df594721bff271d"
+}
