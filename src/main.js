@@ -229,7 +229,7 @@ function disposeChunk(ch) {
   if (ch.mesh) { scene.remove(ch.mesh); ch.mesh.geometry.dispose(); ch.mesh = null; }
   if (ch.water) { waterGroup.remove(ch.water); ch.water.geometry.dispose(); ch.water = null; }
 }
-const stats = { builds: 0, buildMs: 0, maxMs: 0, frameMs: 0 };
+const stats = { builds: 0, buildMs: 0, maxMs: 0, frameMs: 0, phase: {} };
 function processQueue(ms, sync) {
   const t0 = performance.now();
   while (G.queue.length && performance.now() - t0 < ms) {
@@ -1687,6 +1687,19 @@ function init() {
                run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; } };
 }
 init();
+// warm the shaders now, not the first time a lake or a loose block comes into view (a compile can cost a quarter second)
+{
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1]), 3));
+  g.setAttribute('aFlow', new THREE.BufferAttribute(new Float32Array(9), 3)); g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(12).fill(1), 4));
+  g.computeVertexNormals();
+  const warm = [new THREE.Mesh(g, waterMat), new THREE.Mesh(looseGeo, looseMat), new THREE.Mesh(olmGeo, olmMat), new THREE.Mesh(pageGeo, pageMat), new THREE.Mesh(packGeo, packMat), new THREE.Mesh(torchGeo, torchMat), new THREE.Mesh(stickGeo, stickMat)];
+  for (const m of warm) { m.position.set(0, -900, 0); scene.add(m); }
+  crosserMesh.visible = true; crosserMesh.position.set(0, -900, 0);
+  try { renderer.compile(scene, camera); } catch (e) {}
+  for (const m of warm) scene.remove(m);
+  crosserMesh.visible = false;
+}
 
 let last = performance.now();
 function frame(now) {
@@ -1697,13 +1710,14 @@ function frame(now) {
 function stepFrame(dt) {
   frameNo++;
   if (innerWidth !== lastW || innerHeight !== lastH) { lastW = innerWidth; lastH = innerHeight; resize(); }
-  const tf = performance.now();
+  const tf = performance.now(); let tp = tf; const lap = (k) => { const n = performance.now(); if (n - tp > (stats.phase[k] || 0)) stats.phase[k] = n - tp; tp = n; };
   if (running && player.alive && !player.out) { updatePlayer(dt); runTime += dt; saveT += dt; if (saveT > 5) { saveT = 0; saveRun(); }
     if (runTime > 40 && runTime < 41) teach('survey', 'M opens your survey — it only shows where you have been. T chalks the wall. G drops a glowstick'); }
-  G.advanceWorms(3);
-  G.scanChunks(dt, false, disposeChunk);
-  processQueue(running ? 5 : 12);
-  processProps(dt);
+  lap('player');
+  G.advanceWorms(3); lap('worms');
+  G.scanChunks(dt, false, disposeChunk); lap('scan');
+  processQueue(running ? 5 : 12); lap('queue');
+  processProps(dt); lap('props');
   updateTorch(dt);
   updateEyes(dt);
   updateLoose(dt);
@@ -1717,10 +1731,10 @@ function stepFrame(dt) {
   updatePlaces(dt);
   updateCrosser(dt);
   updateBats(dt);
-  updateCascades(dt);
-  updateSound(dt);
-  renderer.render(scene, camera);
-  grain(); hud(dt);
+  updateCascades(dt); lap('systems');
+  updateSound(dt); lap('sound');
+  renderer.render(scene, camera); lap('render');
+  grain(); hud(dt); lap('hud');
   stats.frameMs = performance.now() - tf;
 }
 requestAnimationFrame(frame);
