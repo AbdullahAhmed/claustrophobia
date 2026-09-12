@@ -323,7 +323,7 @@ function placeBones(p) {
   bonePiles.push({ x: p.x, y: p.y, z: p.z, r: p.rx * 0.7 + (p.big ? 3 : 0), crunched: 0, taught: false });
   if (!p.big && R() < 0.3) {
     const ax = p.x + (R() - 0.5) * 0.8, az = p.z + (R() - 0.5) * 0.8, fy = floorBelow(ax, p.y + 1.0, az);
-    if (fy !== null) { const k = R() < 0.3 ? 'page' : R() < 0.15 ? 'kit' : R() < 0.4 ? 'battery' : R() < 0.62 ? 'sticks' : R() < 0.85 ? 'rope' : 'cells'; placeCache(ax, fy, az, k, k === 'page' ? composePage(ax, fy, az, R) : null); }
+    if (fy !== null) { const k = R() < 0.3 ? 'page' : R() < 0.15 ? 'kit' : R() < 0.4 ? 'battery' : R() < 0.62 ? 'sticks' : R() < 0.85 ? 'rope' : 'cells'; placeCache(ax, fy, az, k, k === 'page' ? (R() < 0.35 ? composeSurvey(ax, fy, az, R) : composePage(ax, fy, az, R)) : null); }
   }
 }
 const remains = [];          // {x,y,z, taken, light}
@@ -577,6 +577,14 @@ const pageGeo = new THREE.PlaneGeometry(0.21, 0.28).rotateX(-Math.PI / 2), pageM
 const DIRS8 = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 function bearing(dx, dz) { const a = Math.atan2(dx, -dz); return DIRS8[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8]; }
 const CAVER_NAMES = ['Anna', 'Tomas', 'Priya', 'Dan', 'Lise', 'Marek', 'Ola', 'Ben', 'Ines', 'Kit'];
+// a torn survey sheet: the main way from here on, as far as whoever drew it got
+function composeSurvey(x, y, z, R) {
+  let best = null, bd = 80; for (const n of G.nodes) { if (!G.trunkIds.has(n.w)) continue; const d = Math.hypot(n.x - x, n.z - z); if (d < bd) { bd = d; best = n; } }
+  if (!best) return composePage(x, y, z, R);
+  const line = []; for (let i = best.i; i < best.i + 34; i += 2) { const n = G.nodes.find(q => q.w === best.w && q.i === i); if (!n) break; line.push([+n.x.toFixed(1), +n.z.toFixed(1)]); }
+  if (line.length < 5) return composePage(x, y, z, R);
+  return { survey: line, text: `a torn survey sheet: ${Math.round(line.length * 3 / 5) * 5} m of the main way, in someone\u2019s pencil` };
+}
 function composePage(x, y, z, R) {
   const near = (arr, lim) => { let b = null, bd = lim; for (const n of arr) { const d = Math.hypot(n.x - x, n.z - z); if (d < bd && d > 4) { bd = d; b = n; } } return b; };
   const name = CAVER_NAMES[(R() * CAVER_NAMES.length) | 0], day = 2 + ((R() * 9) | 0);
@@ -1436,7 +1444,7 @@ function updatePlayer(dt) {
       else if (c.kind === 'rope') { player.rope++; showHint('a coil of rope. E at a drop to rig it'); }
       else if (c.kind === 'cells') { player.cells = true; player.battery = Math.min(1, player.battery + 0.2); showHint('lithium cells. the torch will last longer now'); }
       else if (c.kind === 'kit') { if (player.hurt) { player.hurt = false; showHint('a first-aid kit. you strap it up. it will hold', true); sfx.play('gasping', { vol: 0.4, rate: 1.1 }); } else { player.kit = true; showHint('a first-aid kit. for later'); } }
-      else if (c.kind === 'page') { const pg = { key: `${c.x.toFixed(0)},${c.z.toFixed(0)}`, text: c.text, x: c.x, z: c.z }; player.pages.push(pg); cave.pages = (cave.pages || []).concat([pg]); saveCave(); showHint(`a page from someone\u2019s log: \u201c${c.text}\u201d`, true); hintT = 9; sfx.play('scrape', { vol: 0.2, rate: 2.5, dur: 0.4 }); continue; }
+      else if (c.kind === 'page') { const pg = { key: `${c.x.toFixed(0)},${c.z.toFixed(0)}`, text: typeof c.text === 'object' ? c.text.text : c.text, survey: typeof c.text === 'object' ? c.text.survey : undefined, x: c.x, z: c.z }; player.pages.push(pg); cave.pages = (cave.pages || []).concat([pg]); saveCave(); showHint(pg.survey ? pg.text : `a page from someone\u2019s log: \u201c${pg.text}\u201d`, true); hintT = 9; sfx.play('scrape', { vol: 0.2, rate: 2.5, dur: 0.4 }); continue; }
       else { player.sticks += 2; showHint(`two glowsticks in the pack · ${player.sticks} now`); }
       sfx.play('rattle', { vol: 0.5, rate: 0.7 }); sfx.play('torch_click', { vol: 0.4 });
     }
@@ -1496,7 +1504,9 @@ const shakeQ = new THREE.Quaternion(), shakeE = new THREE.Euler();
 function shakeTorch() {
   if (!torchHeld) { showHint('you are not holding it'); return; }
   const now = performance.now(); if (now - lastShake < 100) return; lastShake = now;
-  player.battery = Math.min(1, player.battery + 0.025 * (player.battery > 0.6 ? 0.5 : 1));
+  const tired = 1 - 0.45 * clamp((runTime - 900) / 1500, 0, 1) * (1 - 0.5 * clamp((resting ? 1 : 0), 0, 1));   // after fifteen minutes the arm gives less; resting helps a little
+  player.battery = Math.min(1, player.battery + 0.025 * tired * (player.battery > 0.6 ? 0.5 : 1) * (player.hurt ? 0.7 : 1));
+  if (tired < 0.8) teach('tired', 'your arm is tired. the shake gives less than it did');
   shakeT = 0.22;
   shakeE.set(rr(-0.4, 0.4), rr(-0.4, 0.4), rr(-0.5, 0.5)); shakeQ.setFromEuler(shakeE);
   torch.quaternion.multiply(shakeQ);
@@ -1868,6 +1878,7 @@ function drawNotebook() {
   let x0 = Math.min(0, player.x), x1 = Math.max(0, player.x), z0 = Math.min(0, player.z), z1 = Math.max(0, player.z);
   for (const q of player.trail) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.z < z0) z0 = q.z; if (q.z > z1) z1 = q.z; }
   for (const d of cave.deaths) for (const q of (d.trail || [])) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.z < z0) z0 = q.z; if (q.z > z1) z1 = q.z; }
+  for (const pg of player.pages) for (const q of (pg.survey || [])) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; }
   const margin = player.pages.length ? 400 : 0;                                                          // pages I found go down the right-hand side
   const S = clamp(Math.min((W - 320 - margin) / Math.max(1, x1 - x0), (H - 300) / Math.max(1, z1 - z0)), 2.5, 12);   // px per metre
   const cx = (W - margin) / 2 - (x0 + x1) / 2 * S, cz = H / 2 - (z0 + z1) / 2 * S;
@@ -1895,6 +1906,10 @@ function drawNotebook() {
   // depth ticks every ~25 m of trail
   ctx.fillStyle = 'rgba(60,52,44,0.8)'; ctx.font = '500 22px Caveat';
   for (let i = 0; i < t.length; i += 36) ctx.fillText((-t[i].y).toFixed(0) + ' m', X(t[i].x) + 8, Z(t[i].z) - 8);
+  // survey sheets from the dead: the main way, in their pencil
+  ctx.strokeStyle = 'rgba(90,70,40,0.75)'; ctx.lineWidth = 2.5; ctx.setLineDash([9, 6]);
+  for (const pg of player.pages) if (pg.survey && pg.survey.length > 1) { ctx.beginPath(); ctx.moveTo(X(pg.survey[0][0]), Z(pg.survey[0][1])); for (let i = 1; i < pg.survey.length; i++) ctx.lineTo(X(pg.survey[i][0]), Z(pg.survey[i][1])); ctx.stroke(); ctx.font = '500 20px Caveat'; ctx.fillStyle = 'rgba(90,70,40,0.8)'; ctx.fillText('main way?', X(pg.survey[pg.survey.length - 1][0]) + 6, Z(pg.survey[pg.survey.length - 1][1]) + 6); }
+  ctx.setLineDash([]);
   // notes: drops, sumps, bad air
   ctx.font = '500 22px Caveat'; ctx.fillStyle = 'rgba(120,40,30,0.85)';
   for (const n of notes) ctx.fillText(n.t, X(n.x) + 8, Z(n.z) + 6);
