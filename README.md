@@ -71,7 +71,8 @@ every later attempt at that cave.
 
 Sumps you may not have the breath for. Streams whose current strengthens toward the place they sink — swim with it
 or don't get in. Pits you can't see until you're falling — about half the dry ones have a traverse from the ledge that winds down to
-the same place, if you find it (the chalk sometimes says which side). Loose blocks in cavern roofs that come down when something
+the same place, if you find it (the chalk sometimes says which side). Some pitches still have a rope somebody rigged and
+left: most hold; the thin dark ones do not, about halfway down. Loose blocks in cavern roofs that come down when something
 moves under them — you get about a second's warning. Dead-end pockets where the air has gone bad. Low stretches of the main way that come down behind you
 once you are through — the rock is real afterwards, and stays down for that cave. And every so often it rains up
 top: you hear it first, then every stream, sump and plunge pool rises by up to a metre for a few minutes, the
