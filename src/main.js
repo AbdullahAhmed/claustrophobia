@@ -739,6 +739,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyT' && !e.repeat) { e.preventDefault(); openChalk(); }
   if (e.code === 'KeyG' && !e.repeat) dropGlowstick();
   if (e.code === 'KeyH' && !e.repeat) whistle();
+  if (e.code === 'KeyQ' && !e.repeat && torchHeld) { beamNarrow = !beamNarrow; sfx.play('torch_click', { vol: 0.5, rate: beamNarrow ? 1.3 : 1.0 }); showHint(beamNarrow ? 'spot: further, and nothing to either side' : 'flood: wide, and not far'); }
   if (e.code === 'KeyE' && !e.repeat) useRope();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
@@ -1329,7 +1330,7 @@ function updatePlayer(dt) {
 // ---------- torch ----------
 let adapt = 1, shakeT = 0, lastShake = 0, buzzT = 0, dropT = 0;
 const _fwd = new THREE.Vector3(), _dropE = new THREE.Euler();
-let torchDrifting = false;
+let torchDrifting = false, beamNarrow = false;
 function dropTorch() {
   torchHeld = false; hand.visible = false; torchM.classList.add('gone'); dropT = 1.5; torchDrifting = false;
   hand.userData.torchModel.position.set(0.16, -0.14, 0.02); hand.userData.torchModel.rotation.set(0, 0, 0);   // lies where the light comes from
@@ -1364,7 +1365,7 @@ let stutter = 1;
 const fog = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const r = g.createRadialGradient(32, 32, 2, 32, 32, 30); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); return t; })(), transparent: true, opacity: 0, depthWrite: false, depthTest: false, fog: false }));
 fog.renderOrder = 5; fog.visible = false; camera.add(fog);
 function updateTorch(dt) {
-  if (running && player.alive && !player.out) player.battery = Math.max(0, player.battery - dt / (BATTERY_S * (player.cells ? 1.6 : 1)));
+  if (running && player.alive && !player.out) player.battery = Math.max(0, player.battery - dt / (BATTERY_S * (player.cells ? 1.6 : 1) * (beamNarrow ? 0.8 : 1)));
   if (torchHeld) {
     torch.position.copy(camera.position);
     const a = 1 - Math.pow(shakeT > 0 ? 0.05 : 0.0005, dt);
@@ -1406,7 +1407,10 @@ function updateTorch(dt) {
   stutter += (1 - stutter) * Math.min(1, dt * 12); buzzT -= dt;
   if (gustT > 0) stutter = Math.min(stutter, 0.1 + 0.4 * Math.random());
   level *= stutter * (shakeT > 0 ? 0.12 : 1) * (player.under ? 0.7 : 1);
-  spot.intensity = 12 * (torchHeld ? adapt : 1) * level * (0.96 + 0.04 * Math.sin(t * 13.7) * Math.sin(t * 3.1));
+  // the beam: flood is wide and short, spot is narrow and long — it eats the battery a little faster
+  const wantAngle = beamNarrow ? 0.26 : 0.52; spot.angle += (wantAngle - spot.angle) * Math.min(1, dt * 8);
+  spot.distance = beamNarrow ? 60 : 34; spot.penumbra = beamNarrow ? 0.5 : 0.8;
+  spot.intensity = 12 * (beamNarrow ? 2.6 : 1) * (torchHeld ? adapt : 1) * level * (0.96 + 0.04 * Math.sin(t * 13.7) * Math.sin(t * 3.1));
   bounce.intensity = torchHeld ? 0.9 * adapt * level : 0;
   const dark = !torchHeld || level < 0.04;
   touch.intensity += ((dark && !player.under ? 0.32 : 0) - touch.intensity) * Math.min(1, dt * 0.5);

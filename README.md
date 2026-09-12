@@ -17,6 +17,7 @@ Then http://localhost:8080/ — add `?seed=123` to fix the cave layout. Mouse + 
 | C (hold) | crouch — low ceilings put you on your belly automatically; underwater: dive |
 | Space | hop / mantle; underwater: surface; in a chimney (a narrow rift going up): hold to climb — it drains you, and if you run out you come off |
 | F (tap repeatedly) | shake the torch to charge it — the bulb is dark while you do |
+| Q | spot or flood beam — narrow reaches the far wall of a cavern and the bottom of a pit, wide shows you the floor either side; the spot eats the battery faster |
 | T | chalk a note on the rock you're looking at |
 | G | drop a glowstick (three per attempt) |
 | H | whistle — the echo tells you how big the space is, even with the torch dead; bats mind it |
