@@ -120,7 +120,7 @@ export function buildField(list, cx, cy, cz, into) {
           // bioluminescence: damp band above water, plus flagged passages, patchy
           const patch = smooth(0.42, 0.9, vnoise(x * 1.5 + 21, y * 1.5, z * 1.5 - 13) * 0.5 + 0.5) * smooth(0.3, 0.7, vnoise(x * 0.35, y * 0.35, z * 0.35 + 5) * 0.5 + 0.5);
           if (bs.algae > 0) g = bs.algae * patch;
-          if (bs.wl !== undefined && y > bs.wl - 0.2 && y < bs.wl + 1.6) g = Math.max(g, 0.8 * patch * (1 - (y - bs.wl) / 1.8));
+          if (bs.wl !== undefined && y > bs.wl - 0.2 && y < bs.wl + 1.6) g = Math.max(g, (bs.wl - Math.max(bs.y0, bs.y1) < 0.12 ? 0.3 : 0.8) * patch * (1 - (y - bs.wl) / 1.8));   // puddles grow less than pools
         }
         dens[idx] = v; glow[idx] = g; calc[idx] = cal * 255; wet[idx] = wt * 255; tint[idx] = bs ? bs.tint * 50 : 0;
         if (v < 0) anyAir = true; else anyRock = true;

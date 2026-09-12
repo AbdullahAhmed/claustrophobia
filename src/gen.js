@@ -262,6 +262,7 @@ class Worm {
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
                 algae: core ? this.algae : 0, tint: this.tint };
     if (wl !== undefined) n.wl = wl;
+    else if (core && this.mode && (this.mode.name === 'passage' || this.mode.name === 'bedding' || this.mode.name === 'chamber') && Math.abs(this.pitch) < 0.12 && R() < 0.07) n.wl = n.y + 0.07;   // a puddle in a low spot
     const cavern = this.mode && this.mode.name === 'cavern' && !this.pit && !this.sump;
     if (cavern && R() < 0.6) {
       n.boulders = [];

@@ -22,7 +22,7 @@ const dread = Math.min(1, (cave.attempts - 1) * 0.18 + cave.deaths.length * 0.08
 let saveT = 0;
 function saveRun() {
   if (!player.alive || player.out) return;
-  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks, rope: player.rope,
+  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks, rope: player.rope, cells: player.cells,
                glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })),
                dist: player.dist, maxDepth: player.maxDepth, marks: runMarks, trail: player.trail.slice(-3000), t: runTime };
   saveCave();
@@ -37,7 +37,7 @@ const GRAV = 14;
 const player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, h: H_STAND, grounded: false, bob: 0, stamina: 1, sprint: false,
                  wl: -Infinity, swim: false, under: false, breath: 1, battery: 1, hurt: false,
                  airT: 0, whooshed: false, underT: 0, stepPhase: 0,
-                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0, sticks: 3, rope: 0 };
+                 dist: 0, maxDepth: 0, marks: 0, alive: true, out: false, trail: [], lastTrail: null, cold: 0, sticks: 3, rope: 0, cells: false };
 G.focus.x = 0; G.focus.y = 0; G.focus.z = 0;
 
 // ---------- scene ----------
@@ -272,7 +272,7 @@ function placeBones(p) {
   bonePiles.push({ x: p.x, y: p.y, z: p.z, r: p.rx * 0.7 + (p.big ? 3 : 0), crunched: 0 });
   if (!p.big && R() < 0.3) {
     const ax = p.x + (R() - 0.5) * 0.8, az = p.z + (R() - 0.5) * 0.8, fy = floorBelow(ax, p.y + 1.0, az);
-    if (fy !== null) placeCache(ax, fy, az, R() < 0.45 ? 'battery' : R() < 0.7 ? 'sticks' : 'rope');
+    if (fy !== null) placeCache(ax, fy, az, R() < 0.4 ? 'battery' : R() < 0.62 ? 'sticks' : R() < 0.85 ? 'rope' : 'cells');
   }
 }
 const remains = [];          // {x,y,z, taken, light}
@@ -394,7 +394,7 @@ const caches = [];           // {x,y,z, kind, taken, mesh}
 const packGeo = new THREE.BoxGeometry(0.28, 0.2, 0.16), packMat = new THREE.MeshStandardMaterial({ color: 0x3b3a36, roughness: 0.9, flatShading: true });
 function placeCache(x, y, z, kind) {
   const mesh = new THREE.Mesh(packGeo, packMat); mesh.position.set(x, y + 0.1, z); mesh.rotation.y = rr(0, 6); mesh.rotation.z = rr(-0.3, 0.3); scene.add(mesh);
-  const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : kind === 'rope' ? 0xff7a5c : 0x9dffb0, fog: false }));
+  const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : kind === 'rope' ? 0xff7a5c : kind === 'cells' ? 0xffffff : 0x9dffb0, fog: false }));
   tag.position.set(x, y + 0.22, z); scene.add(tag);
   caches.push({ x, y, z, kind, taken: false, mesh, tag });
 }
@@ -776,6 +776,7 @@ function footstep(kind) {
   if (!soundsOn) return;
   const o = { x: player.x, y: player.y, z: player.z, wet: 0.5, vary: 0.15, hrtf: false };
   if (kind === 'wade') sfx.play('wade', { ...o, vol: 0.7 });
+  else if (kind === 'puddle') sfx.play('splash_small', { ...o, vol: 0.5, rate: 1.2 });
   else if (kind === 'swim') sfx.play('stroke', { ...o, vol: 0.45 });
   else if (kind === 'crawl') sfx.play(Math.random() < 0.5 ? 'drag' : 'scrape', { ...o, vol: 0.45, rate: 0.9 });
   else sfx.play(Math.random() < 0.3 ? 'step_gravel' : 'step_rock', { ...o, vol: kind === 'crouch' ? 0.35 : 0.55 });
@@ -861,7 +862,7 @@ function updatePlayer(dt) {
     collide(); player.grounded = false; player.airT = 0;
   } else {
     const wx = -sy * mz + cy * mx, wz = -cy * mz - sy * mx;
-    if (depthW > 0.25) { speed *= 0.55; stepKind = 'wade'; }
+    if (depthW > 0.25) { speed *= 0.55; stepKind = 'wade'; } else if (depthW > 0.02) stepKind = 'puddle';
     if (keys.Space && player.grounded && player.h > 1.4 && !player.hurt) { player.vy = 4.0; player.grounded = false; }
     player.vy = Math.max(player.vy - GRAV * dt, -25);
     const wasGrounded = player.grounded, preVy = player.vy;
@@ -948,6 +949,7 @@ function updatePlayer(dt) {
       c.taken = true; scene.remove(c.mesh); scene.remove(c.tag);
       if (c.kind === 'battery') { player.battery = Math.min(1, player.battery + 0.4); showHint('a dead caver\'s spare cells. +40%'); }
       else if (c.kind === 'rope') { player.rope++; showHint('a coil of rope. E at a drop to rig it'); }
+      else if (c.kind === 'cells') { player.cells = true; player.battery = Math.min(1, player.battery + 0.2); showHint('lithium cells. the torch will last longer now'); }
       else { player.sticks += 2; showHint(`two glowsticks in the pack · ${player.sticks} now`); }
       sfx.play('rattle', { vol: 0.5, rate: 0.7 }); sfx.play('torch_click', { vol: 0.4 });
     }
@@ -1019,7 +1021,7 @@ function torchLevel(b) {
 }
 let stutter = 1;
 function updateTorch(dt) {
-  if (running && player.alive && !player.out) player.battery = Math.max(0, player.battery - dt / BATTERY_S);
+  if (running && player.alive && !player.out) player.battery = Math.max(0, player.battery - dt / (BATTERY_S * (player.cells ? 1.6 : 1)));
   if (torchHeld) {
     torch.position.copy(camera.position);
     const a = 1 - Math.pow(shakeT > 0 ? 0.05 : 0.0005, dt);
@@ -1203,7 +1205,7 @@ function init() {
     const r = cave.run;
     player.x = r.x; player.y = r.y; player.z = r.z; player.yaw = r.yaw; player.battery = r.battery; player.breath = r.breath; player.hurt = r.hurt;
     player.dist = r.dist; player.maxDepth = r.maxDepth; player.trail = r.trail || []; runMarks.push(...(r.marks || [])); runTime = r.t || 0;
-    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.rope !== undefined) player.rope = r.rope;
+    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.rope !== undefined) player.rope = r.rope; if (r.cells) player.cells = true;
     for (const g of (r.glow || [])) { const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(g.x, g.y, g.z); mesh.rotation.x = Math.PI / 2; scene.add(mesh); const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.set(g.x, g.y + 0.15, g.z); scene.add(light); glow.push({ ...g, light, mesh }); }
     for (const m of runMarks) G.props.push({ type: 'mark', ...m });
     G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
