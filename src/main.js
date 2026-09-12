@@ -445,7 +445,17 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 function openChalk() { typing = true; for (const k in keys) keys[k] = false; chalkIn.value = ''; chalkIn.style.display = 'block'; chalkIn.focus(); }
 function closeChalk() { typing = false; chalkIn.style.display = 'none'; chalkIn.blur(); canvas.focus(); }
-function look(dx, dy) { player.yaw -= dx * 0.0022; player.pitch = clamp(player.pitch - dy * 0.0022, -1.5, 1.5); }
+let settings = { sens: 1, vol: 0.9, inv: false };
+try { settings = Object.assign(settings, JSON.parse(localStorage.getItem('karst.settings') || '{}')); } catch (e) {}
+function applySettings() {
+  $('s-sens').value = settings.sens; $('s-vol').value = settings.vol; $('s-inv').checked = settings.inv;
+  if (sfx.master) sfx.master.gain.value = settings.vol;
+  try { localStorage.setItem('karst.settings', JSON.stringify(settings)); } catch (e) {}
+}
+$('s-sens').addEventListener('input', e => { settings.sens = +e.target.value; applySettings(); });
+$('s-vol').addEventListener('input', e => { settings.vol = +e.target.value; applySettings(); });
+$('s-inv').addEventListener('change', e => { settings.inv = e.target.checked; applySettings(); });
+function look(dx, dy) { player.yaw -= dx * 0.0022 * settings.sens; player.pitch = clamp(player.pitch - dy * 0.0022 * settings.sens * (settings.inv ? -1 : 1), -1.5, 1.5); }
 addEventListener('mousemove', e => { if (document.pointerLockElement === canvas || (dragLook && dragging)) look(e.movementX, e.movementY); });
 canvas.addEventListener('mousedown', () => { dragging = true; }); addEventListener('mouseup', () => { dragging = false; });
 overlay.addEventListener('click', () => {
@@ -465,7 +475,7 @@ function start() { overlay.classList.add('hidden'); running = true; }
 if (matchMedia('(pointer: coarse)').matches) $('warn').style.display = 'block';
 
 // ---------- run record ----------
-let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0 };
+let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0, froze: 0 };
 try { record = Object.assign(record, JSON.parse(localStorage.getItem('karst.record') || '{}')); } catch (e) {}
 record.runs++;
 try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {}
@@ -559,6 +569,7 @@ function drawMark(text, hit, normal, old) {
 
 // ---------- sound hooks ----------
 const sfx = new Sfx('sounds/out/');
+applySettings();
 const loops = {};
 let soundsOn = false;
 sfx.load().then(() => {
@@ -679,7 +690,7 @@ function footstep(kind) {
 
 // ---------- player ----------
 let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2;
-let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0;                      // stuck > 0: wedged, that many wiggles still needed
+let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false;                      // stuck > 0: wedged, that many wiggles still needed
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
   const still = notebookOpen || stuck > 0;                    // you stop walking to write; or the rock has you
@@ -725,6 +736,11 @@ function updatePlayer(dt) {
   if (player.sprint) player.stamina = Math.max(0, player.stamina - dt / 7); else player.stamina = Math.min(1, player.stamina + dt / (12 * (1 + player.cold)));
   // water is cold; you warm up slowly, faster when moving
   if (player.swim || depthW > 0.3) player.cold = Math.min(1, player.cold + dt / (player.under ? 14 : 25)); else player.cold = Math.max(0, player.cold - dt / (ml > 0 ? 45 : 80));
+  if (player.cold > 0.95) {
+    coldT += dt;
+    if (coldT > 40 && torchHeld && !coldDropped) { coldDropped = true; dropTorch(); showHint('your hands are shaking too hard to hold it'); }
+    if (coldT > 110) die('THE COLD', 'you stopped shivering. that was the end of it', 'froze');
+  } else coldT = Math.max(0, coldT - dt * 0.5);
   let speed = 3.3 * stance * (player.hurt ? 0.7 : 1) * (player.sprint ? 1.7 : 1);
   let stepKind = stance === 1 ? 'walk' : stance > 0.4 ? 'crouch' : 'crawl';
 
@@ -838,7 +854,7 @@ function updatePlayer(dt) {
     if (!r.taken && Math.hypot(r.x - player.x, r.z - player.z) < 1.0 && Math.abs(r.y - player.y) < 1.5) {
       r.taken = true; scene.remove(r.light); scene.remove(r.lens);
       player.battery = Math.min(1, player.battery + 0.25);
-      showHint(`your own torch. still ${(r.battery * 100).toFixed(0)}% when you ${r.cause === 'drowned' ? 'drowned' : 'fell'}. +25%`);
+      showHint(`your own torch. still ${(r.battery * 100).toFixed(0)}% when you ${r.cause === 'drowned' ? 'drowned' : r.cause === 'froze' ? 'froze' : 'fell'}. +25%`);
       sfx.play('torch_click', { vol: 0.6 }); sfx.play('bones_rattle', { x: r.x, y: r.y, z: r.z, vol: 0.4, rate: 0.9 });
     }
   }
@@ -1064,7 +1080,7 @@ function hud(dt) {
     const stance = player.swim ? (player.under ? 'diving' : 'swimming') : player.h > 1.4 ? 'walking' : player.h > 0.8 ? 'crouched' : 'crawling';
     $('hud').innerHTML = `<b>${Math.hypot(player.x, player.z).toFixed(0)} m</b> from entrance &nbsp; depth <b>${(-player.y).toFixed(1)} m</b> &nbsp; ${stance} &nbsp; open ${open.toFixed(1)}` +
       ` &nbsp;·&nbsp; ${fps} fps · ${meshes} chunks · ${G.worms.length} worms · build max ${stats.maxMs.toFixed(0)} ms · seed ${SEED}`;
-  } else $('hud').innerHTML = [player.hurt ? 'hurt' : '', player.cold > 0.5 ? 'cold' : ''].filter(Boolean).join(' · ');
+  } else $('hud').innerHTML = [player.hurt ? 'hurt' : '', player.cold > 0.95 ? (coldT > 40 ? 'freezing' : 'very cold') : player.cold > 0.5 ? 'cold' : ''].filter(Boolean).join(' · ');
 }
 
 // ---------- bootstrap ----------

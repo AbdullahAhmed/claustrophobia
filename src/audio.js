@@ -6,7 +6,7 @@ export class Sfx {
     this.base = base; this.buffers = {}; this.manifest = {}; this.ready = false; this.last = {};
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     const c = this.ctx;
-    this.master = c.createGain(); this.master.gain.value = 0.9;
+    this.master = c.createGain(); this.master.gain.value = 0.9;   // set from settings
     this.lpf = c.createBiquadFilter(); this.lpf.type = 'lowpass'; this.lpf.frequency.value = 20000; this.lpf.Q.value = 0.5;
     this.bus = c.createGain();
     this.bus.connect(this.lpf); this.lpf.connect(this.master); this.master.connect(c.destination);
