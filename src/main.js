@@ -1276,8 +1276,9 @@ function updatePlayer(dt) {
 // ---------- torch ----------
 let adapt = 1, shakeT = 0, lastShake = 0, buzzT = 0, dropT = 0;
 const _fwd = new THREE.Vector3(), _dropE = new THREE.Euler();
+let torchDrifting = false;
 function dropTorch() {
-  torchHeld = false; hand.visible = false; torchM.classList.add('gone'); dropT = 1.5;
+  torchHeld = false; hand.visible = false; torchM.classList.add('gone'); dropT = 1.5; torchDrifting = false;
   hand.userData.torchModel.position.set(0.16, -0.14, 0.02); hand.userData.torchModel.rotation.set(0, 0, 0);   // lies where the light comes from
   camera.getWorldDirection(_fwd);
   const a = Math.random() * Math.PI * 2, d = 1.3 + Math.random() * 1.4;
@@ -1330,6 +1331,14 @@ function updateTorch(dt) {
     fog.position.set(0, -0.06 + puffK * 0.02, -0.32 - puffK * 0.12); fog.scale.setScalar(0.12 + puffK * 0.1);
   } else fog.visible = false;
   shakeT -= dt;
+  if (!torchHeld) {                                                             // dropped in moving water: it goes with it, still lit
+    const f = G.flowAt(torch.position.x, torch.position.y, torch.position.z);
+    if (f) {
+      const nx = torch.position.x + f.x * f.s * 0.45 * floodFlowMul() * dt, nz = torch.position.z + f.z * f.s * 0.45 * floodFlowMul() * dt;
+      const fy = floorBelow(nx, torch.position.y + 0.6, nz);
+      if (fy !== null && G.fieldAt(nx, fy + 0.25, nz) < -0.15) { torch.position.set(nx, fy + 0.22, nz); torch.rotateY(dt * 0.8); if (!torchDrifting) { torchDrifting = true; showHint('the water is taking the torch', true); } }
+    }
+  }
   bounce.position.copy(camera.position);
   camera.getWorldDirection(viewDir);
   let ahead = 3;
