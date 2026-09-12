@@ -114,4 +114,5 @@ far walls your torch never reaches. A torch that dies in about two minutes unles
 do. Getting wedged in a crawl — and the tight ones only let you through on an empty chest: hold C to breathe out and push, a few centimetres at a time, and let go before the bar runs out. Flooded crawls where you go flat out with your chin in the water and the roof on your
 back — every dip in the floor puts your face under. Cold that shakes the torch out of your hand. Bats. And sometimes, down the passage, a
 pair of eyes — more often the longer this cave has known you. Sometimes the beam finds something low on the floor
-ahead, looking back.
+ahead, looking back. And if you sit resting in the dark long enough, in a cave that knows you, something picks up
+the torch and carries it a way down the passage before setting it down again.
