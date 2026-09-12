@@ -37,7 +37,10 @@ floors, a guaranteed 0.68 m crawl core so intended passages are always passable,
 per-sample glow channel for bioluminescent algae. Chunks (8 m, 0.4 m voxels) are meshed within 32 m of the player and
 disposed beyond 48 m. Generation runs in lockstep rounds with per-worm random streams, so a seed gives exactly the same
 cave whatever route you take — which is what lets your remains, chalk and interrupted runs persist. Chunk builds run in
-Web Workers (`src/field.js` is the shared pure core).
+Web Workers (`src/field.js` is the shared pure core). Water is per-node: a level, and for streams a flow vector; floods
+shift every live level and re-queue the chunks that hold it; a collapse revokes the crawl core through a node, adds a
+block and re-queues too. The crawl core is thinner than a voxel, so collision trusts the analytic core near the line
+rather than the smeared grid.
 
 `src/main.js` — three.js scene, player (collision samples the same density grid the mesh came from — no physics engine),
 stances, swimming and breath, fall damage and injury, torch battery, chalk decals, bones, eyes, the exit, end screens.
