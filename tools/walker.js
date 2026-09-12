@@ -5,12 +5,12 @@ window.walk = async function walk(opts = {}) {
   const secs = opts.seconds || 180, wid = opts.worm || 1, dt = 1 / 60;
   const y = () => new Promise(r => setTimeout(r, 0));
   const p = K.player, log = [], stances = {};
-  let pi = 0, blocked = 0, avoid = 0, avoidDir = 1, lastX = p.x, lastZ = p.z, lastMoveCheck = 0, maxFrame = 0, wp = { x: 0, z: 0 };
+  let pi = 0, blocked = 0, avoid = 0, avoidDir = 1, lastX = p.x, lastZ = p.z, lastMoveCheck = 0, maxFrame = 0, wp = { x: 0, z: 0 }, retreat = 0, stuckHere = 0;
   const startDist = p.dist;
   K.run();
   for (let f = 0; f < secs * 60; f++) {
     const path = K.G.nodes.filter(n => n.w === wid);
-    while (pi < path.length - 1 && Math.hypot(path[pi].x - p.x, path[pi].z - p.z) < 1.4) pi++;
+    while (retreat === 0 && pi < path.length - 1 && Math.hypot(path[pi].x - p.x, path[pi].z - p.z) < 1.4) pi++;
     const t = path[Math.min(pi, path.length - 1)];
     // aim: at the node, at floor + 0.9; in water aim for the surface unless the ceiling is under it
     let aimY = t.y + 0.9;
@@ -18,6 +18,7 @@ window.walk = async function walk(opts = {}) {
     // detour: when blocked, walk to a point 3 m off to one side of the line to the node, then resume
     let gx = t.x, gz = t.z;
     if (avoid > 0) { avoid--; gx = wp.x; gz = wp.z; if (Math.hypot(wp.x - p.x, wp.z - p.z) < 0.8) avoid = 0; }
+    if (retreat > 0) { retreat--; const b = path[Math.max(0, pi - 3)]; gx = b.x; gz = b.z; if (retreat === 0) { pi = Math.max(0, pi - 3); stuckHere = 0; } }
     p.yaw = Math.atan2(-(gx - p.x), -(gz - p.z));
     p.pitch = Math.max(-1.0, Math.min(0.6, Math.atan2(aimY - (p.y + p.h - 0.1), Math.hypot(t.x - p.x, t.z - p.z))));
     K.keys.KeyW = true; K.keys.KeyS = false;
@@ -36,6 +37,7 @@ window.walk = async function walk(opts = {}) {
           const dx = t.x - p.x, dz = t.z - p.z, L = Math.hypot(dx, dz) || 1;
           wp = { x: p.x + (-dz / L) * avoidDir * 3 + dx / L * 1.5, z: p.z + (dx / L) * avoidDir * 3 + dz / L * 1.5 };
           log.push(['avoid', (f / 60).toFixed(0), pi]);
+          if (++stuckHere >= 4 && retreat === 0) { retreat = 300; avoid = 0; log.push(['retreat', (f / 60).toFixed(0), pi]); }   // go back and try again
         }
       }
       else blocked = 0;

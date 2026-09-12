@@ -774,7 +774,7 @@ function footstep(kind) {
 }
 
 // ---------- player ----------
-let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2, ropeHintT = 0;
+let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2, ropeHintT = 0, blockedT = 0;
 let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false;                      // stuck > 0: wedged, that many wiggles still needed
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
@@ -894,9 +894,11 @@ function updatePlayer(dt) {
       if (!done) {
         const ax = px0 + wx * 0.6, az = pz0 + wz * 0.6;
         const lowAir = G.fieldAt(ax, py0 + 0.3, az) < -0.2 && G.fieldAt(ax, py0 + 0.55, az) < -0.2;
-        if (lowAir) { duckT = 0.6; if (duckHold <= 0) { duckLevel = Math.min(duckLevel + 1, 2); duckHold = 0.35; } }
+        blockedT += dt;
+        if (lowAir && blockedT < 2.5) { duckT = 0.6; if (duckHold <= 0) { duckLevel = Math.min(duckLevel + 1, 2); duckHold = 0.35; } }
+        else if (blockedT >= 2.5) { duckLevel = 0; duckT = 0; }                   // ducking didn't help: it's a wall
       }
-    } else if (duckT <= 0) duckLevel = 0;
+    } else { if (duckT <= 0) duckLevel = 0; blockedT = 0; }
     duckHold -= dt;
   }
   if (player.y < -400) { player.x = 0; player.y = 0; player.z = 0; player.vy = 0; }
