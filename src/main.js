@@ -924,6 +924,14 @@ function escape() {
   if (player.out) return; player.out = true; record.escapes++;
   cave.escaped = true; saveCave();
   $('flash').style.opacity = 1;
+  if (record.escapes % 3 === 0) {                                                // every third time out: the people whose sounds these are
+    fetch('sounds/CREDITS.md').then(r => r.text()).then(txt => {
+      const names = [...new Set([...txt.matchAll(/ by ([^\u2014\n]+?) \u2014/g)].map(m => m[1].trim()))].filter(n => !/deleted_user/.test(n));
+      const el = document.createElement('div'); el.className = 'rec'; el.style.marginTop = '14px'; el.style.opacity = '0.7'; el.style.maxWidth = '520px'; el.style.lineHeight = '1.7';
+      el.textContent = 'every sound down there was recorded by someone and given away (CC0, on Freesound): ' + names.join(' · ');
+      setTimeout(() => $('ov-rec').after(el), 2600);
+    }).catch(() => {});
+  }
   setTimeout(() => endScreen('DAYLIGHT', `you found the way out. ${Math.round(runTime / 60) >= 1 ? `you were down there ${Math.round(runTime / 60)} minute${Math.round(runTime / 60) > 1 ? 's' : ''}. ` : ''}the next one is deeper.`, 'CLICK FOR A NEW CAVE'), 2400);
 }
 function newCave() { location.href = location.pathname + '?seed=' + ((Math.random() * 1e9) | 0); }
