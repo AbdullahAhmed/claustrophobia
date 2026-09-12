@@ -1482,7 +1482,7 @@ function footstep(kind) {
   else if (kind === 'puddle') sfx.play('splash_small', { ...o, vol: 0.5, rate: 1.2 });
   else if (kind === 'swim') sfx.play('stroke', { ...o, vol: 0.45 });
   else if (kind === 'crawl') sfx.play(Math.random() < 0.5 ? 'drag' : 'scrape', { ...o, vol: 0.45, rate: 0.9 });
-  else sfx.play(Math.random() < 0.3 ? 'step_gravel' : 'step_rock', { ...o, vol: kind === 'crouch' ? 0.35 : 0.55 });
+  else sfx.play(Math.random() < (lastTheme === 'dry' ? 0.65 : lastTheme === 'broken' ? 0.1 : 0.3) ? 'step_gravel' : 'step_rock', { ...o, vol: kind === 'crouch' ? 0.35 : 0.55 });   // dry floors are gravel; broken ground is block
   for (const b of bonePiles) {
     if (Math.hypot(b.x - player.x, b.z - player.z) < b.r && Math.abs(b.y - player.y) < 2 && b.crunched < gameClock - 4000) {
       b.crunched = gameClock; sfx.play('bone_crunch', { ...o, vol: 0.6 });
