@@ -608,6 +608,18 @@ function placeNote(p) {
   drawMark(p.text, best, new THREE.Vector3(-g.x / gl, -g.y / gl, -g.z / gl), true);
   if (p.lasting) { cave.marks.push({ text: p.text, x: best.x, y: best.y, z: best.z, nx: -g.x / gl, ny: -g.y / gl, nz: -g.z / gl }); saveCave(); }
 }
+// cave pearls: calcite spheres, polished by the water that made them
+const pearlInst = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 6, 5), new THREE.MeshStandardMaterial({ color: 0xf2ead8, roughness: 0.35 }), 1500); pearlInst.count = 0; pearlInst.frustumCulled = false; scene.add(pearlInst);
+function placePearls(p) {
+  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < p.n && pearlInst.count < 1500; i++) {
+    const a = R() * Math.PI * 2, d = Math.sqrt(R()) * p.r, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
+    const fy = floorBelow(x, p.y + 0.3, z); if (fy === null || fy > p.y - 0.02) continue;      // on the pool floor, under the water
+    const r = 0.025 + R() * 0.035;
+    _m.compose(_p.set(x, fy + r * 0.8, z), _q.identity(), _s.set(r, r * 0.9, r)); pearlInst.setMatrixAt(pearlInst.count++, _m);
+  }
+  pearlInst.instanceMatrix.needsUpdate = true;
+}
 // draperies: a wavy calcite sheet hung from the roof
 const curtainMat = new THREE.MeshStandardMaterial({ color: 0xe8d9b8, roughness: 0.5, emissive: 0x1a1408, side: THREE.DoubleSide, flatShading: true, transparent: true, opacity: 0.92 });
 function placeCurtain(p) {
@@ -768,6 +780,7 @@ function processProps(dt) {
     else if (p.type === 'fossil') placeFossil(p);
     else if (p.type === 'curtain') placeCurtain(p);
     else if (p.type === 'oldrope') placeOldRope(p);
+    else if (p.type === 'pearls') placePearls(p);
     else if (p.type === 'mist') placeMist(p);
     else placeBones(p);
     G.props.splice(i, 1);
@@ -829,6 +842,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyT' && !e.repeat) { e.preventDefault(); openChalk(); }
   if (e.code === 'KeyG' && !e.repeat) gHeldAt = performance.now();
   if (e.code === 'KeyH' && !e.repeat) whistle();
+  if (e.code === 'KeyV' && !e.repeat) { hudHidden = !hudHidden; for (const id of ['torchm', 'breathm', 'hint', 'hud']) $(id).style.visibility = hudHidden ? 'hidden' : ''; }
   if (e.code === 'KeyQ' && !e.repeat && torchHeld) { beamNarrow = !beamNarrow; sfx.play('torch_click', { vol: 0.5, rate: beamNarrow ? 1.3 : 1.0 }); showHint(beamNarrow ? 'spot: further, and nothing to either side' : 'flood: wide, and not far'); }
   if (e.code === 'KeyE' && !e.repeat) useRope();
 });
@@ -1451,7 +1465,7 @@ function updatePlayer(dt) {
 // ---------- torch ----------
 let adapt = 1, shakeT = 0, lastShake = 0, buzzT = 0, dropT = 0;
 const _fwd = new THREE.Vector3(), _dropE = new THREE.Euler();
-let torchDrifting = false, beamNarrow = false;
+let torchDrifting = false, beamNarrow = false, hudHidden = false;
 function dropTorch() {
   torchHeld = false; hand.visible = false; torchM.classList.add('gone'); dropT = 1.5; torchDrifting = false;
   hand.userData.torchModel.position.set(0.16, -0.14, 0.02); hand.userData.torchModel.rotation.set(0, 0, 0);   // lies where the light comes from

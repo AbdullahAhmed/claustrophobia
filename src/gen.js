@@ -411,6 +411,8 @@ class Worm {
     // an unstable stretch of a low trunk passage: it can come down behind you once you are through
     if (this.kind === 'trunk' && core && wl === undefined && !this.pit && !this.sump && this.age > 30 && this.mode &&
         (this.mode.name === 'crawl' || this.mode.name === 'squeeze' || this.mode.name === 'bedding') && R() < 0.05 * tf(this, 'unstable')) n.unstable = true;
+    // cave pearls: little calcite spheres in the terrace pools
+    if (this.mode && this.mode.name === 'gour' && wl !== undefined && R() < 0.35) props.push({ type: 'pearls', x: n.x, y: wl, z: n.z, r: this.rx * 0.5, n: 8 + (R() * 20 | 0), seed: R() });
     // draperies: thin calcite curtains hanging from a sloped roof, in the old rock mostly
     if (core && wl === undefined && !this.pit && !this.sump && this.ry > 1.9 && this.rx > 1.8 && R() < 0.04 * (this.theme === 'old' ? 3 : 0.5)) {
       const a = R() * Math.PI * 2, d = R() * this.rx * 0.6;
