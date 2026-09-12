@@ -7,7 +7,16 @@ import { Sfx } from './audio.js';
 const $ = id => document.getElementById(id);
 const { clamp, lerp, rr } = G;
 const params = new URLSearchParams(location.search);
-const SEED = (parseInt(params.get('seed')) || ((Math.random() * 1e9) | 0)) >>> 0;
+// the cave you are in stays the same cave until you get out of it; your dead stay in it too
+let cave = null;
+try { cave = JSON.parse(localStorage.getItem('karst.cave') || 'null'); } catch (e) {}
+const urlSeed = parseInt(params.get('seed'));
+const SEED = (urlSeed || (cave && !cave.escaped && cave.seed) || ((Math.random() * 1e9) | 0)) >>> 0;
+if (!cave || cave.seed !== SEED) cave = { seed: SEED, attempts: 0, deaths: [], marks: [], escaped: false };
+cave.attempts++;
+function saveCave() { try { localStorage.setItem('karst.cave', JSON.stringify(cave)); } catch (e) {} }
+saveCave();
+const runMarks = [];
 
 const PR = 0.26;                                           // player collision radius
 const H_STAND = 1.72, H_CROUCH = 0.95, H_PRONE = 0.5;
@@ -112,8 +121,11 @@ function addBone(kind, x, y, z, yaw, pitch, roll, scale) {
   _p.set(x, y, z); _e.set(pitch, yaw, roll); _q.setFromEuler(_e); _s.set(scale, scale, scale);
   _m.compose(_p, _q, _s); im.setMatrixAt(im.count++, _m); im.instanceMatrix.needsUpdate = true;
 }
-function floorBelow(x, y, z) {                       // drop a point onto the meshed floor
-  for (let t = 0; t < 2.5; t += 0.05) if (G.fieldAt(x, y - t, z) > -0.04) return y - t;
+function floorBelow(x, y, z) {                       // drop a point onto the meshed floor (skipping rock it may start inside)
+  let t = 0;
+  while (t < 2.0 && G.fieldAt(x, y - t, z) > -0.04) t += 0.1;
+  if (t >= 2.0) return null;
+  for (; t < 4.5; t += 0.05) if (G.fieldAt(x, y - t, z) > -0.04) return y - t;
   return null;
 }
 function placeBones(p) {
@@ -133,6 +145,18 @@ function placeBones(p) {
   }
   bonePiles.push({ x: p.x, y: p.y, z: p.z, r: p.rx * 0.7 + (p.big ? 3 : 0), crunched: 0 });
 }
+const remains = [];          // {x,y,z, taken, light}
+const torchGeo = new THREE.CylinderGeometry(0.025, 0.03, 0.22, 6), torchMat = new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.6 });
+const lensMat = new THREE.MeshBasicMaterial({ color: 0xffb060 });
+function placeRemains(p) {
+  const fy = floorBelow(p.x, p.y + 0.3, p.z);
+  const y = fy === null ? p.y : fy;
+  placeBones({ x: p.x, y, z: p.z, rx: 0.9, ry: 1, big: false, seed: (p.t % 1000) / 1000 });
+  const t = new THREE.Mesh(torchGeo, torchMat); t.position.set(p.x + 0.35, y + 0.04, p.z - 0.2); t.rotation.set(Math.PI / 2, 0, rr(0, 6)); scene.add(t);
+  const lens = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), lensMat); lens.position.set(p.x + 0.35, y + 0.05, p.z - 0.2); scene.add(lens);
+  const light = new THREE.PointLight(0xffa050, 0.25, 4, 1.5); light.position.set(p.x + 0.35, y + 0.12, p.z - 0.2); scene.add(light);
+  remains.push({ x: p.x + 0.35, y, z: p.z - 0.2, taken: false, light, lens, cause: p.cause, battery: p.battery });
+}
 let exitInfo = null;
 function placeExit(e) {
   exitInfo = e;
@@ -151,7 +175,9 @@ function processProps(dt) {
     const d = Math.hypot(p.x - player.x, p.y - player.y, p.z - player.z);
     if (d > 45) continue;
     if (!G.chunkReadyAt(p.x, p.y + 0.5, p.z)) continue;
-    placeBones(p); G.props.splice(i, 1);
+    if (p.type === 'remains') placeRemains(p); else if (p.type === 'mark') drawMark(p.text, new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(p.nx, p.ny, p.nz), true);
+    else placeBones(p);
+    G.props.splice(i, 1);
   }
   // algae lights follow the nearest dense patches
   const near = G.algaeNodes.filter(n => Math.hypot(n.x - player.x, n.y - player.y, n.z - player.z) < 26)
@@ -168,7 +194,8 @@ function pushSphere(oy, r) {
   const d = G.fieldAt(player.x, player.y + oy, player.z);
   if (d <= -r) return null;
   G.gradAt(player.x, player.y + oy, player.z);
-  const g = G.G; let gl = Math.hypot(g.x, g.y, g.z); if (gl < 1e-4) { g.y = 1; gl = 1; }
+  const g = G.G; let gl = Math.hypot(g.x, g.y, g.z);
+  if (gl < 1e-4) { if (d > 0.6) return null; g.x = 0; g.z = 0; g.y = -1; gl = 1; }   // no gradient near a surface: nudge up, never down
   const push = Math.min(0.35, (r + d) / Math.max(gl, 0.6));
   player.x -= g.x / gl * push; player.y -= g.y / gl * push; player.z -= g.z / gl * push;
   return -g.y / gl;
@@ -202,6 +229,7 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'Backquote') showDebug = !showDebug;
+  if (e.code === 'KeyN' && !player.alive) { newCave(); return; }
   if (!running || !player.alive || player.out) return;
   if (e.code === 'KeyF' && !e.repeat) shakeTorch();
   if (e.code === 'KeyT' && !e.repeat) { e.preventDefault(); openChalk(); }
@@ -214,7 +242,8 @@ addEventListener('mousemove', e => { if (document.pointerLockElement === canvas 
 canvas.addEventListener('mousedown', () => { dragging = true; }); addEventListener('mouseup', () => { dragging = false; });
 overlay.addEventListener('click', () => {
   sfx.resume();
-  if (!player.alive || player.out) { location.href = location.pathname + '?seed=' + ((Math.random() * 1e9) | 0); return; }
+  if (player.out) { newCave(); return; }
+  if (!player.alive) { sameCave(); return; }
   if (!canvas.requestPointerLock) { dragLook = true; start(); return; }
   const p = canvas.requestPointerLock({ unadjustedMovement: true });
   if (p && p.catch) p.catch(() => { dragLook = true; start(); });
@@ -232,7 +261,8 @@ let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0 };
 try { record = Object.assign(record, JSON.parse(localStorage.getItem('karst.record') || '{}')); } catch (e) {}
 record.runs++;
 try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {}
-$('ov-rec').textContent = `run ${record.runs} · farthest ${record.best.toFixed(0)} m · escaped ${record.escapes}× · drowned ${record.drowned} · fell ${record.fell} · seed ${SEED}`;
+$('ov-rec').textContent = `cave ${SEED} · attempt ${cave.attempts}${cave.deaths.length ? ` · ${cave.deaths.length} of you lie in it` : ''} · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
+if (cave.attempts > 1) $('ov-sub').textContent = 'the same cave. it remembers.';
 function saveRecord() { record.best = Math.max(record.best, player.dist); try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {} }
 const runStart = performance.now();
 function endScreen(title, sub, go) {
@@ -240,21 +270,26 @@ function endScreen(title, sub, go) {
   const t = Math.round((performance.now() - runStart) / 1000);
   $('ov-title').textContent = title; $('ov-sub').textContent = sub;
   $('ov-body').innerHTML = `<b>${player.dist.toFixed(0)} m</b> walked &nbsp;·&nbsp; deepest <b>${player.maxDepth.toFixed(0)} m</b> &nbsp;·&nbsp; <b>${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</b><br>${player.marks} chalk marks &nbsp;·&nbsp; seed ${SEED}`;
-  $('ov-rec').textContent = `run ${record.runs} · farthest ${record.best.toFixed(0)} m · escaped ${record.escapes}× · drowned ${record.drowned} · fell ${record.fell}`;
-  $('go').textContent = go;
+  $('ov-rec').textContent = `cave ${SEED} · attempt ${cave.attempts} · ${cave.deaths.length} dead in it · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
+  $('go').innerHTML = go;
   overlay.classList.remove('hidden');
   if (document.exitPointerLock) document.exitPointerLock();
 }
 function die(title, why, stat) {
   if (!player.alive) return; player.alive = false; record[stat]++;
+  cave.deaths.push({ x: player.x, y: player.y, z: player.z, cause: stat, battery: player.battery, t: Date.now() });
+  cave.marks.push(...runMarks); saveCave();
   $('hurt').style.opacity = 0.9;
-  setTimeout(() => endScreen(title, why, 'CLICK TO TRY ANOTHER CAVE'), 1400);
+  setTimeout(() => endScreen(title, why, 'CLICK TO GO BACK DOWN &nbsp;·&nbsp; <span style="opacity:.6">N for a new cave</span>'), 1400);
 }
 function escape() {
   if (player.out) return; player.out = true; record.escapes++;
+  cave.escaped = true; saveCave();
   $('flash').style.opacity = 1;
-  setTimeout(() => endScreen('DAYLIGHT', 'you found the way out', 'CLICK TO GO BACK IN'), 2400);
+  setTimeout(() => endScreen('DAYLIGHT', 'you found the way out', 'CLICK FOR A NEW CAVE'), 2400);
 }
+function newCave() { location.href = location.pathname + '?seed=' + ((Math.random() * 1e9) | 0); }
+function sameCave() { location.href = location.pathname + '?seed=' + SEED; }
 
 // ---------- chalk ----------
 const decalHelper = new THREE.Object3D();
@@ -273,15 +308,22 @@ async function placeMark(text) {
   G.gradAt(hit.x, hit.y, hit.z);
   const g = G.G, gl = Math.hypot(g.x, g.y, g.z) || 1;
   const normal = new THREE.Vector3(-g.x / gl, -g.y / gl, -g.z / gl);
+  drawMark(text, hit, normal, false);
+  runMarks.push({ text, x: hit.x, y: hit.y, z: hit.z, nx: normal.x, ny: normal.y, nz: normal.z });
+  player.marks++;
+  sfx.play('scrape', { x: hit.x, y: hit.y, z: hit.z, vol: 0.25, rate: 1.6, vary: 0.2, dur: 0.5 });
+}
+// old: a mark from a previous attempt — faded, smudged
+function drawMark(text, hit, normal, old) {
   const cw = 512, chh = 160, cv = document.createElement('canvas'); cv.width = cw; cv.height = chh;
   const ctx = cv.getContext('2d');
   let fs = 84; ctx.font = `600 ${fs}px Caveat`;
   let tw = ctx.measureText(text).width;
   if (tw > 480) { fs = Math.floor(fs * 480 / tw); ctx.font = `600 ${fs}px Caveat`; tw = ctx.measureText(text).width; }
-  ctx.fillStyle = '#f1ebdd'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = old ? '#cfc6b4' : '#f1ebdd'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(text, cw / 2, chh / 2);
   const img = ctx.getImageData(0, 0, cw, chh), d = img.data;
-  for (let i = 3; i < d.length; i += 4) if (d[i]) d[i] = d[i] * (0.4 + 0.6 * Math.random());
+  for (let i = 3; i < d.length; i += 4) if (d[i]) d[i] = d[i] * (old ? 0.2 + 0.5 * Math.random() : 0.4 + 0.6 * Math.random());
   ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
@@ -302,8 +344,7 @@ async function placeMark(text) {
     const pl = new THREE.Mesh(new THREE.PlaneGeometry(w, hgt), mat);
     pl.position.copy(hit).addScaledVector(normal, 0.03); pl.quaternion.copy(decalHelper.quaternion); scene.add(pl);
   }
-  player.marks++;
-  sfx.play('scrape', { x: hit.x, y: hit.y, z: hit.z, vol: 0.25, rate: 1.6, vary: 0.2, dur: 0.5 });
+  return placed;
 }
 
 // ---------- sound hooks ----------
@@ -385,6 +426,7 @@ function footstep(kind) {
 // ---------- player ----------
 let duckT = 0, duckLevel = 0, duckHold = 0;
 function updatePlayer(dt) {
+  if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
   const f = keys.KeyW || keys.ArrowUp ? 1 : 0, b = keys.KeyS || keys.ArrowDown ? 1 : 0;
   const l = keys.KeyA || keys.ArrowLeft ? 1 : 0, r = keys.KeyD || keys.ArrowRight ? 1 : 0;
   const crouchKey = keys.KeyC || keys.ControlLeft || keys.ShiftLeft;
@@ -472,8 +514,12 @@ function updatePlayer(dt) {
         }
         if (done) break;
       }
-      // still blocked: something low is in the way — get lower and try again
-      if (!done) { duckT = 0.6; if (duckHold <= 0) { duckLevel = Math.min(duckLevel + 1, 2); duckHold = 0.35; } }
+      // still blocked, and there is air low down ahead: it's a lip, not a wall — get lower and try again
+      if (!done) {
+        const ax = px0 + wx * 0.6, az = pz0 + wz * 0.6;
+        const lowAir = G.fieldAt(ax, py0 + 0.3, az) < -0.2 && G.fieldAt(ax, py0 + 0.55, az) < -0.2;
+        if (lowAir) { duckT = 0.6; if (duckHold <= 0) { duckLevel = Math.min(duckLevel + 1, 2); duckHold = 0.35; } }
+      }
     } else if (duckT <= 0) duckLevel = 0;
     duckHold -= dt;
   }
@@ -494,6 +540,14 @@ function updatePlayer(dt) {
 
   const moved = Math.hypot(player.x - px0, player.z - pz0);
   player.dist += moved;
+  for (const r of remains) {
+    if (!r.taken && Math.hypot(r.x - player.x, r.z - player.z) < 1.0 && Math.abs(r.y - player.y) < 1.5) {
+      r.taken = true; scene.remove(r.light); scene.remove(r.lens);
+      player.battery = Math.min(1, player.battery + 0.25);
+      showHint(`your own torch. still ${(r.battery * 100).toFixed(0)}% when you ${r.cause === 'drowned' ? 'drowned' : 'fell'}. +25%`);
+      sfx.play('torch_click', { vol: 0.6 }); sfx.play('bones_rattle', { x: r.x, y: r.y, z: r.z, vol: 0.4, rate: 0.9 });
+    }
+  }
   player.maxDepth = Math.max(player.maxDepth, -player.y);
   if (exitInfo && Math.hypot(player.x - exitInfo.x, player.y - exitInfo.y, player.z - exitInfo.z) < 5) escape();
 
@@ -552,6 +606,7 @@ function updateTorch(dt) {
   if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15; $('water').style.opacity = 1; }
   else { scene.fog.color.copy(FOG_AIR); scene.fog.density = 0.048; $('water').style.opacity = 0; }
   waterGroup.position.y = Math.sin(t * 1.1) * 0.012;
+  for (const r of remains) if (!r.taken) r.light.intensity = 0.18 + 0.1 * Math.sin(t * 7 + r.x) * Math.sin(t * 2.3);
 }
 
 // ---------- eyes ----------
@@ -631,6 +686,8 @@ function hud(dt) {
 // ---------- bootstrap ----------
 function init() {
   G.initGen(SEED);
+  for (const d of cave.deaths) G.props.push({ type: 'remains', ...d });
+  for (const m of cave.marks) G.props.push({ type: 'mark', ...m });
   G.scanChunks(1, true, disposeChunk); processQueue(1e9);
   for (let y = -3; y < 3; y += 0.1) if (G.fieldAt(0, y + 0.35, 0) < -0.3 && G.fieldAt(0, y + 1.2, 0) < -0.3) { player.y = y; break; }
   player.yaw = Math.PI;
@@ -652,7 +709,7 @@ function stepFrame(dt) {
   if (innerWidth !== lastW || innerHeight !== lastH) { lastW = innerWidth; lastH = innerHeight; resize(); }
   const tf = performance.now();
   if (running && player.alive && !player.out) updatePlayer(dt);
-  G.advanceWorms(40);
+  G.advanceWorms(3);
   G.scanChunks(dt, false, disposeChunk);
   processQueue(running ? 5 : 12);
   processProps(dt);

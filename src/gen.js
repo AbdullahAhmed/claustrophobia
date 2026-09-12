@@ -16,7 +16,11 @@ const MAX_ACTIVE = 10, MAX_WORMS = 90;
 export let SEED = 1, rand = Math.random, EXIT_AT = 260;
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 export const rr = (a, b) => a + rand() * (b - a);
-const gauss = () => (rand() + rand() + rand() - 1.5) * 1.63;
+// The cave must be the same cave every time for a seed, whatever route the player takes: every worm owns its
+// own random stream, worm ids derive from the parent, and generation runs in lockstep rounds.
+let R = Math.random;                                   // the current worm's stream while it steps
+const wr = (a, b) => a + R() * (b - a);
+const gauss = () => (R() + R() + R() - 1.5) * 1.63;
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -51,7 +55,7 @@ export const worms = [];
 export const props = [];                       // things for main.js to place: {type, x,y,z, ...}
 export const algaeNodes = [];
 export let exit = null;
-let wormId = 0, exitClaimed = false, segT = 0;
+let exitClaimed = false, segT = 0;
 export const ckey = (cx, cy, cz) => cx + ',' + cy + ',' + cz;
 
 function addSeg(a, b) {
@@ -65,7 +69,7 @@ function addSeg(a, b) {
               algae: Math.max(a.algae || 0, b.algae || 0),
               boulders: (a.boulders || []).concat(b.boulders || []),
               spel: (a.spel || []).concat(b.spel || []),
-              fx: a.x, fy: a.y + CORE_H, fz: a.z, fdx: b.x - a.x, fdy: b.y - a.y, fdz: b.z - a.z };
+              fx: a.x, fy: a.y + CORE_H, fz: a.z, fdx: b.x - a.x, fdy: b.y - a.y, fdz: b.z - a.z, nb: b };
   s.inv = 1 / ((s.bx * s.bx + s.by * s.by + s.bz * s.bz) || 1e-6);
   s.finv = 1 / ((s.fdx * s.fdx + s.fdy * s.fdy + s.fdz * s.fdz) || 1e-6);
   // box outside which this segment is deep rock anyway (d > ~1), so samples can skip it
@@ -133,8 +137,8 @@ export const MODES = [
 const MODE = Object.fromEntries(MODES.map(m => [m.name, m]));
 
 class Worm {
-  constructor(node, yaw, pitch, kind, life) {
-    this.id = wormId++;
+  constructor(id, node, yaw, pitch, kind, life) {
+    this.id = id; this.rng = mulberry32((Math.imul(id, 0x9E3779B1) ^ SEED) >>> 0);
     this.node = node; this.x = node.x; this.y = node.y; this.z = node.z;
     this.yaw = yaw; this.pitch = pitch;
     this.rx = node.rx; this.ry = node.ry; this.trx = node.rx; this.try = node.ry;
@@ -143,28 +147,30 @@ class Worm {
     this.mode = null; this.sump = null; this.pit = null; this.pinch = 0; this.exit = false; this.algae = 0;
   }
   pickMode(force) {
+    R = this.rng;
     let m = force;
-    if (!m) { let r = rand(); for (const mo of MODES) { r -= mo.w; if (r <= 0) { m = mo; break; } } m = m || MODES[0]; }
+    if (!m) { let r = R(); for (const mo of MODES) { r -= mo.w; if (r <= 0) { m = mo; break; } } m = m || MODES[0]; }
     if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern') && (this.age < 20 || this.exit)) m = MODES[0];
     if (m.name === 'sump' && this.y < -32) m = MODES[0];
     if (m.name === 'pit' && this.y < -28) m = MODES[0];
     this.mode = m;
-    this.trx = rr(m.rx[0], m.rx[1]); this.try = rr(m.ry[0], m.ry[1]);
-    this.modeLeft = rr(m.len[0], m.len[1]);
-    this.algae = rand() < (m.name === 'chamber' || m.name === 'cavern' ? 0.35 : 0.07) ? rr(0.5, 1) : 0;
+    this.trx = wr(m.rx[0], m.rx[1]); this.try = wr(m.ry[0], m.ry[1]);
+    this.modeLeft = wr(m.len[0], m.len[1]);
+    this.algae = R() < (m.name === 'chamber' || m.name === 'cavern' ? 0.35 : 0.07) ? wr(0.5, 1) : 0;
     if (m.name === 'sump') {
       // short: never needs air. medium: usually a bell. long: bring your nerve.
-      const r = rand(), under = r < 0.45 ? rr(5, 10) : r < 0.85 ? rr(10, 18) : rr(18, 30);
-      const bell = under > 18 ? rand() < 0.3 : under > 10 ? rand() < 0.6 : false;
-      this.sump = { phase: 'dive', wl: this.y + 0.35, left: under, bell: 0, bellAt: bell ? under * rr(0.4, 0.6) : null,
-                    trap: this.kind !== 'trunk' && rand() < 0.25 };
+      const r = R(), under = r < 0.45 ? wr(5, 10) : r < 0.85 ? wr(10, 18) : wr(18, 30);
+      const bell = under > 18 ? R() < 0.3 : under > 10 ? R() < 0.6 : false;
+      this.sump = { phase: 'dive', wl: this.y + 0.35, left: under, bell: 0, bellAt: bell ? under * wr(0.4, 0.6) : null,
+                    trap: this.kind !== 'trunk' && R() < 0.25 };
     }
     if (m.name === 'pit') {
-      const drop = rr(4, 15), pool = rand() < 0.3;
-      this.pit = { phase: 'ledge', drop, bottom: this.y - drop, wl: pool ? this.y - drop + 2.4 : undefined, cavern: rand() < 0.1 };
+      const drop = wr(4, 15), pool = R() < 0.3;
+      this.pit = { phase: 'ledge', drop, bottom: this.y - drop, wl: pool ? this.y - drop + 2.4 : undefined, cavern: R() < 0.1 };
     }
   }
   step() {
+    R = this.rng;
     let core = true, wl;
     if (this.sump) {                                    // ---- flooded section ----
       const S = this.sump; wl = S.wl;
@@ -209,7 +215,6 @@ class Worm {
         this.yaw += clamp(angDiff(Math.atan2(dx, dz), this.yaw), -0.4, 0.4);
         this.pitch += clamp(Math.atan2(dy, Math.hypot(dx, dz)) - this.pitch, -0.2, 0.2);
         if (Math.hypot(dx, dy, dz) < STEP * 1.6) {          // join the older passage: a loop
-          if (!this.canCarve(this.node, t)) return false;
           addSeg(this.node, t); return false;
         }
       } else {
@@ -225,17 +230,17 @@ class Worm {
           if (this.mode && this.mode.name === 'cavern') this.pitch *= 0.5;
         }
         if (this.kind === 'trunk') {
-          const away = Math.atan2(this.x - focus.x, this.z - focus.z);
+          const away = Math.atan2(this.x, this.z);              // trunks head away from the entrance
           this.yaw += angDiff(away, this.yaw) * 0.06;
         }
       }
       // a crawl that continues past a slot you can't get through
-      if (this.kind !== 'trunk' && this.mode && this.mode.name === 'crawl' && rand() < 0.04) { this.ry = 0.2; this.rx = 0.5; core = false; }
+      if (this.kind !== 'trunk' && this.mode && this.mode.name === 'crawl' && R() < 0.04) { this.ry = 0.2; this.rx = 0.5; core = false; }
     }
     if (!this.carve(core, wl)) return false;
     if (this.exit && this.y > SURFACE_Y) { makeExit(this); return false; }
     if (this.kind !== 'trunk' && this.life <= 0 && !this.sump && !this.pit) {
-      if (rand() < 0.55) { this.pinch = 3; return true; }
+      if (R() < 0.55) { this.pinch = 3; return true; }
       return false;
     }
     if (this.kind === 'trunk' && !exitClaimed && !this.sump && !this.pit && Math.hypot(this.x, this.z) > EXIT_AT) { exitClaimed = true; this.exit = true; this.target = null; }
@@ -243,23 +248,27 @@ class Worm {
     if (!this.sump && !this.pit && !this.exit) {
       const inCavern = this.mode && this.mode.name === 'cavern';
       // fork: side passage or a short alcove
-      if (this.age > 6 && worms.length < MAX_WORMS && activeWorms() < MAX_ACTIVE &&
-          rand() < (this.kind === 'trunk' ? 0.05 : 0.02) * (inCavern ? 3 : 1)) {
-        const alcove = rand() < 0.3;
-        const c = new Worm(this.node, this.yaw + (rand() < 0.5 ? -1 : 1) * rr(0.7, 1.5), this.pitch * 0.5, 'side',
-                           alcove ? rr(3, 8) : rr(15, 80));
+      if (this.age > 6 && worms.length < MAX_WORMS &&
+          R() < (this.kind === 'trunk' ? 0.05 : 0.02) * (inCavern ? 3 : 1)) {
+        const alcove = R() < 0.3;
+        const c = new Worm((Math.imul(this.id, 1000003) + this.n * 7 + 1) | 0, this.node, this.yaw + (R() < 0.5 ? -1 : 1) * wr(0.7, 1.5), this.pitch * 0.5, 'side',
+                           alcove ? wr(3, 8) : wr(15, 80));
         c.pickMode(alcove ? MODE.squeeze : null);
         if (alcove) { c.trx = Math.max(0.6, c.trx * 0.8); c.try = Math.max(0.5, c.try * 0.8); }
         worms.push(c);
       }
       // occasionally steer into an older passage to make a loop
-      if (!this.target && this.kind !== 'trunk' && rand() < 0.03) {
+      if (!this.target && this.kind !== 'trunk' && R() < 0.03) {
         let best = null, bd = 18;
-        for (let k = nodes.length - 400; k >= 0 && k > nodes.length - 4000; k--) {
-          const o = nodes[k];
-          if (o.w === this.id || o.wl !== undefined || o.core === false) continue;
-          const d = Math.hypot(o.x - this.x, o.y - this.y, o.z - this.z);
-          if (d < bd && d > 4) { bd = d; best = o; }
+        const cx = Math.floor(this.x / CHUNK), cy = Math.floor(this.y / CHUNK), cz = Math.floor(this.z / CHUNK);
+        for (let dz = -2; dz <= 2; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) {
+          const list = cellSegs.get(ckey(cx + dx, cy + dy, cz + dz)); if (!list) continue;
+          for (const sg of list) {
+            const o = sg.nb;
+            if (!o || o.w === this.id || o.wl !== undefined || o.core === false || o.i < 8) continue;
+            const d = Math.hypot(o.x - this.x, o.y - this.y, o.z - this.z);
+            if (d < bd && d > 4) { bd = d; best = o; }
+          }
         }
         if (best) this.target = best;
       }
@@ -272,42 +281,35 @@ class Worm {
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
                 algae: core ? this.algae : 0 };
     if (wl !== undefined) n.wl = wl;
-    if (!this.canCarve(this.node, n)) return false;              // ran into a finished part of the cave: dead end
     const cavern = this.mode && this.mode.name === 'cavern' && !this.pit && !this.sump;
-    if (cavern && rand() < 0.6) {
+    if (cavern && R() < 0.6) {
       n.boulders = [];
-      for (let k = 0, c = 1 + (rand() * 3 | 0); k < c; k++) {
-        const r = rr(0.7, 2.4), a = rand() * Math.PI * 2, d = rand() * this.rx * 0.75;
+      for (let k = 0, c = 1 + (R() * 3 | 0); k < c; k++) {
+        const r = wr(0.7, 2.4), a = R() * Math.PI * 2, d = R() * this.rx * 0.75;
         n.boulders.push({ x: n.x + Math.sin(a) * d, y: n.y + r * 0.45, z: n.z + Math.cos(a) * d, r });
       }
     }
     // dripstone: hangs from roomy ceilings, grows from the floor under it
     const roomy = this.ry > 1.5 && wl === undefined && core;
-    if (roomy && rand() < (cavern ? 0.7 : this.ry > 2.3 ? 0.5 : 0.12)) {
+    if (roomy && R() < (cavern ? 0.7 : this.ry > 2.3 ? 0.5 : 0.12)) {
       n.spel = [];
       const big = cavern ? 2.2 : this.ry > 2.3 ? 1.3 : 1;
-      for (let k = 0, c = 1 + (rand() * (cavern ? 4 : 2) | 0); k < c; k++) {
-        const a = rand() * Math.PI * 2, d = rand() * this.rx * 0.55, x = n.x + Math.sin(a) * d, z = n.z + Math.cos(a) * d;
+      for (let k = 0, c = 1 + (R() * (cavern ? 4 : 2) | 0); k < c; k++) {
+        const a = R() * Math.PI * 2, d = R() * this.rx * 0.55, x = n.x + Math.sin(a) * d, z = n.z + Math.cos(a) * d;
         const ceil = n.y + (1 + CY) * this.ry * Math.sqrt(Math.max(0.2, 1 - (d / this.rx) ** 2));
-        const r = rr(0.18, 0.42) * big, len = rr(0.6, 2.2) * big;
-        const column = rand() < 0.12;
+        const r = wr(0.18, 0.42) * big, len = wr(0.6, 2.2) * big;
+        const column = R() < 0.12;
         n.spel.push({ x, z, top: ceil + 0.3, len: column ? ceil - n.y + 0.6 : Math.min(len, ceil - n.y - 0.5), r: column ? r * 1.3 : r, up: false });
-        if (!column && rand() < 0.6) n.spel.push({ x: x + rr(-0.3, 0.3), z: z + rr(-0.3, 0.3), top: n.y - 0.25, len: rr(0.3, 1.0) * big, r: rr(0.15, 0.4) * big, up: true });
+        if (!column && R() < 0.6) n.spel.push({ x: x + wr(-0.3, 0.3), z: z + wr(-0.3, 0.3), top: n.y - 0.25, len: wr(0.3, 1.0) * big, r: wr(0.15, 0.4) * big, up: true });
       }
     }
     addSeg(this.node, n); nodes.push(n);
     if (n.algae > 0.4 && n.i % 3 === 0) algaeNodes.push(n);
-    if (core && wl === undefined && this.rx < 3 && rand() < 0.03) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: false, seed: rand() });
-    if (cavern && rand() < 0.02) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: true, seed: rand() });
+    if (core && wl === undefined && this.rx < 3 && R() < 0.03) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: false, seed: R() });
+    if (cavern && R() < 0.02) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: true, seed: R() });
     this.node = n; this.x = n.x; this.y = n.y; this.z = n.z;
     this.life -= STEP; this.age += STEP;
     return true;
-  }
-  canCarve(a, b) {
-    return forCells(a, b, (key, cx, cy, cz) => {
-      const ch = chunks.get(key);
-      if (ch && ch.built && distChunk(cx, cy, cz) < LOCK_R) return false;
-    });
   }
 }
 function distChunk(cx, cy, cz) {
@@ -317,26 +319,30 @@ export function activeWorms() {
   let n = 0; for (const w of worms) if (Math.hypot(w.x - focus.x, w.y - focus.y, w.z - focus.z) < FRONTIER) n++;
   return n;
 }
-export function advanceWorms(budget) {
-  for (let i = 0; i < worms.length && budget > 0; i++) {
-    const w = worms[i];
-    while (budget > 0 && Math.hypot(w.x - focus.x, w.y - focus.y, w.z - focus.z) < FRONTIER) {
-      budget--;
-      if (!w.step()) {
-        worms.splice(i, 1); i--;
-        if (w.exit && !exit) exitClaimed = false;              // the climb was cut off; another trunk gets to try
-        if (w.kind === 'trunk') ensureTrunks();
-        break;
-      }
+export let rounds = 0;
+// One round: every live worm takes one step, in list order. The graph after k rounds is a pure function of the seed.
+function round() {
+  rounds++;
+  const live = worms.slice();
+  for (const w of live) {
+    if (!w.step()) {
+      worms.splice(worms.indexOf(w), 1);
+      if (w.exit && !exit) exitClaimed = false;              // the climb was cut off; another trunk gets to try
+      if (w.kind === 'trunk') ensureTrunks(w);
     }
   }
 }
-function ensureTrunks() {
+// Advance while any live head is still within FRONTIER of the player (bounded per call).
+export function advanceWorms(maxRounds) {
+  for (let k = 0; k < maxRounds && activeWorms() > 0; k++) round();
+}
+function ensureTrunks(dead) {
   let t = 0; for (const w of worms) if (w.kind === 'trunk') t++;
+  let k = 0;
   while (t < 2) {
     let far = nodes[0], fd = -1;
-    for (const o of nodes) { if (o.wl !== undefined || o.core === false) continue; const d = Math.hypot(o.x - focus.x, o.y - focus.y, o.z - focus.z); if (d > fd) { fd = d; far = o; } }
-    const w = new Worm(far, Math.atan2(far.x - focus.x, far.z - focus.z), 0, 'trunk', Infinity);
+    for (const o of nodes) { if (o.wl !== undefined || o.core === false) continue; const d = Math.hypot(o.x, o.y, o.z); if (d > fd) { fd = d; far = o; } }
+    const w = new Worm((Math.imul(dead.id, 7919) + 31 * (++k) + dead.n) | 0, far, Math.atan2(far.x, far.z), 0, 'trunk', Infinity);
     w.pickMode(MODE.passage); worms.push(w); t++;
   }
 }
@@ -495,7 +501,7 @@ export function scanChunks(dt, force, onDispose) {
     const cx = pcx + dx, cy = pcy + dy, cz = pcz + dz, key = ckey(cx, cy, cz);
     let ch = chunks.get(key);
     if (!ch) { ch = { cx, cy, cz, key, built: false, dirty: false, solid: false, density: null, glow: null, calc: null, wet: null, mesh: null, water: null }; chunks.set(key, ch); }
-    if (!ch.built || ch.dirty) { ch.d2 = dx * dx + dy * dy + dz * dz; queue.push(ch); }
+    if (!ch.built || (ch.dirty && distChunk(cx, cy, cz) > LOCK_R)) { ch.d2 = dx * dx + dy * dy + dz * dz; queue.push(ch); }
   }
   queue.sort((a, b) => a.d2 - b.d2);
   for (const ch of chunks.values()) {
@@ -542,9 +548,9 @@ export function initGen(seed) {
   SEED = seed; rand = mulberry32(seed); EXIT_AT = rr(200, 320);
   const start = { x: 0, y: 0, z: 0, rx: 3.4, ry: 2.6, w: -1, i: 0, core: true, algae: 0 }; nodes.push(start);
   for (let i = 0; i < 3; i++) {
-    const w = new Worm(start, i * 2.094 + rr(-0.4, 0.4), 0, 'trunk', Infinity);
+    const w = new Worm(i + 1, start, i * 2.094 + rr(-0.4, 0.4), 0, 'trunk', Infinity);
     w.pickMode(MODE.passage); w.modeLeft = rr(20, 40); worms.push(w);
   }
-  for (let guard = 0; guard < 60 && activeWorms() > 0; guard++) advanceWorms(5000);
+  advanceWorms(400);
 }
 export const debug = { Worm, MODE, get segT() { return segT; } };
