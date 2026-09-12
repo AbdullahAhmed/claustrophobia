@@ -62,7 +62,7 @@ rockMat.onBeforeCompile = (sh) => {
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = glow;');
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', 'varying float vGlow;\n#include <common>')
-    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.10, 0.75, 0.55) * vGlow * vGlow * 0.5;');
+    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.10, 0.75, 0.55) * vGlow * vGlow * 0.32;');
 };
 const waterMat = new THREE.MeshStandardMaterial({ color: 0x0a2226, roughness: 0.08, metalness: 0.3, emissive: 0x03120f,
                                                   transparent: true, opacity: 0.84, side: THREE.DoubleSide, depthWrite: false });
@@ -373,6 +373,22 @@ function updateRoping(dt) {
     roping = null; showHint(player.y < r.bottom + 1 ? 'down' : 'up');
   }
 }
+// roots through the roof near the surface
+const rootMat = new THREE.MeshStandardMaterial({ color: 0x3d2f22, roughness: 0.95, flatShading: true });
+const roots = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 0.25, 1, 5), rootMat, 1200); roots.count = 0; scene.add(roots);
+function placeRoots(p) {
+  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < p.n && roots.count < 1200; i++) {
+    const a = R() * Math.PI * 2, d = R() * p.rx * 0.7, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
+    // find the ceiling above this spot, hang a root from it
+    let cy = null; for (let h = 0; h < 4; h += 0.1) { const yy = p.y - 1.5 + h; if (G.fieldAt(x, yy, z) > -0.05 && G.fieldAt(x, yy - 0.15, z) < -0.05) { cy = yy; break; } }
+    if (cy === null) continue;
+    const len = 0.4 + R() * 1.4, r = 0.012 + R() * 0.03;
+    _p.set(x, cy - len / 2 + 0.05, z); _e.set(R() * 0.25 - 0.12, R() * 6, R() * 0.25 - 0.12); _q.setFromEuler(_e); _s.set(r, len, r);
+    _m.compose(_p, _q, _s); roots.setMatrixAt(roots.count++, _m);
+  }
+  roots.instanceMatrix.needsUpdate = true;
+}
 // glowsticks: a cold green light you can leave behind
 const glow = [];             // {x,y,z, light, mesh}
 const stickGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.16, 6);
@@ -478,6 +494,7 @@ function processProps(dt) {
     else if (p.type === 'roost') placeRoost(p);
     else if (p.type === 'cascade') placeCascade(p);
     else if (p.type === 'sinkhole') placeSinkhole(p);
+    else if (p.type === 'roots') placeRoots(p);
     else if (p.type === 'note') placeNote(p);
     else placeBones(p);
     G.props.splice(i, 1);
@@ -488,7 +505,7 @@ function processProps(dt) {
   for (let i = 0; i < algaeLights.length; i++) {
     const l = algaeLights[i], n = near[i];
     if (!n) { l.intensity = 0; continue; }
-    l.position.set(n.x, n.y + 0.9, n.z); l.intensity = 0.5 * n.algae;
+    l.position.set(n.x, n.y + 0.9, n.z); l.intensity = 0.3 * n.algae;
   }
 }
 

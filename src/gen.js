@@ -203,6 +203,7 @@ class Worm {
         if (this.exit) {
           this.pitch += (0.32 - this.pitch) * 0.3;
           this.trx = 1.5; this.try = 1.3;
+          if (this.y > SURFACE_Y - 6) this.tint = 4;                                 // moss creeps in near the surface
           if (this.y > SURFACE_Y - 3) { this.trx = 3.2; this.try = 2.6; }
         } else {
           const band = this.y < -35 ? 0.06 : this.y > 8 ? -0.06 : -0.006;
@@ -289,6 +290,7 @@ class Worm {
     if (n.algae > 0.4 && n.i % 3 === 0) algaeNodes.push(n);
     if (core && wl === undefined && this.rx < 3 && R() < 0.03) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: false, seed: R() });
     if (this.mode && this.mode.name === 'crystal' && !this.pit && !this.sump && R() < 0.75) props.push({ type: 'crystals', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, seed: R() });
+    if (this.exit && this.y > SURFACE_Y - 8 && R() < 0.6) props.push({ type: 'roots', x: n.x, y: n.y + (1 + CY) * this.ry, z: n.z, rx: this.rx, n: 4 + (R() * 6 | 0), seed: R() });
     if (this.roost && this.ry > 2.0 && !this.pit && !this.sump) { this.roost = false; props.push({ type: 'roost', x: n.x, y: n.y + (1 + CY) * this.ry - 0.4, z: n.z, floor: n.y, n: 25 + (R() * 45 | 0) }); }
     if (cavern && R() < 0.02) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: true, seed: R() });
     this.node = n; this.x = n.x; this.y = n.y; this.z = n.z;
