@@ -106,7 +106,14 @@ class Worm {
   pickMode(force) {
     R = this.rng;
     let m = force;
-    if (!m) { let r = R(); for (const mo of MODES) { r -= mo.w; if (r <= 0) { m = mo; break; } } m = m || MODES[0]; }
+    if (!m) {
+      // deeper is meaner: the dangerous modes get heavier with depth
+      const deep = clamp(-this.y / 30, 0, 1.5);
+      const ws = MODES.map(mo => mo.w * (mo.name === 'sump' ? 1 + deep : mo.name === 'pit' ? 1 + 0.8 * deep : mo.name === 'cavern' ? 1 + 0.6 * deep : 1));
+      let r = R() * ws.reduce((a, b) => a + b, 0);
+      for (let k = 0; k < MODES.length; k++) { r -= ws[k]; if (r <= 0) { m = MODES[k]; break; } }
+      m = m || MODES[0];
+    }
     if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern') && (this.age < 20 || this.exit)) m = MODES[0];
     if (m.name === 'sump' && this.y < -32) m = MODES[0];
     if (m.name === 'pit' && this.y < -28) m = MODES[0];

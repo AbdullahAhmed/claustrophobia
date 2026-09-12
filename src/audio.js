@@ -61,7 +61,7 @@ export class Sfx {
     const g = c.createGain(); g.gain.value = o.vol === undefined ? 1 : o.vol;
     src.connect(g);
     let out = g, pan = null;
-    if (o.x !== undefined) {
+    if (o.x !== undefined && Number.isFinite(o.x) && Number.isFinite(o.y) && Number.isFinite(o.z)) {
       pan = c.createPanner(); pan.panningModel = o.hrtf === false ? 'equalpower' : 'HRTF';
       pan.distanceModel = 'inverse'; pan.refDistance = 1; pan.maxDistance = 80; pan.rolloffFactor = o.rolloff || 1.1;
       pan.positionX.value = o.x; pan.positionY.value = o.y; pan.positionZ.value = o.z;
@@ -74,7 +74,7 @@ export class Sfx {
       stop(t = 0.05) { try { g.gain.setTargetAtTime(0, c.currentTime, t / 3); src.stop(c.currentTime + t + 0.05); } catch (e) {} },
       setVol(v, t = 0.3) { g.gain.setTargetAtTime(v, c.currentTime, t / 3); },
       setRate(r, t = 0.3) { src.playbackRate.setTargetAtTime(r, c.currentTime, t / 3); },
-      setPos(x, y, z) { if (pan) { pan.positionX.value = x; pan.positionY.value = y; pan.positionZ.value = z; } } };
+      setPos(x, y, z) { if (pan && Number.isFinite(x + y + z)) { pan.positionX.value = x; pan.positionY.value = y; pan.positionZ.value = z; } } };
     return h;
   }
   loop(key, o = {}) { return this.play(key, { ...o, loop: true, vol: o.vol === undefined ? 0 : o.vol }); }

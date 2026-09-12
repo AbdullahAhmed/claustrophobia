@@ -11,12 +11,21 @@ const params = new URLSearchParams(location.search);
 let cave = null;
 try { cave = JSON.parse(localStorage.getItem('karst.cave') || 'null'); } catch (e) {}
 const urlSeed = parseInt(params.get('seed'));
+const urlSeedIsNew = !!urlSeed && !(cave && cave.seed === urlSeed);
 const SEED = (urlSeed || (cave && !cave.escaped && cave.seed) || ((Math.random() * 1e9) | 0)) >>> 0;
 if (!cave || cave.seed !== SEED) cave = { seed: SEED, attempts: 0, deaths: [], marks: [], escaped: false };
-cave.attempts++;
+if (!cave.run) cave.attempts++;
 function saveCave() { try { localStorage.setItem('karst.cave', JSON.stringify(cave)); } catch (e) {} }
 saveCave();
 const runMarks = [];
+let saveT = 0;
+function saveRun() {
+  if (!player.alive || player.out) return;
+  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt,
+               dist: player.dist, maxDepth: player.maxDepth, marks: runMarks, trail: player.trail.slice(-3000), t: runTime };
+  saveCave();
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveRun(); });
 
 const PR = 0.26;                                           // player collision radius
 const H_STAND = 1.72, H_CROUCH = 0.95, H_PRONE = 0.5;
@@ -358,15 +367,17 @@ try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) 
 $('ov-rec').textContent = `cave ${SEED} · attempt ${cave.attempts}${cave.deaths.length ? ` · ${cave.deaths.length} of you lie in it` : ''} · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
 if (cave.attempts > 1) $('ov-sub').textContent = 'the same cave. it remembers.';
 function saveRecord() { record.best = Math.max(record.best, player.dist); try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {} }
-const runStart = performance.now();
+let runTime = 0;
 function endScreen(title, sub, go) {
   running = false; saveRecord();
-  const t = Math.round((performance.now() - runStart) / 1000);
+  delete cave.run; saveCave();
+  const t = Math.round(runTime);
   $('ov-title').textContent = title; $('ov-sub').textContent = sub;
   $('ov-body').innerHTML = `<b>${player.dist.toFixed(0)} m</b> walked &nbsp;·&nbsp; deepest <b>${player.maxDepth.toFixed(0)} m</b> &nbsp;·&nbsp; <b>${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</b><br>${player.marks} chalk marks &nbsp;·&nbsp; seed ${SEED}`;
   $('ov-rec').textContent = `cave ${SEED} · attempt ${cave.attempts} · ${cave.deaths.length} dead in it · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
   $('go').innerHTML = go;
-  overlay.classList.remove('hidden');
+  overlay.classList.remove('hidden'); overlay.classList.add('over');
+  notebookOpen = true; nb.style.display = 'block'; nb.classList.add('under'); drawNotebook();
   if (document.exitPointerLock) document.exitPointerLock();
 }
 function die(title, why, stat) {
@@ -540,7 +551,7 @@ function footstep(kind) {
 }
 
 // ---------- player ----------
-let duckT = 0, duckLevel = 0, duckHold = 0;
+let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2;
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
   const still = notebookOpen;                                 // you stop walking to write
@@ -649,13 +660,14 @@ function updatePlayer(dt) {
   if (player.y < -400) { player.x = 0; player.y = 0; player.z = 0; player.vy = 0; }
 
   // water transitions
-  if (player.swim && !wasSwim) sfx.play('splash', { x: player.x, y: player.wl, z: player.z, vol: 0.8, wet: 0.6 });
+  const wy = Number.isFinite(player.wl) ? player.wl : player.y + 0.3;
+  if (player.swim && !wasSwim) sfx.play('splash', { x: player.x, y: wy, z: player.z, vol: 0.8, wet: 0.6 });
   if (player.under && !wasUnder) { sfx.play('bubbles', { vol: 0.5, rate: 1.1, dur: 1.2 }); player.underT = 0; }
   if (!player.under && wasUnder) {
-    sfx.play('splash_small', { x: player.x, y: player.wl, z: player.z, vol: 0.7 });
+    sfx.play('splash_small', { x: player.x, y: wy, z: player.z, vol: 0.7 });
     if (player.underT > 2.5 && gaspT <= 0) { sfx.play(player.breath < 0.4 ? 'gasping' : 'gasp', { vol: 0.8 }); gaspT = 3; }
   }
-  if (player.under) player.underT += dt;
+  if (player.under) { player.underT += dt; bubbleT -= dt; if (bubbleT <= 0) { bubbleT = rr(2.5, 5); sfx.play('bubbles', { vol: 0.25, rate: rr(0.9, 1.2), dur: 1.0 }); } }
 
   // breath
   if (player.under) player.breath -= dt / BREATH_S; else player.breath = Math.min(1, player.breath + dt / 4);
@@ -721,7 +733,7 @@ const shakeQ = new THREE.Quaternion(), shakeE = new THREE.Euler();
 function shakeTorch() {
   if (!torchHeld) { showHint('you are not holding it'); return; }
   const now = performance.now(); if (now - lastShake < 100) return; lastShake = now;
-  player.battery = Math.min(1, player.battery + 0.012 * (player.battery > 0.6 ? 0.5 : 1));
+  player.battery = Math.min(1, player.battery + 0.025 * (player.battery > 0.6 ? 0.5 : 1));
   shakeT = 0.22;
   shakeE.set(rr(-0.4, 0.4), rr(-0.4, 0.4), rr(-0.5, 0.5)); shakeQ.setFromEuler(shakeE);
   torch.quaternion.multiply(shakeQ);
@@ -910,6 +922,18 @@ function init() {
   G.scanChunks(1, true, disposeChunk); processQueue(1e9, true);
   for (let y = -3; y < 3; y += 0.1) if (G.fieldAt(0, y + 0.35, 0) < -0.3 && G.fieldAt(0, y + 1.2, 0) < -0.3) { player.y = y; break; }
   player.yaw = Math.PI;
+  if (cave.run && !urlSeedIsNew) {                                  // pick the interrupted attempt back up
+    const r = cave.run;
+    player.x = r.x; player.y = r.y; player.z = r.z; player.yaw = r.yaw; player.battery = r.battery; player.breath = r.breath; player.hurt = r.hurt;
+    player.dist = r.dist; player.maxDepth = r.maxDepth; player.trail = r.trail || []; runMarks.push(...(r.marks || [])); runTime = r.t || 0;
+    for (const m of runMarks) G.props.push({ type: 'mark', ...m });
+    G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
+    G.advanceWorms(4000);                                           // the same rounds give the same cave
+    G.scanChunks(1, true, disposeChunk); processQueue(1e9, true);
+    if (player.hurt) $('hud').textContent = 'hurt';
+    $('ov-sub').textContent = 'you are still down here.';
+    $('go').textContent = 'CLICK TO CARRY ON';
+  }
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; },
@@ -927,7 +951,7 @@ function stepFrame(dt) {
   frameNo++;
   if (innerWidth !== lastW || innerHeight !== lastH) { lastW = innerWidth; lastH = innerHeight; resize(); }
   const tf = performance.now();
-  if (running && player.alive && !player.out) updatePlayer(dt);
+  if (running && player.alive && !player.out) { updatePlayer(dt); runTime += dt; saveT += dt; if (saveT > 5) { saveT = 0; saveRun(); } }
   G.advanceWorms(3);
   G.scanChunks(dt, false, disposeChunk);
   processQueue(running ? 5 : 12);
