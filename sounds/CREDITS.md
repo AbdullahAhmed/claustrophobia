@@ -1,0 +1,57 @@
+# Sound credits
+
+All clips are Creative Commons 0 (public domain dedication). Sources are Freesound HQ previews, trimmed/normalised with tools/prep.py.
+
+- `drip1.ogg` — "Water_drop_9.wav" by deleted_user_2104797 — https://freesound.org/s/166325/ — CC0 1.0
+- `drip2.ogg` — "Drop - Water" by mattfinarelli — https://freesound.org/s/533146/ — CC0 1.0
+- `drip3.ogg` — "Slow Single Water Drop Splash" by qubodup — https://freesound.org/s/792932/ — CC0 1.0
+- `drips_cave.ogg` — "Water droplets falling in a cave.wav" by radioscoopfi — https://freesound.org/s/607071/ — CC0 1.0
+- `amb_cave.ogg` — "cave.wav" by SaltedMutton72 — https://freesound.org/s/613148/ — CC0 1.0
+- `amb_grotto.ogg` — "Ambience INT water drip dropping cave grotto spooky (quinta da regaleira portugal).flac" by corkob — https://freesound.org/s/392668/ — CC0 1.0
+- `amb_drone.ogg` — "Dark Ambient Loop" by goulven — https://freesound.org/s/371277/ — CC0 1.0
+- `steps_rock_seq.ogg` — "Footsteps_Mountain_Boots_Rock_Walk_Sequence_Mono.wav" by Nox_Sound — https://freesound.org/s/558472/ — CC0 1.0
+- `step_gravel1.ogg` — "Footsteps_Gravel_Single_03.wav" by BenDrain — https://freesound.org/s/488071/ — CC0 1.0
+- `step_gravel2.ogg` — "Footsteps_Gravel_Single_01.wav" by BenDrain — https://freesound.org/s/488073/ — CC0 1.0
+- `step_gravel3.ogg` — "Footsteps_Gravel_Single_02.wav" by BenDrain — https://freesound.org/s/488070/ — CC0 1.0
+- `step_gravel4.ogg` — "FX_003_footstep_gravel_l.wav" by d00121058 — https://freesound.org/s/390758/ — CC0 1.0
+- `wade_seq.ogg` — "Walking through water" by rosenberg3 — https://freesound.org/s/627004/ — CC0 1.0
+- `wade_seq2.ogg` — "Splashing Footsteps Shallow Water" by ChristopherJngs — https://freesound.org/s/861369/ — CC0 1.0
+- `scrape1.ogg` — "Scraping Stone" by dslrguide — https://freesound.org/s/321488/ — CC0 1.0
+- `scrape2.ogg` — "Stone Scrape" by alegemaate — https://freesound.org/s/667284/ — CC0 1.0
+- `scrape3.ogg` — "Stone Scrape 2" by alegemaate — https://freesound.org/s/667283/ — CC0 1.0
+- `drag_gravel_seq.ogg` — "dragging feet in gravel" by DigPro120 — https://freesound.org/s/811939/ — CC0 1.0
+- `splash1.ogg` — "Splash" by swordofkings128 — https://freesound.org/s/398032/ — CC0 1.0
+- `splash2.ogg` — "water splash 2" by swordofkings128 — https://freesound.org/s/398039/ — CC0 1.0
+- `splash_small.ogg` — "Small Puddle Splash" by Robo9418 — https://freesound.org/s/841834/ — CC0 1.0
+- `splash_plop.ogg` — "WATRSplsh_Stick Throw Into Water_Jaku5.wav" by jakubp.jp — https://freesound.org/s/554595/ — CC0 1.0
+- `amb_underwater.ogg` — "Underwater Ambience" by Fission9 — https://freesound.org/s/504641/ — CC0 1.0
+- `bubbles1.ogg` — "Bubbles 001.wav" by ristooooo1 — https://freesound.org/s/539823/ — CC0 1.0
+- `bubbles2.ogg` — "Bubbles" by hotpin7 — https://freesound.org/s/840042/ — CC0 1.0
+- `swim_seq.ogg` — "POOL SWIMMING R-L" by tbsounddesigns — https://freesound.org/s/530158/ — CC0 1.0
+- `breath_calm.ogg` — "inhale/exhale.wav" by superEGsonic — https://freesound.org/s/273979/ — CC0 1.0
+- `breath_scared_loop.ogg` — "Male_Breath_Scared_Frozen_Loop_Stereo.wav" by Nox_Sound — https://freesound.org/s/554906/ — CC0 1.0
+- `breath_heavy.ogg` — "Scared Male Heavy Breathing" by casiba842 — https://freesound.org/s/554307/ — CC0 1.0
+- `breath_labored.ogg` — "LaboredBreathing.wav" by Sam54123 — https://freesound.org/s/432376/ — CC0 1.0
+- `gasp1.ogg` — "Male Gasp 4.wav" by jawbutch — https://freesound.org/s/344415/ — CC0 1.0
+- `gasp2.ogg` — "Male Gasp 3.wav" by jawbutch — https://freesound.org/s/344416/ — CC0 1.0
+- `gasping.ogg` — "gasping" by Alivvie — https://freesound.org/s/436781/ — CC0 1.0
+- `heartbeat.ogg` — "Heartbeat 97 BPM" by Cloud-10 — https://freesound.org/s/688735/ — CC0 1.0
+- `torch_click1.ogg` — "Flashlight Clicking On.wav" by baidonovan — https://freesound.org/s/187335/ — CC0 1.0
+- `torch_click2.ogg` — "Foley_Object_Flashlight_Small_SingleButton_Mono.wav" by Nox_Sound — https://freesound.org/s/557509/ — CC0 1.0
+- `rattle1.ogg` — "Pill Bottle, Shaking" by AudioWay — https://freesound.org/s/460153/ — CC0 1.0
+- `rattle_seq.ogg` — "pill bottle shaking.wav" by mffm — https://freesound.org/s/236294/ — CC0 1.0
+- `bulb_buzz.ogg` — "Vintage Edison Bulb Flicker & Warm-Up Sound Effect" by hipoidogs — https://freesound.org/s/866662/ — CC0 1.0
+- `rockfall1.ogg` — "Bricks/Stones/Rocks/Gravel Falling" by iwanPlays — https://freesound.org/s/567249/ — CC0 1.0
+- `rockfall2.ogg` — "Rock Tumble 2.wav" by _stubb — https://freesound.org/s/389618/ — CC0 1.0
+- `rockfall3.ogg` — "Rocks Falling.wav" by MTJohnson — https://freesound.org/s/426318/ — CC0 1.0
+- `rockslide.ogg` — "rock slide.wav" by 21100495 — https://freesound.org/s/655368/ — CC0 1.0
+- `rumble.ogg` — "Low rumble SFX" by Sadiquecat — https://freesound.org/s/737428/ — CC0 1.0
+- `creature_breath.ogg` — "BORIERO_Nolwen_2020_2021_Monster breathing.wav" by iut_Paris8 — https://freesound.org/s/567723/ — CC0 1.0
+- `creature_growl.ogg` — "MonsterGrowl.mp3" by yatoimtop — https://freesound.org/s/171178/ — CC0 1.0
+- `bones_rattle.ogg` — "bones.mp3" by Kneeling — https://freesound.org/s/473526/ — CC0 1.0
+- `bone_break.ogg` — "bone break_5.wav" by Vinni_R — https://freesound.org/s/630594/ — CC0 1.0
+- `bone_crunch.ogg` — "Hard Candy / Bone Crunch" by clif_creates — https://freesound.org/s/392883/ — CC0 1.0
+- `whoosh_fall.ogg` — "FallingWhoosh3" by Huglex — https://freesound.org/s/842984/ — CC0 1.0
+- `whoosh_short.ogg` — "whoosh_short_mid.wav" by DJT4NN3R — https://freesound.org/s/449996/ — CC0 1.0
+- `body_fall1.ogg` — "BODY FALL - V HVY - DIRT" by leonelmail — https://freesound.org/s/504626/ — CC0 1.0
+- `body_fall2.ogg` — "Body fall_01.wav" by deleted_user_2104797 — https://freesound.org/s/346695/ — CC0 1.0

@@ -1,0 +1,155 @@
+{
+ "drip": [
+  "drip1.ogg",
+  "drip2.ogg",
+  "drip3.ogg"
+ ],
+ "drips_cave": [
+  "drips_cave.ogg"
+ ],
+ "splash": [
+  "splash1.ogg",
+  "splash2.ogg"
+ ],
+ "splash_small": [
+  "splash_small1.ogg",
+  "splash_small2.ogg"
+ ],
+ "wade": [
+  "wade1.ogg",
+  "wade2.ogg",
+  "wade3.ogg",
+  "wade4.ogg",
+  "wade5.ogg",
+  "wade6.ogg",
+  "wade7.ogg",
+  "wade8.ogg",
+  "wade9.ogg",
+  "wade10.ogg",
+  "wade11.ogg",
+  "wade12.ogg"
+ ],
+ "stroke": [
+  "stroke1.ogg",
+  "stroke2.ogg",
+  "stroke3.ogg",
+  "stroke4.ogg",
+  "stroke5.ogg",
+  "stroke6.ogg"
+ ],
+ "bubbles": [
+  "bubbles1.ogg",
+  "bubbles2.ogg"
+ ],
+ "amb_underwater": [
+  "amb_underwater.ogg"
+ ],
+ "amb_cave": [
+  "amb_cave.ogg"
+ ],
+ "amb_grotto": [
+  "amb_grotto.ogg"
+ ],
+ "amb_drone": [
+  "amb_drone.ogg"
+ ],
+ "rumble": [
+  "rumble.ogg"
+ ],
+ "rockfall": [
+  "rockfall1.ogg",
+  "rockfall2.ogg",
+  "rockfall3.ogg"
+ ],
+ "rockslide": [
+  "rockslide.ogg"
+ ],
+ "step_rock": [
+  "step_rock1.ogg",
+  "step_rock2.ogg",
+  "step_rock3.ogg",
+  "step_rock4.ogg",
+  "step_rock5.ogg",
+  "step_rock6.ogg",
+  "step_rock7.ogg",
+  "step_rock8.ogg"
+ ],
+ "step_gravel": [
+  "step_gravel1.ogg",
+  "step_gravel2.ogg",
+  "step_gravel3.ogg",
+  "step_gravel4.ogg"
+ ],
+ "scrape": [
+  "scrape1.ogg",
+  "scrape2.ogg",
+  "scrape3.ogg"
+ ],
+ "drag": [
+  "drag1.ogg",
+  "drag2.ogg",
+  "drag3.ogg",
+  "drag4.ogg",
+  "drag5.ogg",
+  "drag6.ogg"
+ ],
+ "breath_calm": [
+  "breath_calm.ogg"
+ ],
+ "breath_scared": [
+  "breath_scared.ogg"
+ ],
+ "breath_heavy": [
+  "breath_heavy.ogg"
+ ],
+ "breath_labored": [
+  "breath_labored.ogg"
+ ],
+ "gasp": [
+  "gasp1.ogg",
+  "gasp2.ogg"
+ ],
+ "gasping": [
+  "gasping.ogg"
+ ],
+ "heartbeat": [
+  "heartbeat.ogg"
+ ],
+ "whoosh": [
+  "whoosh1.ogg",
+  "whoosh2.ogg"
+ ],
+ "body_fall": [
+  "body_fall1.ogg",
+  "body_fall2.ogg"
+ ],
+ "torch_click": [
+  "torch_click1.ogg",
+  "torch_click2.ogg"
+ ],
+ "rattle": [
+  "rattle.ogg",
+  "rattle2.ogg",
+  "rattle3.ogg",
+  "rattle4.ogg",
+  "rattle5.ogg",
+  "rattle6.ogg",
+  "rattle7.ogg"
+ ],
+ "bulb_buzz": [
+  "bulb_buzz.ogg"
+ ],
+ "creature_breath": [
+  "creature_breath.ogg"
+ ],
+ "creature_growl": [
+  "creature_growl.ogg"
+ ],
+ "bones_rattle": [
+  "bones_rattle.ogg"
+ ],
+ "bone_crunch": [
+  "bone_crunch1.ogg",
+  "bone_crunch2.ogg"
+ ]
+}

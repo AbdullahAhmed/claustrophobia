@@ -1,0 +1,521 @@
+// Karst — cave generator. Worm graph (floor lines) → distance field → marching cubes.
+// Pure data: no three.js objects here. main.js turns the arrays into meshes.
+import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
+
+// ---------- tunables ----------
+export const VOXEL = 0.4, N = 20, M = N + 1, CHUNK = VOXEL * N;   // 8 m chunks of 0.4 m voxels
+export const MESH_R = 4, KEEP_R = 6;                              // chunk radii: meshed / kept
+export const FRONTIER = 60, LOCK_R = 22;                          // worms advance within FRONTIER m; can't carve within LOCK_R m
+export const CY = 0.62;                                           // capsule centre sits this * ry above the floor line
+export const SURFACE_Y = 10;                                      // the exit opens above this height
+const NOISE_AMP = 0.28, STEP = 1.5;
+const CORE_R = 0.34, CORE_H = 0.32;                               // guaranteed crawl tube along every unpinched passage
+const MAX_ACTIVE = 10, MAX_WORMS = 90;
+
+// ---------- rng / noise ----------
+export let SEED = 1, rand = Math.random, EXIT_AT = 260;
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+export const rr = (a, b) => a + rand() * (b - a);
+const gauss = () => (rand() + rand() + rand() - 1.5) * 1.63;
+export const lerp = (a, b, t) => a + (b - a) * t;
+export const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const angDiff = (a, b) => { let d = (a - b) % (2 * Math.PI); if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI; return d; };
+
+export function hash3(x, y, z) {
+  let h = Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x165667b1) ^ Math.imul(z | 0, 0x9e3779b1) ^ SEED;
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+export function vnoise(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const fx = x - xi, fy = y - yi, fz = z - zi;
+  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+  const a = lerp(hash3(xi, yi, zi), hash3(xi + 1, yi, zi), u);
+  const b = lerp(hash3(xi, yi + 1, zi), hash3(xi + 1, yi + 1, zi), u);
+  const c = lerp(hash3(xi, yi, zi + 1), hash3(xi + 1, yi, zi + 1), u);
+  const d = lerp(hash3(xi, yi + 1, zi + 1), hash3(xi + 1, yi + 1, zi + 1), u);
+  return lerp(lerp(a, b, v), lerp(c, d, v), w) * 2 - 1;
+}
+export const fbm = (x, y, z) => vnoise(x, y, z) * 0.65 + vnoise(x * 2.7 + 11.3, y * 2.7 + 5.1, z * 2.7 + 7.7) * 0.35;
+
+// ---------- shared state ----------
+export const focus = { x: 0, y: 0, z: 0 };     // the player, as far as the generator cares
+export const nodes = [];                       // {x,y,z, rx,ry, w,i, wl?, core, algae, boulders?}
+export const segs = [];
+export const cellSegs = new Map();             // chunk key -> segments touching it
+export const chunks = new Map();               // chunk key -> chunk record
+export const worms = [];
+export const props = [];                       // things for main.js to place: {type, x,y,z, ...}
+export const algaeNodes = [];
+export let exit = null;
+let wormId = 0, exitClaimed = false, segT = 0;
+export const ckey = (cx, cy, cz) => cx + ',' + cy + ',' + cz;
+
+function addSeg(a, b) {
+  const rx = (a.rx + b.rx) / 2, ry = (a.ry + b.ry) / 2, sy = rx / ry;
+  const acy = a.y + CY * a.ry, bcy = b.y + CY * b.ry;          // node y is the floor; capsule centre is above it
+  const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) || 1e-6;
+  const s = { ax: a.x, ay: acy * sy, az: a.z, bx: b.x - a.x, by: (bcy - acy) * sy, bz: b.z - a.z,
+              rx, ry, sy, y0: a.y, y1: b.y, rmin: Math.min(rx, ry),
+              wl: a.wl !== undefined ? a.wl : b.wl, core: a.core !== false && b.core !== false,
+              steep: Math.abs(b.y - a.y) > 0.6 * len,          // shafts: no sediment floor
+              algae: Math.max(a.algae || 0, b.algae || 0),
+              boulders: (a.boulders || []).concat(b.boulders || []),
+              fx: a.x, fy: a.y + CORE_H, fz: a.z, fdx: b.x - a.x, fdy: b.y - a.y, fdz: b.z - a.z };
+  s.inv = 1 / ((s.bx * s.bx + s.by * s.by + s.bz * s.bz) || 1e-6);
+  s.finv = 1 / ((s.fdx * s.fdx + s.fdy * s.fdy + s.fdz * s.fdz) || 1e-6);
+  // box outside which this segment is deep rock anyway (d > ~1), so samples can skip it
+  const e = Math.max(rx, ry) + 1.0;
+  s.x0 = Math.min(a.x, b.x) - e; s.x1 = Math.max(a.x, b.x) + e;
+  s.y0b = Math.min(acy, bcy) - e; s.y1b = Math.max(acy, bcy) + e;
+  s.z0 = Math.min(a.z, b.z) - e; s.z1 = Math.max(a.z, b.z) + e;
+  segs.push(s);
+  forCells(a, b, (key) => {
+    let list = cellSegs.get(key);
+    if (!list) cellSegs.set(key, list = []);
+    list.push(s);
+    const ch = chunks.get(key);
+    if (ch) ch.dirty = true;
+  });
+}
+function forCells(a, b, fn) {
+  const m = Math.max(a.rx, b.rx, a.ry, b.ry) * 1.7 + NOISE_AMP + 0.6;
+  const x0 = Math.floor((Math.min(a.x, b.x) - m) / CHUNK), x1 = Math.floor((Math.max(a.x, b.x) + m) / CHUNK);
+  const y0 = Math.floor((Math.min(a.y, b.y) - m) / CHUNK), y1 = Math.floor((Math.max(a.y, b.y) + m) / CHUNK);
+  const z0 = Math.floor((Math.min(a.z, b.z) - m) / CHUNK), z1 = Math.floor((Math.max(a.z, b.z) + m) / CHUNK);
+  for (let z = z0; z <= z1; z++) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    if (fn(ckey(x, y, z), x, y, z) === false) return false;
+  }
+  return true;
+}
+// Ellipsoidal capsule: squash y so the cross-section is a circle, then plain capsule distance.
+function segDist(s, x, y, z) {
+  const px = x - s.ax, py = y * s.sy - s.ay, pz = z - s.az;
+  let t = (px * s.bx + py * s.by + pz * s.bz) * s.inv;
+  t = t < 0 ? 0 : t > 1 ? 1 : t; segT = t;
+  const dx = px - s.bx * t, dy = py - s.by * t, dz = pz - s.bz * t;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) - s.rx;
+}
+// The crawl core: a plain round tube just above the floor line, always open.
+function coreDist(s, x, y, z) {
+  const px = x - s.fx, py = y - s.fy, pz = z - s.fz;
+  let t = (px * s.fdx + py * s.fdy + pz * s.fdz) * s.finv;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const dx = px - s.fdx * t, dy = py - s.fdy * t, dz = pz - s.fdz * t;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) - CORE_R;
+}
+export function nearestSeg(list, x, y, z) {
+  let best = 1e9, bs = null;
+  for (let q = 0; q < list.length; q++) { const d = segDist(list[q], x, y, z); if (d < best) { best = d; bs = list[q]; } }
+  return bs;
+}
+export function nearestSegAt(x, y, z) {
+  const list = cellSegs.get(ckey(Math.floor(x / CHUNK), Math.floor(y / CHUNK), Math.floor(z / CHUNK)));
+  return list ? nearestSeg(list, x, y, z) : null;
+}
+
+// ---------- worms ----------
+export const MODES = [
+  { name: 'passage', rx: [1.0, 1.9], ry: [1.0, 1.6],   len: [15, 60], w: 0.36 },
+  { name: 'chamber', rx: [3.0, 6.0], ry: [2.4, 4.0],   len: [8, 18],  w: 0.09 },
+  { name: 'crawl',   rx: [0.9, 1.5], ry: [0.42, 0.50], len: [8, 22],  w: 0.17 },
+  { name: 'squeeze', rx: [0.5, 0.65], ry: [0.9, 1.4],  len: [6, 12],  w: 0.09 },
+  { name: 'canyon',  rx: [0.7, 0.9], ry: [2.0, 3.5],   len: [10, 30], w: 0.07 },
+  { name: 'bedding', rx: [2.0, 3.2], ry: [0.8, 1.2],   len: [8, 25],  w: 0.06 },
+  { name: 'sump',    rx: [1.2, 1.4], ry: [1.0, 1.1],   len: [0, 0],   w: 0.09 },
+  { name: 'pit',     rx: [1.2, 1.4], ry: [1.2, 1.4],   len: [0, 0],   w: 0.04 },
+  { name: 'cavern',  rx: [9, 16],    ry: [7, 12],      len: [25, 50], w: 0.03 },
+];
+const MODE = Object.fromEntries(MODES.map(m => [m.name, m]));
+
+class Worm {
+  constructor(node, yaw, pitch, kind, life) {
+    this.id = wormId++;
+    this.node = node; this.x = node.x; this.y = node.y; this.z = node.z;
+    this.yaw = yaw; this.pitch = pitch;
+    this.rx = node.rx; this.ry = node.ry; this.trx = node.rx; this.try = node.ry;
+    this.kind = kind; this.life = life; this.age = 0; this.n = 0;
+    this.wander = 0; this.modeLeft = 0; this.target = null;
+    this.mode = null; this.sump = null; this.pit = null; this.pinch = 0; this.exit = false; this.algae = 0;
+  }
+  pickMode(force) {
+    let m = force;
+    if (!m) { let r = rand(); for (const mo of MODES) { r -= mo.w; if (r <= 0) { m = mo; break; } } m = m || MODES[0]; }
+    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern') && (this.age < 20 || this.exit)) m = MODES[0];
+    if (m.name === 'sump' && this.y < -32) m = MODES[0];
+    if (m.name === 'pit' && this.y < -28) m = MODES[0];
+    this.mode = m;
+    this.trx = rr(m.rx[0], m.rx[1]); this.try = rr(m.ry[0], m.ry[1]);
+    this.modeLeft = rr(m.len[0], m.len[1]);
+    this.algae = rand() < (m.name === 'chamber' || m.name === 'cavern' ? 0.35 : 0.07) ? rr(0.5, 1) : 0;
+    if (m.name === 'sump') {
+      // short: never needs air. medium: usually a bell. long: bring your nerve.
+      const r = rand(), under = r < 0.45 ? rr(5, 10) : r < 0.85 ? rr(10, 18) : rr(18, 30);
+      const bell = under > 18 ? rand() < 0.3 : under > 10 ? rand() < 0.6 : false;
+      this.sump = { phase: 'dive', wl: this.y + 0.35, left: under, bell: 0, bellAt: bell ? under * rr(0.4, 0.6) : null,
+                    trap: this.kind !== 'trunk' && rand() < 0.25 };
+    }
+    if (m.name === 'pit') {
+      const drop = rr(4, 15), pool = rand() < 0.3;
+      this.pit = { phase: 'ledge', drop, bottom: this.y - drop, wl: pool ? this.y - drop + 2.4 : undefined, cavern: rand() < 0.1 };
+    }
+  }
+  step() {
+    let core = true, wl;
+    if (this.sump) {                                    // ---- flooded section ----
+      const S = this.sump; wl = S.wl;
+      this.wander = clamp(this.wander * 0.9 + gauss() * 0.04, -0.12, 0.12); this.yaw += this.wander;
+      if (S.phase === 'dive') {
+        this.pitch = -0.5; this.rx = lerp(this.rx, 1.3, 0.5); this.ry = lerp(this.ry, 1.0, 0.5);
+        if (this.y - S.wl < -2.0) S.phase = 'under';
+      } else if (S.phase === 'under') {
+        this.pitch = 0; S.left -= STEP;
+        if (S.bell > 0) { S.bell -= STEP; this.ry = (S.wl + 0.9 - this.y) / (1 + CY); this.rx = 1.6; }
+        else if (S.bellAt !== null && S.left < S.bellAt) { S.bell = 4.5; S.bellAt = null; }
+        else { this.ry = lerp(this.ry, 1.0, 0.5); this.rx = lerp(this.rx, 1.3, 0.5); }
+        if (S.left <= 0) { if (S.trap) { this.sump = null; this.pinch = 3; } else S.phase = 'rise'; }
+      } else {
+        this.pitch = 0.45; this.ry = lerp(this.ry, 1.1, 0.5); this.rx = lerp(this.rx, 1.3, 0.5);
+        if (this.y > S.wl + 0.3) { this.sump = null; this.pickMode(MODE.passage); }
+      }
+    } else if (this.pit) {                              // ---- a hole in the floor ----
+      const P = this.pit;
+      if (P.phase === 'ledge') { this.pitch = 0; this.rx = lerp(this.rx, 1.3, 0.6); this.ry = lerp(this.ry, 1.3, 0.6); P.phase = 'drop'; }
+      else if (P.phase === 'drop') {
+        this.pitch = -1.45; this.rx = 1.3; this.ry = 1.3;
+        if (P.wl !== undefined && this.y - STEP < P.wl + 0.3) wl = P.wl;
+        if (this.y - STEP <= P.bottom) {
+          P.phase = 'out';
+          this.pitch = P.wl !== undefined ? 0.45 : 0.15;
+          if (P.wl !== undefined) this.sump = { phase: 'rise', wl: P.wl, left: 0, bell: 0, bellAt: null, trap: false };
+          if (P.cavern) this.pickMode(MODE.cavern); else this.pickMode(MODE.passage);
+          this.pit = null;
+        }
+      }
+    } else if (this.pinch > 0) {                        // ---- side passage pinching shut ----
+      this.pinch--; this.rx *= 0.55; this.ry *= 0.55; core = false;
+      if (this.pinch === 0) { this.carve(core, wl); return false; }
+    } else {
+      this.modeLeft -= STEP;
+      if (this.modeLeft <= 0) this.pickMode();
+      if (this.pit || this.sump) return this.step();   // mode just switched into a special: run it
+      this.rx = lerp(this.rx, this.trx, 0.35); this.ry = lerp(this.ry, this.try, 0.35);
+      if (this.target) {
+        const t = this.target, dx = t.x - this.x, dz = t.z - this.z, dy = t.y - this.y;
+        this.yaw += clamp(angDiff(Math.atan2(dx, dz), this.yaw), -0.4, 0.4);
+        this.pitch += clamp(Math.atan2(dy, Math.hypot(dx, dz)) - this.pitch, -0.2, 0.2);
+        if (Math.hypot(dx, dy, dz) < STEP * 1.6) {          // join the older passage: a loop
+          if (!this.canCarve(this.node, t)) return false;
+          addSeg(this.node, t); return false;
+        }
+      } else {
+        this.wander = clamp(this.wander * 0.9 + gauss() * 0.08, -0.22, 0.22);
+        this.yaw += this.wander + gauss() * 0.05;
+        if (this.exit) {
+          this.pitch += (0.32 - this.pitch) * 0.3;
+          this.trx = 1.5; this.try = 1.3;
+          if (this.y > SURFACE_Y - 3) { this.trx = 3.2; this.try = 2.6; }
+        } else {
+          const band = this.y < -35 ? 0.06 : this.y > 8 ? -0.06 : -0.006;
+          this.pitch = clamp(this.pitch * 0.85 + gauss() * 0.1 + band, -0.4, 0.4);
+          if (this.mode && this.mode.name === 'cavern') this.pitch *= 0.5;
+        }
+        if (this.kind === 'trunk') {
+          const away = Math.atan2(this.x - focus.x, this.z - focus.z);
+          this.yaw += angDiff(away, this.yaw) * 0.06;
+        }
+      }
+      // a crawl that continues past a slot you can't get through
+      if (this.kind !== 'trunk' && this.mode && this.mode.name === 'crawl' && rand() < 0.04) { this.ry = 0.2; this.rx = 0.5; core = false; }
+    }
+    if (!this.carve(core, wl)) return false;
+    if (this.exit && this.y > SURFACE_Y) { makeExit(this); return false; }
+    if (this.kind !== 'trunk' && this.life <= 0 && !this.sump && !this.pit) {
+      if (rand() < 0.55) { this.pinch = 3; return true; }
+      return false;
+    }
+    if (this.kind === 'trunk' && !exitClaimed && !this.sump && !this.pit && Math.hypot(this.x, this.z) > EXIT_AT) { exitClaimed = true; this.exit = true; this.target = null; }
+
+    if (!this.sump && !this.pit && !this.exit) {
+      const inCavern = this.mode && this.mode.name === 'cavern';
+      // fork: side passage or a short alcove
+      if (this.age > 6 && worms.length < MAX_WORMS && activeWorms() < MAX_ACTIVE &&
+          rand() < (this.kind === 'trunk' ? 0.05 : 0.02) * (inCavern ? 3 : 1)) {
+        const alcove = rand() < 0.3;
+        const c = new Worm(this.node, this.yaw + (rand() < 0.5 ? -1 : 1) * rr(0.7, 1.5), this.pitch * 0.5, 'side',
+                           alcove ? rr(3, 8) : rr(15, 80));
+        c.pickMode(alcove ? MODE.squeeze : null);
+        if (alcove) { c.trx = Math.max(0.6, c.trx * 0.8); c.try = Math.max(0.5, c.try * 0.8); }
+        worms.push(c);
+      }
+      // occasionally steer into an older passage to make a loop
+      if (!this.target && this.kind !== 'trunk' && rand() < 0.03) {
+        let best = null, bd = 18;
+        for (let k = nodes.length - 400; k >= 0 && k > nodes.length - 4000; k--) {
+          const o = nodes[k];
+          if (o.w === this.id || o.wl !== undefined || o.core === false) continue;
+          const d = Math.hypot(o.x - this.x, o.y - this.y, o.z - this.z);
+          if (d < bd && d > 4) { bd = d; best = o; }
+        }
+        if (best) this.target = best;
+      }
+    }
+    return true;
+  }
+  carve(core, wl) {
+    const cp = Math.cos(this.pitch);
+    const n = { x: this.x + Math.sin(this.yaw) * cp * STEP, y: this.y + Math.sin(this.pitch) * STEP,
+                z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
+                algae: core ? this.algae : 0 };
+    if (wl !== undefined) n.wl = wl;
+    if (!this.canCarve(this.node, n)) return false;              // ran into a finished part of the cave: dead end
+    const cavern = this.mode && this.mode.name === 'cavern' && !this.pit && !this.sump;
+    if (cavern && rand() < 0.6) {
+      n.boulders = [];
+      for (let k = 0, c = 1 + (rand() * 3 | 0); k < c; k++) {
+        const r = rr(0.7, 2.4), a = rand() * Math.PI * 2, d = rand() * this.rx * 0.75;
+        n.boulders.push({ x: n.x + Math.sin(a) * d, y: n.y + r * 0.45, z: n.z + Math.cos(a) * d, r });
+      }
+    }
+    addSeg(this.node, n); nodes.push(n);
+    if (n.algae > 0.4 && n.i % 3 === 0) algaeNodes.push(n);
+    if (core && wl === undefined && this.rx < 3 && rand() < 0.03) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: false, seed: rand() });
+    if (cavern && rand() < 0.02) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: true, seed: rand() });
+    this.node = n; this.x = n.x; this.y = n.y; this.z = n.z;
+    this.life -= STEP; this.age += STEP;
+    return true;
+  }
+  canCarve(a, b) {
+    return forCells(a, b, (key, cx, cy, cz) => {
+      const ch = chunks.get(key);
+      if (ch && ch.built && distChunk(cx, cy, cz) < LOCK_R) return false;
+    });
+  }
+}
+function distChunk(cx, cy, cz) {
+  return Math.hypot((cx + 0.5) * CHUNK - focus.x, (cy + 0.5) * CHUNK - focus.y, (cz + 0.5) * CHUNK - focus.z);
+}
+export function activeWorms() {
+  let n = 0; for (const w of worms) if (Math.hypot(w.x - focus.x, w.y - focus.y, w.z - focus.z) < FRONTIER) n++;
+  return n;
+}
+export function advanceWorms(budget) {
+  for (let i = 0; i < worms.length && budget > 0; i++) {
+    const w = worms[i];
+    while (budget > 0 && Math.hypot(w.x - focus.x, w.y - focus.y, w.z - focus.z) < FRONTIER) {
+      budget--;
+      if (!w.step()) {
+        worms.splice(i, 1); i--;
+        if (w.exit && !exit) exitClaimed = false;              // the climb was cut off; another trunk gets to try
+        if (w.kind === 'trunk') ensureTrunks();
+        break;
+      }
+    }
+  }
+}
+function ensureTrunks() {
+  let t = 0; for (const w of worms) if (w.kind === 'trunk') t++;
+  while (t < 2) {
+    let far = nodes[0], fd = -1;
+    for (const o of nodes) { if (o.wl !== undefined || o.core === false) continue; const d = Math.hypot(o.x - focus.x, o.y - focus.y, o.z - focus.z); if (d > fd) { fd = d; far = o; } }
+    const w = new Worm(far, Math.atan2(far.x - focus.x, far.z - focus.z), 0, 'trunk', Infinity);
+    w.pickMode(MODE.passage); worms.push(w); t++;
+  }
+}
+// The way out: widen into a mouth; main.js puts daylight beyond it.
+function makeExit(w) {
+  const cp = Math.cos(w.pitch), dx = Math.sin(w.yaw) * cp, dz = Math.cos(w.yaw) * cp;
+  const n0 = w.node;
+  const n1 = { x: n0.x + dx * 3, y: n0.y + 1.0, z: n0.z + dz * 3, rx: 3.5, ry: 2.8, w: w.id, i: ++w.n, core: true, algae: 0 };
+  const n2 = { x: n1.x + dx * 5, y: n1.y + 1.2, z: n1.z + dz * 5, rx: 6, ry: 5, w: w.id, i: ++w.n, core: true, algae: 0 };
+  addSeg(n0, n1); addSeg(n1, n2); nodes.push(n1, n2);
+  exit = { x: n2.x, y: n2.y, z: n2.z, dx, dz, n1 };
+  props.push({ type: 'exit', ...exit });
+}
+
+// ---------- chunks: field sampling + marching cubes ----------
+const EDGE_C = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+const CORNER = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+export function gridAt(d, lx, ly, lz) {              // trilinear sample of one chunk's grid, local voxel coords
+  const i = clamp(Math.floor(lx), 0, N - 1), j = clamp(Math.floor(ly), 0, N - 1), k = clamp(Math.floor(lz), 0, N - 1);
+  const fx = lx - i, fy = ly - j, fz = lz - k, b = i + M * (j + M * k);
+  const c00 = lerp(d[b], d[b + 1], fx), c10 = lerp(d[b + M], d[b + M + 1], fx);
+  const c01 = lerp(d[b + M * M], d[b + M * M + 1], fx), c11 = lerp(d[b + M * M + M], d[b + M * M + M + 1], fx);
+  return lerp(lerp(c00, c10, fy), lerp(c01, c11, fy), fz);
+}
+const fcol = [0, 0, 0];
+function faceColor(cx, cy, cz) {
+  const n1 = fbm(cx * 0.22, cy * 0.22, cz * 0.22) * 0.5 + 0.5;            // warm sandstone <-> cool limestone
+  const n2 = hash3(Math.floor(cx * 9.1), Math.floor(cy * 9.1), Math.floor(cz * 9.1));
+  const strata = 0.5 + 0.5 * Math.sin(cy * 2.3 + n1 * 4);
+  const br = 0.8 + 0.2 * n2 - 0.1 * strata;
+  fcol[0] = lerp(0.46, 0.32, n1) * br; fcol[1] = lerp(0.37, 0.31, n1) * br; fcol[2] = lerp(0.27, 0.33, n1) * br;
+}
+// Fills ch.density / ch.glow and returns { rock: {pos,col,glow} | null, water: {pos} | null } (null when nothing to draw)
+export function buildChunk(ch) {
+  const list = cellSegs.get(ch.key);
+  ch.built = true; ch.dirty = false;
+  if (!list || list.length === 0) { ch.solid = true; ch.density = null; ch.glow = null; return null; }
+  const dens = ch.density || new Float32Array(M * M * M);
+  const glow = ch.glow || new Float32Array(M * M * M);
+  const ox = ch.cx * CHUNK, oy = ch.cy * CHUNK, oz = ch.cz * CHUNK;
+  let anyAir = false, anyRock = false, idx = 0;
+  const row = [];
+  for (let k = 0; k < M; k++) { const z = oz + k * VOXEL;
+    for (let j = 0; j < M; j++) { const y = oy + j * VOXEL;
+      row.length = 0;
+      for (let q = 0; q < list.length; q++) { const s = list[q]; if (y >= s.y0b && y <= s.y1b && z >= s.z0 && z <= s.z1) row.push(s); }
+      for (let i = 0; i < M; i++, idx++) { const x = ox + i * VOXEL;
+        let best = 2.0, bs = null, bt = 0;
+        for (let q = 0; q < row.length; q++) { const s = row[q]; if (x < s.x0 || x > s.x1) continue; const d = segDist(s, x, y, z); if (d < best) { best = d; bs = s; bt = segT; } }
+        let v = best, g = 0;
+        if (bs && best < 1.6) {
+          const amp = NOISE_AMP * clamp(bs.rmin / 1.1, 0.3, 1);
+          v += amp * fbm(x * 1.1, y * 1.1, z * 1.1);
+          if (!bs.steep) {
+            const floorY = lerp(bs.y0, bs.y1, bt) + (0.08 + 0.03 * bs.ry) * vnoise(x * 0.9 + 3, y * 0.9, z * 0.9 + 7);
+            const f = floorY - y; if (f > v) v = f;                 // sediment fill -> walkable floor
+          }
+          if (bs.core) { const c = coreDist(bs, x, y, z); if (c < v) v = c; }
+          for (let q = 0; q < bs.boulders.length; q++) {            // breakdown blocks on cavern floors
+            const b = bs.boulders[q], bd = b.r - Math.hypot(x - b.x, y - b.y, z - b.z) + 0.15 * vnoise(x * 2.3, y * 2.3, z * 2.3);
+            if (bd > v) v = bd;
+          }
+          // bioluminescence: damp band above water, plus flagged passages, patchy
+          const patch = smooth(0.42, 0.9, vnoise(x * 1.5 + 21, y * 1.5, z * 1.5 - 13) * 0.5 + 0.5) * smooth(0.3, 0.7, vnoise(x * 0.35, y * 0.35, z * 0.35 + 5) * 0.5 + 0.5);
+          if (bs.algae > 0) g = bs.algae * patch;
+          if (bs.wl !== undefined && y > bs.wl - 0.2 && y < bs.wl + 1.6) g = Math.max(g, 0.8 * patch * (1 - (y - bs.wl) / 1.8));
+        }
+        dens[idx] = v; glow[idx] = g;
+        if (v < 0) anyAir = true; else anyRock = true;
+      }
+    }
+  }
+  ch.density = dens; ch.glow = glow; ch.solid = !anyAir;
+  if (!anyAir) return null;
+  const out = { rock: null, water: null };
+  if (anyRock) out.rock = marchingCubes(ch, ox, oy, oz);
+  // water surfaces: one flat sheet per perched level, clipped to air
+  const levels = [];
+  for (const s of list) if (s.wl !== undefined && s.wl >= oy && s.wl <= oy + CHUNK && !levels.includes(s.wl)) levels.push(s.wl);
+  if (levels.length) {
+    const pos = [];
+    for (const wl of levels) {
+      const ly = (wl - oy) / VOXEL;
+      for (let k = 0; k < N; k++) for (let i = 0; i < N; i++) {
+        const x = ox + (i + 0.5) * VOXEL, z = oz + (k + 0.5) * VOXEL;
+        if (gridAt(dens, i + 0.5, ly, k + 0.5) > -0.03) continue;
+        const ns = nearestSeg(list, x, wl, z);
+        if (!ns || ns.wl !== wl) continue;
+        const x0 = x - VOXEL / 2, x1 = x + VOXEL / 2, z0 = z - VOXEL / 2, z1 = z + VOXEL / 2;
+        pos.push(x0, wl, z0, x0, wl, z1, x1, wl, z1, x0, wl, z0, x1, wl, z1, x1, wl, z0);
+      }
+    }
+    if (pos.length) out.water = { pos: new Float32Array(pos) };
+  }
+  return out;
+}
+const ev = new Float32Array(36), fv = new Float32Array(8);
+function marchingCubes(ch, ox, oy, oz) {
+  const dens = ch.density, glowG = ch.glow, pos = [], col = [], glow = [];
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const b = i + M * (j + M * k);
+    fv[0] = dens[b]; fv[1] = dens[b + 1]; fv[2] = dens[b + 1 + M]; fv[3] = dens[b + M];
+    fv[4] = dens[b + M * M]; fv[5] = dens[b + 1 + M * M]; fv[6] = dens[b + 1 + M + M * M]; fv[7] = dens[b + M + M * M];
+    let ci = 0; for (let c = 0; c < 8; c++) if (fv[c] < 0) ci |= 1 << c;
+    const bits = edgeTable[ci]; if (!bits) continue;
+    const x = ox + i * VOXEL, y = oy + j * VOXEL, z = oz + k * VOXEL;
+    for (let e = 0; e < 12; e++) if (bits & (1 << e)) {
+      const c0 = EDGE_C[e][0], c1 = EDGE_C[e][1], v0 = fv[c0], v1 = fv[c1];
+      const t = v0 / (v0 - v1), A = CORNER[c0], B = CORNER[c1];
+      ev[e * 3] = x + (A[0] + (B[0] - A[0]) * t) * VOXEL;
+      ev[e * 3 + 1] = y + (A[1] + (B[1] - A[1]) * t) * VOXEL;
+      ev[e * 3 + 2] = z + (A[2] + (B[2] - A[2]) * t) * VOXEL;
+    }
+    let ti = ci * 16;
+    while (triTable[ti] !== -1) {
+      const a = triTable[ti] * 3, b2 = triTable[ti + 1] * 3, c = triTable[ti + 2] * 3;
+      pos.push(ev[a], ev[a + 1], ev[a + 2], ev[b2], ev[b2 + 1], ev[b2 + 2], ev[c], ev[c + 1], ev[c + 2]);
+      const cx = (ev[a] + ev[b2] + ev[c]) / 3, cy = (ev[a + 1] + ev[b2 + 1] + ev[c + 1]) / 3, cz = (ev[a + 2] + ev[b2 + 2] + ev[c + 2]) / 3;
+      faceColor(cx, cy, cz);
+      col.push(fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2]);
+      const g = gridAt(glowG, (cx - ox) / VOXEL, (cy - oy) / VOXEL, (cz - oz) / VOXEL);
+      glow.push(g, g, g);
+      ti += 3;
+    }
+  }
+  if (!pos.length) return null;
+  return { pos: new Float32Array(pos), col: new Float32Array(col), glow: new Float32Array(glow) };
+}
+
+// streaming: which chunks need (re)building around the focus; returns the sorted queue and a list to dispose
+export const queue = [];
+let lastScanKey = '', scanTimer = 0;
+export function scanChunks(dt, force, onDispose) {
+  scanTimer += dt;
+  const pcx = Math.floor(focus.x / CHUNK), pcy = Math.floor(focus.y / CHUNK), pcz = Math.floor(focus.z / CHUNK);
+  const k = ckey(pcx, pcy, pcz);
+  if (!force && k === lastScanKey && scanTimer < 0.25) return;
+  lastScanKey = k; scanTimer = 0;
+  queue.length = 0;
+  for (let dz = -MESH_R; dz <= MESH_R; dz++) for (let dy = -MESH_R; dy <= MESH_R; dy++) for (let dx = -MESH_R; dx <= MESH_R; dx++) {
+    if (dx * dx + dy * dy + dz * dz > MESH_R * MESH_R + 1) continue;
+    const cx = pcx + dx, cy = pcy + dy, cz = pcz + dz, key = ckey(cx, cy, cz);
+    let ch = chunks.get(key);
+    if (!ch) { ch = { cx, cy, cz, key, built: false, dirty: false, solid: false, density: null, glow: null, mesh: null, water: null }; chunks.set(key, ch); }
+    if (!ch.built || ch.dirty) { ch.d2 = dx * dx + dy * dy + dz * dz; queue.push(ch); }
+  }
+  queue.sort((a, b) => a.d2 - b.d2);
+  for (const ch of chunks.values()) {
+    if (Math.max(Math.abs(ch.cx - pcx), Math.abs(ch.cy - pcy), Math.abs(ch.cz - pcz)) > KEEP_R) { onDispose(ch); chunks.delete(ch.key); }
+  }
+}
+
+// field sampling (trilinear on the chunk grids the meshes came from)
+export function fieldAt(x, y, z) {
+  const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK), cz = Math.floor(z / CHUNK);
+  const ch = chunks.get(ckey(cx, cy, cz));
+  if (!ch || !ch.built || ch.solid || !ch.density) return 1.0;
+  return gridAt(ch.density, (x - cx * CHUNK) / VOXEL, (y - cy * CHUNK) / VOXEL, (z - cz * CHUNK) / VOXEL);
+}
+export function chunkReadyAt(x, y, z) {
+  const ch = chunks.get(ckey(Math.floor(x / CHUNK), Math.floor(y / CHUNK), Math.floor(z / CHUNK)));
+  return !!(ch && ch.built);
+}
+export function waterLevelAt(x, y, z) {
+  const s = nearestSegAt(x, y, z);
+  return s && s.wl !== undefined ? s.wl : -Infinity;
+}
+export const G = { x: 0, y: 0, z: 0 };
+export function gradAt(x, y, z) {
+  const h = 0.18;
+  G.x = (fieldAt(x + h, y, z) - fieldAt(x - h, y, z)) / (2 * h);
+  G.y = (fieldAt(x, y + h, z) - fieldAt(x, y - h, z)) / (2 * h);
+  G.z = (fieldAt(x, y, z + h) - fieldAt(x, y, z - h)) / (2 * h);
+}
+// march along a direction until rock; returns distance (or max)
+export function rayToRock(x, y, z, dx, dy, dz, max, step = 0.25) {
+  for (let t = step; t < max; t += step) if (fieldAt(x + dx * t, y + dy * t, z + dz * t) > -0.03) return t;
+  return max;
+}
+// how open is it here: mean free path over a handful of directions (metres)
+const DIRS = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0],[0.7,0.5,0.5],[-0.7,0.5,-0.5],[0.5,-0.3,-0.8]];
+export function openness(x, y, z) {
+  let s = 0; for (const d of DIRS) s += rayToRock(x, y, z, d[0], d[1], d[2], 30, 0.5);
+  return s / DIRS.length;
+}
+
+// ---------- bootstrap ----------
+export function initGen(seed) {
+  SEED = seed; rand = mulberry32(seed); EXIT_AT = rr(200, 320);
+  const start = { x: 0, y: 0, z: 0, rx: 3.4, ry: 2.6, w: -1, i: 0, core: true, algae: 0 }; nodes.push(start);
+  for (let i = 0; i < 3; i++) {
+    const w = new Worm(start, i * 2.094 + rr(-0.4, 0.4), 0, 'trunk', Infinity);
+    w.pickMode(MODE.passage); w.modeLeft = rr(20, 40); worms.push(w);
+  }
+  for (let guard = 0; guard < 60 && activeWorms() > 0; guard++) advanceWorms(5000);
+}
+export const debug = { Worm, MODE, get segT() { return segT; } };
