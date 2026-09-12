@@ -559,6 +559,39 @@ function placeNote(p) {
   drawMark(p.text, best, new THREE.Vector3(-g.x / gl, -g.y / gl, -g.z / gl), true);
   if (p.lasting) { cave.marks.push({ text: p.text, x: best.x, y: best.y, z: best.z, nx: -g.x / gl, ny: -g.y / gl, nz: -g.z / gl }); saveCave(); }
 }
+// draperies: a wavy calcite sheet hung from the roof
+const curtainMat = new THREE.MeshStandardMaterial({ color: 0xe8d9b8, roughness: 0.5, emissive: 0x1a1408, side: THREE.DoubleSide, flatShading: true, transparent: true, opacity: 0.92 });
+function placeCurtain(p) {
+  // the roof at this spot
+  let cy = null; for (let h = 0; h < 8; h += 0.12) { const yy = p.floor + 1.5 + h; if (G.fieldAt(p.x, yy, p.z) > -0.04) { cy = yy; break; } }
+  if (cy === null) return;
+  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
+  const W = p.width, L = Math.min(p.len, cy - p.floor - 0.9), segs = 14;
+  const g = new THREE.PlaneGeometry(W, L, segs, 4), pos = g.attributes.position, ph = R() * 6.28, freq = 2.5 + R() * 3;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), t = (y + L / 2) / L;                       // t: 0 bottom, 1 top (hangs from the top edge)
+    pos.setZ(i, Math.sin(x * freq + ph) * 0.12 * (1.2 - t) + Math.sin(x * freq * 2.3 + ph * 2) * 0.05);
+    pos.setY(i, y - (1 - t) * Math.abs(Math.sin(x * freq * 0.7 + ph)) * 0.35);            // a scalloped bottom edge
+  }
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, curtainMat); m.position.set(p.x, cy - L / 2 + 0.05, p.z); m.rotation.y = R() * Math.PI; m.castShadow = true; scene.add(m);
+}
+// mist: a few soft, slow sheets just above still water
+const mistTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const r = g.createRadialGradient(64, 64, 4, 64, 64, 62); r.addColorStop(0, 'rgba(200,215,210,0.55)'); r.addColorStop(0.6, 'rgba(200,215,210,0.18)'); r.addColorStop(1, 'rgba(200,215,210,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+const mistMat = new THREE.MeshBasicMaterial({ map: mistTex, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, fog: false });
+const mists = [];
+function placeMist(p) {
+  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
+  for (let k = 0; k < 3; k++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(p.r * 1.6, p.r * 1.6), mistMat); m.rotation.x = -Math.PI / 2;
+    m.position.set(p.x + (R() - 0.5) * p.r, p.y + 0.25 + k * 0.12, p.z + (R() - 0.5) * p.r); m.rotation.z = R() * 6.28; scene.add(m);
+    mists.push({ mesh: m, x0: m.position.x, z0: m.position.z, ph: R() * 6.28, sp: 0.03 + R() * 0.04 });
+  }
+}
+function updateMists(dt) {
+  const t = performance.now() * 0.001;
+  for (const m of mists) { m.mesh.position.x = m.x0 + Math.sin(t * m.sp + m.ph) * 1.2; m.mesh.position.z = m.z0 + Math.cos(t * m.sp * 0.8 + m.ph) * 1.2; m.mesh.rotation.z += dt * 0.02; }
+}
 // fossils: drawn on a canvas, pressed into the nearest wall like chalk
 function fossilTexture(kind, seed) {
   const cv = document.createElement('canvas'); cv.width = cv.height = 256; const ctx = cv.getContext('2d');
@@ -683,6 +716,8 @@ function processProps(dt) {
     else if (p.type === 'loose') placeLoose(p);
     else if (p.type === 'glowworms') placeGlowworms(p);
     else if (p.type === 'fossil') placeFossil(p);
+    else if (p.type === 'curtain') placeCurtain(p);
+    else if (p.type === 'mist') placeMist(p);
     else placeBones(p);
     G.props.splice(i, 1);
   }
@@ -1912,6 +1947,7 @@ function stepFrame(dt) {
   updateLoose(dt);
   updateGlowworms(dt);
   updateFossils(dt);
+  updateMists(dt);
   whistleT -= dt;
   updateFollower(dt);
   updateFlood(dt);

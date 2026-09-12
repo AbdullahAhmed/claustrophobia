@@ -409,6 +409,13 @@ class Worm {
     // an unstable stretch of a low trunk passage: it can come down behind you once you are through
     if (this.kind === 'trunk' && core && wl === undefined && !this.pit && !this.sump && this.age > 30 && this.mode &&
         (this.mode.name === 'crawl' || this.mode.name === 'squeeze' || this.mode.name === 'bedding') && R() < 0.05 * tf(this, 'unstable')) n.unstable = true;
+    // draperies: thin calcite curtains hanging from a sloped roof, in the old rock mostly
+    if (core && wl === undefined && !this.pit && !this.sump && this.ry > 1.9 && this.rx > 1.8 && R() < 0.04 * (this.theme === 'old' ? 3 : 0.5)) {
+      const a = R() * Math.PI * 2, d = R() * this.rx * 0.6;
+      props.push({ type: 'curtain', x: n.x + Math.sin(a) * d, y: n.y, z: n.z + Math.cos(a) * d, floor: n.y, top: n.y + (1 + CY) * this.ry, len: wr(0.8, 2.4), width: wr(0.8, 2.2), seed: R() });
+    }
+    // mist over still water, in the wet stretches
+    if (wl !== undefined && !this.sump && this.lake && n.i % 6 === 0) props.push({ type: 'mist', x: n.x, y: wl, z: n.z, r: this.rx * 0.8, seed: R() });
     // fossils in the bedding: an ammonite, a crinoid stem, a shell, pressed into the wall at eye height
     if (core && wl === undefined && !this.pit && !this.sump && this.mode && (this.mode.name === 'bedding' || this.mode.name === 'passage' || this.mode.name === 'canyon') && R() < 0.025 * tf(this, 'fossil'))
       props.push({ type: 'fossil', x: n.x, y: n.y, z: n.z, kind: (R() * 3) | 0, seed: R(), size: wr(0.25, 0.7) });
