@@ -511,6 +511,42 @@ function dropGlowstick() {
   sfx.play('torch_click', { vol: 0.5, rate: 1.4 });
   showHint(`glowstick down · ${player.sticks} left`);
 }
+// a thrown glowstick: an arc along your view, a landing you hear, a light where it stops
+const thrown = [];
+function throwGlowstick(power) {
+  if (player.sticks <= 0) { showHint('no glowsticks left'); return; }
+  player.sticks--;
+  camera.getWorldDirection(_fwd);
+  const sp = 5 + power * 9;
+  const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.copy(camera.position).addScaledVector(_fwd, 0.4); scene.add(mesh);
+  const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.copy(mesh.position); scene.add(light);
+  thrown.push({ mesh, light, x: mesh.position.x, y: mesh.position.y, z: mesh.position.z, vx: _fwd.x * sp, vy: _fwd.y * sp + 1.5, vz: _fwd.z * sp, t: 0, spin: rr(4, 9) });
+  sfx.play('whoosh', { vol: 0.3, rate: 1.6 });
+  showHint(`thrown · ${player.sticks} left`);
+  teach('throw', 'hold G to throw a glowstick: down a pit, across a chamber. you hear where it lands');
+}
+function updateThrown(dt) {
+  for (let i = thrown.length - 1; i >= 0; i--) {
+    const g = thrown[i]; g.t += dt;
+    const steps = 3; let hit = false;
+    for (let k = 0; k < steps && !hit; k++) {
+      const h = dt / steps; g.vy -= GRAV * h;
+      const nx = g.x + g.vx * h, ny = g.y + g.vy * h, nz = g.z + g.vz * h;
+      if (G.fieldAt(nx, ny, nz) > -0.06) {                                            // rock: bounce a little, or stop
+        const sp = Math.hypot(g.vx, g.vy, g.vz);
+        G.gradAt(g.x, g.y, g.z); const gr = G.G, gl = Math.hypot(gr.x, gr.y, gr.z) || 1;
+        const dot = (g.vx * gr.x + g.vy * gr.y + g.vz * gr.z) / gl;
+        g.vx = (g.vx - 2 * dot * gr.x / gl) * 0.25; g.vy = (g.vy - 2 * dot * gr.y / gl) * 0.25; g.vz = (g.vz - 2 * dot * gr.z / gl) * 0.25;
+        if (sp > 2) sfx.play('rattle', { x: g.x, y: g.y, z: g.z, vol: Math.min(0.7, sp * 0.06), rate: rr(1.2, 1.6), dur: 0.35, wet: 0.7, rolloff: 0.6 });
+        if (sp < 1.2 || g.t > 6) hit = true;
+      } else { g.x = nx; g.y = ny; g.z = nz; }
+      const wl = G.waterLevelAt(g.x, g.y, g.z);
+      if (Number.isFinite(wl) && g.y < wl) { sfx.play('splash_small', { x: g.x, y: wl, z: g.z, vol: 0.5, wet: 0.6 }); g.vx *= 0.1; g.vz *= 0.1; g.vy = 0; g.y = wl - 0.05; hit = true; }
+    }
+    g.mesh.position.set(g.x, g.y, g.z); g.mesh.rotation.x += dt * g.spin; g.light.position.set(g.x, g.y + 0.1, g.z);
+    if (hit) { thrown.splice(i, 1); glow.push({ x: g.x, y: g.y, z: g.z, light: g.light, mesh: g.mesh }); }
+  }
+}
 // caches: a dead caver's pack next to some bones
 const caches = [];           // {x,y,z, kind, taken, mesh}
 const packGeo = new THREE.BoxGeometry(0.28, 0.2, 0.16), packMat = new THREE.MeshStandardMaterial({ color: 0x3b3a36, roughness: 0.9, flatShading: true });
@@ -777,12 +813,16 @@ addEventListener('keydown', e => {
   if (!running || !player.alive || player.out) return;
   if (e.code === 'KeyF' && !e.repeat) shakeTorch();
   if (e.code === 'KeyT' && !e.repeat) { e.preventDefault(); openChalk(); }
-  if (e.code === 'KeyG' && !e.repeat) dropGlowstick();
+  if (e.code === 'KeyG' && !e.repeat) gHeldAt = performance.now();
   if (e.code === 'KeyH' && !e.repeat) whistle();
   if (e.code === 'KeyQ' && !e.repeat && torchHeld) { beamNarrow = !beamNarrow; sfx.play('torch_click', { vol: 0.5, rate: beamNarrow ? 1.3 : 1.0 }); showHint(beamNarrow ? 'spot: further, and nothing to either side' : 'flood: wide, and not far'); }
   if (e.code === 'KeyE' && !e.repeat) useRope();
 });
-addEventListener('keyup', e => { keys[e.code] = false; keys['_kb' + e.code.replace('Key', '').replace('Left', '')] = false; });
+addEventListener('keyup', e => {
+  keys[e.code] = false; keys['_kb' + e.code.replace('Key', '').replace('Left', '')] = false;
+  if (e.code === 'KeyG' && gHeldAt && running && player.alive && !player.out && !typing) { const held = (performance.now() - gHeldAt) / 1000; gHeldAt = 0; if (held > 0.3) throwGlowstick(Math.min(1, (held - 0.3) / 0.9)); else dropGlowstick(); }
+});
+let gHeldAt = 0;
 function openChalk() { typing = true; for (const k in keys) keys[k] = false; chalkIn.value = ''; chalkIn.style.display = 'block'; chalkIn.focus(); }
 function closeChalk() { typing = false; chalkIn.style.display = 'none'; chalkIn.blur(); canvas.focus(); }
 let settings = { sens: 1, vol: 0.9, inv: false };
@@ -809,7 +849,7 @@ function pollGamepad(dt) {
   keys.Space = b(0) || keys._kbSpace; keys.KeyC = b(1) || keys._kbC; keys.ShiftLeft = b(6) || keys._kbShift;
   const edge = (i) => { const now = b(i), was = !!padPrev[i]; padPrev[i] = now; return now && !was; };
   if (!running) { if (edge(0) || edge(9)) overlay.click(); return; }
-  if (edge(2)) shakeTorch(); if (edge(3)) whistle(); if (edge(5)) dropGlowstick(); if (edge(9)) toggleNotebook(); if (edge(8)) useRope();
+  if (edge(2)) shakeTorch(); if (edge(3)) whistle(); if (edge(5)) throwGlowstick(0.5); if (edge(9)) toggleNotebook(); if (edge(8)) useRope();
   if (edge(4) && torchHeld) { beamNarrow = !beamNarrow; sfx.play('torch_click', { vol: 0.5, rate: beamNarrow ? 1.3 : 1.0 }); showHint(beamNarrow ? 'spot: further, and nothing to either side' : 'flood: wide, and not far'); }
 }
 function look(dx, dy) { player.yaw -= dx * 0.0022 * settings.sens; player.pitch = clamp(player.pitch - dy * 0.0022 * settings.sens * (settings.inv ? -1 : 1), -1.5, 1.5); }
@@ -1949,6 +1989,7 @@ function stepFrame(dt) {
   updateGlowworms(dt);
   updateFossils(dt);
   updateMists(dt);
+  updateThrown(dt);
   whistleT -= dt;
   updateFollower(dt);
   updateFlood(dt);

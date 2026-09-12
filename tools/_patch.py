@@ -1,60 +1,63 @@
-p='src/gen.js'; s=open(p,encoding='utf-8').read()
+p='src/main.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
-rep("""    // fossils in the bedding: an ammonite, a crinoid stem, a shell, pressed into the wall at eye height""",
-    """    // draperies: thin calcite curtains hanging from a sloped roof, in the old rock mostly
-    if (core && wl === undefined && !this.pit && !this.sump && this.ry > 1.9 && this.rx > 1.8 && R() < 0.04 * (this.theme === 'old' ? 3 : 0.5)) {
-      const a = R() * Math.PI * 2, d = R() * this.rx * 0.6;
-      props.push({ type: 'curtain', x: n.x + Math.sin(a) * d, z: n.z + Math.cos(a) * d, floor: n.y, top: n.y + (1 + CY) * this.ry, len: wr(0.8, 2.4), width: wr(0.8, 2.2), seed: R() });
+rep("""  if (e.code === 'KeyG' && !e.repeat) dropGlowstick();""",
+    """  if (e.code === 'KeyG' && !e.repeat) gHeldAt = performance.now();""")
+rep("""addEventListener('keyup', e => { keys[e.code] = false; keys['_kb' + e.code.replace('Key', '').replace('Left', '')] = false; });""",
+    """addEventListener('keyup', e => {
+  keys[e.code] = false; keys['_kb' + e.code.replace('Key', '').replace('Left', '')] = false;
+  if (e.code === 'KeyG' && gHeldAt && running && player.alive && !player.out && !typing) { const held = (performance.now() - gHeldAt) / 1000; gHeldAt = 0; if (held > 0.3) throwGlowstick(Math.min(1, (held - 0.3) / 0.9)); else dropGlowstick(); }
+});
+let gHeldAt = 0;""")
+rep("""// caches: a dead caver's pack next to some bones""",
+"""// a thrown glowstick: an arc along your view, a landing you hear, a light where it stops
+const thrown = [];
+function throwGlowstick(power) {
+  if (player.sticks <= 0) { showHint('no glowsticks left'); return; }
+  player.sticks--;
+  camera.getWorldDirection(_fwd);
+  const sp = 5 + power * 9;
+  const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.copy(camera.position).addScaledVector(_fwd, 0.4); scene.add(mesh);
+  const light = new THREE.PointLight(0x5cff7a, 1.1, 9, 1.7); light.position.copy(mesh.position); scene.add(light);
+  thrown.push({ mesh, light, x: mesh.position.x, y: mesh.position.y, z: mesh.position.z, vx: _fwd.x * sp, vy: _fwd.y * sp + 1.5, vz: _fwd.z * sp, t: 0, spin: rr(4, 9) });
+  sfx.play('whoosh', { vol: 0.3, rate: 1.6 });
+  showHint(`thrown · ${player.sticks} left`);
+  teach('throw', 'hold G to throw a glowstick: down a pit, across a chamber. you hear where it lands');
+}
+function updateThrown(dt) {
+  for (let i = thrown.length - 1; i >= 0; i--) {
+    const g = thrown[i]; g.t += dt;
+    const steps = 3; let hit = false;
+    for (let k = 0; k < steps && !hit; k++) {
+      const h = dt / steps; g.vy -= GRAV * h;
+      const nx = g.x + g.vx * h, ny = g.y + g.vy * h, nz = g.z + g.vz * h;
+      if (G.fieldAt(nx, ny, nz) > -0.06) {                                            // rock: bounce a little, or stop
+        const sp = Math.hypot(g.vx, g.vy, g.vz);
+        G.gradAt(g.x, g.y, g.z); const gr = G.G, gl = Math.hypot(gr.x, gr.y, gr.z) || 1;
+        const dot = (g.vx * gr.x + g.vy * gr.y + g.vz * gr.z) / gl;
+        g.vx = (g.vx - 2 * dot * gr.x / gl) * 0.25; g.vy = (g.vy - 2 * dot * gr.y / gl) * 0.25; g.vz = (g.vz - 2 * dot * gr.z / gl) * 0.25;
+        if (sp > 2) sfx.play('rattle', { x: g.x, y: g.y, z: g.z, vol: Math.min(0.7, sp * 0.06), rate: rr(1.2, 1.6), dur: 0.35, wet: 0.7, rolloff: 0.6 });
+        if (sp < 1.2 || g.t > 6) hit = true;
+      } else { g.x = nx; g.y = ny; g.z = nz; }
+      const wl = G.waterLevelAt(g.x, g.y, g.z);
+      if (Number.isFinite(wl) && g.y < wl) { sfx.play('splash_small', { x: g.x, y: wl, z: g.z, vol: 0.5, wet: 0.6 }); g.vx *= 0.1; g.vz *= 0.1; g.vy = 0; g.y = wl - 0.05; hit = true; }
     }
-    // mist over still water, in the wet stretches
-    if (wl !== undefined && !this.sump && this.lake && n.i % 6 === 0) props.push({ type: 'mist', x: n.x, y: wl, z: n.z, r: this.rx * 0.8, seed: R() });
-    // fossils in the bedding: an ammonite, a crinoid stem, a shell, pressed into the wall at eye height""")
-open(p,'w',encoding='utf-8').write(s)
-
-p='src/main.js'; s=open(p,encoding='utf-8').read()
-rep("""    else if (p.type === 'fossil') placeFossil(p);""",
-    """    else if (p.type === 'fossil') placeFossil(p);
-    else if (p.type === 'curtain') placeCurtain(p);
-    else if (p.type === 'mist') placeMist(p);""")
-rep("""// fossils: drawn on a canvas, pressed into the nearest wall like chalk""",
-"""// draperies: a wavy calcite sheet hung from the roof
-const curtainMat = new THREE.MeshStandardMaterial({ color: 0xe8d9b8, roughness: 0.5, emissive: 0x1a1408, side: THREE.DoubleSide, flatShading: true, transparent: true, opacity: 0.92 });
-function placeCurtain(p) {
-  // the roof at this spot
-  let cy = null; for (let h = 0; h < 8; h += 0.12) { const yy = p.floor + 1.5 + h; if (G.fieldAt(p.x, yy, p.z) > -0.04) { cy = yy; break; } }
-  if (cy === null) return;
-  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
-  const W = p.width, L = Math.min(p.len, cy - p.floor - 0.9), segs = 14;
-  const g = new THREE.PlaneGeometry(W, L, segs, 4), pos = g.attributes.position, ph = R() * 6.28, freq = 2.5 + R() * 3;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), t = (y + L / 2) / L;                       // t: 0 bottom, 1 top (hangs from the top edge)
-    pos.setZ(i, Math.sin(x * freq + ph) * 0.12 * (1.2 - t) + Math.sin(x * freq * 2.3 + ph * 2) * 0.05);
-    pos.setY(i, y - (1 - t) * Math.abs(Math.sin(x * freq * 0.7 + ph)) * 0.35);            // a scalloped bottom edge
-  }
-  g.computeVertexNormals();
-  const m = new THREE.Mesh(g, curtainMat); m.position.set(p.x, cy - L / 2 + 0.05, p.z); m.rotation.y = R() * Math.PI; m.castShadow = true; scene.add(m);
-}
-// mist: a few soft, slow sheets just above still water
-const mistTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const r = g.createRadialGradient(64, 64, 4, 64, 64, 62); r.addColorStop(0, 'rgba(200,215,210,0.55)'); r.addColorStop(0.6, 'rgba(200,215,210,0.18)'); r.addColorStop(1, 'rgba(200,215,210,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
-const mistMat = new THREE.MeshBasicMaterial({ map: mistTex, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, fog: false });
-const mists = [];
-function placeMist(p) {
-  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
-  for (let k = 0; k < 3; k++) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(p.r * 1.6, p.r * 1.6), mistMat); m.rotation.x = -Math.PI / 2;
-    m.position.set(p.x + (R() - 0.5) * p.r, p.y + 0.25 + k * 0.12, p.z + (R() - 0.5) * p.r); m.rotation.z = R() * 6.28; scene.add(m);
-    mists.push({ mesh: m, x0: m.position.x, z0: m.position.z, ph: R() * 6.28, sp: 0.03 + R() * 0.04 });
+    g.mesh.position.set(g.x, g.y, g.z); g.mesh.rotation.x += dt * g.spin; g.light.position.set(g.x, g.y + 0.1, g.z);
+    if (hit) { thrown.splice(i, 1); glow.push({ x: g.x, y: g.y, z: g.z, light: g.light, mesh: g.mesh }); }
   }
 }
-function updateMists(dt) {
-  const t = performance.now() * 0.001;
-  for (const m of mists) { m.mesh.position.x = m.x0 + Math.sin(t * m.sp + m.ph) * 1.2; m.mesh.position.z = m.z0 + Math.cos(t * m.sp * 0.8 + m.ph) * 1.2; m.mesh.rotation.z += dt * 0.02; }
-}
-// fossils: drawn on a canvas, pressed into the nearest wall like chalk""")
-rep("""  updateFossils(dt);
-  whistleT -= dt;""", """  updateFossils(dt);
-  updateMists(dt);
+// caches: a dead caver's pack next to some bones""")
+rep("""  updateMists(dt);
+  whistleT -= dt;""", """  updateMists(dt);
+  updateThrown(dt);
   whistleT -= dt;""")
+# the gamepad RB: tap drops; a long hold throws — keep it simple: RB throws with medium power
+rep("""if (edge(5)) dropGlowstick();""", """if (edge(5)) throwGlowstick(0.5);""")
+open(p,'w',encoding='utf-8').write(s)
+p='index.html'; s=open(p,encoding='utf-8').read()
+rep("""<b>G</b> glowstick (three)""", """<b>G</b> glowstick (three; hold to throw)""")
+open(p,'w',encoding='utf-8').write(s)
+p='README.md'; s=open(p,encoding='utf-8').read()
+rep("""| G | drop a glowstick (three per attempt) |""", """| G | drop a glowstick (three per attempt); hold and release to throw one — down a pit, across a chamber; you hear where it lands |""")
 open(p,'w',encoding='utf-8').write(s); print('ok')
