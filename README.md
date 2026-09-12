@@ -51,7 +51,8 @@ hold X to charge, hold LB to focus, hold Y and aim the right stick for the tools
 RB drops/throws a glowstick, LT runs, D-pad up uses a rope, View opens the survey, and Menu pauses/resumes.
 Chalk text entry still needs a keyboard. Controller mappings have browser simulation coverage; physical controller feel needs a playtest.
 
-One cave per seed: you keep the same cave until you get out of it. Your dead stay where they fell (bones, and your old
+One cave per seed: you keep the same cave until you get out of it. After six of you have died in one cave, a red rope
+hangs down the hole you fell through: someone up there counted. Climbing it ends the cave — found, not out. Your dead stay where they fell (bones, and your old
 torch — worth 25 % if you reach it), last attempt's chalk is still on the walls, and an interrupted attempt resumes where it
 stopped. Choose **New cave** in the pause or death menu to abandon it.
 

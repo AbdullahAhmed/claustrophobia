@@ -2,38 +2,27 @@ p='src/main.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
+# the rescue rope, in the entrance shaft, once enough of you have died here
 rep("""function placeSinkhole(p) {
-  const sky = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color: 0x8fa0b4, fog: false }));
-  sky.position.set(p.x, p.y + 0.2, p.z); sky.rotation.x = Math.PI / 2; scene.add(sky);                    // seen from below
-  const shaft = borrowSpot(0x9fb2c8, 60, 26, 0.18, p.x, p.y, p.z, p.x, p.floor, p.z);
-  const pool = borrowLight(0x8fa4bc, 1.2, 6, 1.6, p.x, p.floor + 0.6, p.z); if (pool) pool.userData.keep = true;""",
-"""// the surface keeps real time: what comes down a shaft, or in at the mouth, is the light outside right now
-function daylight() {
-  const h = new Date().getHours() + new Date().getMinutes() / 60;
-  if (h < 5 || h >= 21.5) return { sky: 0x1c2436, k: 0.06, name: 'night' };
-  if (h < 7 || h >= 19.5) return { sky: 0xb07a5a, k: 0.35, name: 'dusk' };
-  return { sky: 0x8fa0b4, k: 1, name: 'day' };
-}
-function placeSinkhole(p) {
+  const dl = daylight();""",
+"""function placeSinkhole(p) {
   const dl = daylight();
-  const sky = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color: dl.sky, fog: false }));
-  sky.position.set(p.x, p.y + 0.2, p.z); sky.rotation.x = Math.PI / 2; scene.add(sky);                    // seen from below
-  const shaft = borrowSpot(dl.name === 'night' ? 0x6f7ea0 : dl.name === 'dusk' ? 0xd4a070 : 0x9fb2c8, 60 * Math.max(0.15, dl.k), 26, 0.18, p.x, p.y, p.z, p.x, p.floor, p.z);
-  const pool = borrowLight(0x8fa4bc, 1.2 * Math.max(0.2, dl.k), 6, 1.6, p.x, p.floor + 0.6, p.z); if (pool) pool.userData.keep = true;""")
-rep("""  const disc = new THREE.Mesh(new THREE.CircleGeometry(5.5, 40), new THREE.MeshBasicMaterial({ color: 0xfff4dc, fog: false }));
-  disc.position.set(e.x + e.dx * 4.6, e.y + 2.2, e.z + e.dz * 4.6); disc.lookAt(e.n1.x, e.n1.y + 1.5, e.n1.z);
-  scene.add(disc);
-  const sun = borrowLight(0xfff1d6, 140, 60, 2, e.x + e.dx * 3, e.y + 3, e.z + e.dz * 3); if (sun) sun.userData.keep = true;
-  const sky = borrowLight(0x9fc4ff, 30, 40, 2, e.n1.x, e.n1.y + 1.8, e.n1.z); if (sky) sky.userData.keep = true;""",
-"""  const dl = daylight();
-  const disc = new THREE.Mesh(new THREE.CircleGeometry(5.5, 40), new THREE.MeshBasicMaterial({ color: dl.name === 'night' ? 0x2a3450 : dl.name === 'dusk' ? 0xe0a070 : 0xfff4dc, fog: false }));
-  disc.position.set(e.x + e.dx * 4.6, e.y + 2.2, e.z + e.dz * 4.6); disc.lookAt(e.n1.x, e.n1.y + 1.5, e.n1.z);
-  scene.add(disc);
-  const sun = borrowLight(dl.name === 'night' ? 0x7f90c0 : dl.name === 'dusk' ? 0xffb070 : 0xfff1d6, 140 * Math.max(0.12, dl.k), 60, 2, e.x + e.dx * 3, e.y + 3, e.z + e.dz * 3); if (sun) sun.userData.keep = true;
-  const sky = borrowLight(0x9fc4ff, 30 * Math.max(0.2, dl.k), 40, 2, e.n1.x, e.n1.y + 1.8, e.n1.z); if (sky) sky.userData.keep = true;
-  exitDaylight = dl.name;""")
-rep("""let exitInfo = null, exitLoops = null;""", """let exitInfo = null, exitLoops = null, exitDaylight = 'day';""")
-# the escape line knows what it is out there
-rep("""  gameDelay(() => endScreen('DAYLIGHT', `you found the way out.""",
-    """  gameDelay(() => endScreen(exitDaylight === 'night' ? 'STARS' : exitDaylight === 'dusk' ? 'THE LAST OF THE LIGHT' : 'DAYLIGHT', `you found the way out.""")
+  if (!p.window && cave.deaths.length >= 6 && !ropes.some(r => r.rescue)) {   // someone up there has counted: a rope comes down the hole
+    const r = { x: p.x, z: p.z, top: p.y - 0.3, bottom: p.floor, rescue: true, mesh: new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, p.y - p.floor + 0.3, 5), new THREE.MeshStandardMaterial({ color: 0xd8442a, roughness: 0.8 })) };
+    r.mesh.position.set(p.x, (p.y + p.floor) / 2 - 0.15, p.z); scene.add(r.mesh); ropes.push(r);
+    gameDelay(() => showHint('a rope. down the hole you fell through. red, and new', true), 4000);
+  }""")
+rep("""    if (roping.dir > 0) { player.y = r.top + 0.1; const dx = -Math.sin(player.yaw), dz = -Math.cos(player.yaw); player.x = r.x + dx * 0.9; player.z = r.z + dz * 0.9; }   // step off the lip""",
+    """    if (roping.dir > 0 && r.rescue) { roping = null; rescued(); return; }
+    if (roping.dir > 0) { player.y = r.top + 0.1; const dx = -Math.sin(player.yaw), dz = -Math.cos(player.yaw); player.x = r.x + dx * 0.9; player.z = r.z + dz * 0.9; }   // step off the lip""")
+rep("""function escape() {
+  if (player.out) return; player.out = true; record.escapes++;""",
+"""function rescued() {
+  if (player.out) return; player.out = true; record.rescued = (record.rescued || 0) + 1;
+  cave.escaped = true; saveCave();
+  $('flash').style.opacity = 1; sfx.play('wind', { vol: 0.6, dur: 6 }); sfx.play('birds', { vol: 0.5, dur: 6 });
+  gameDelay(() => endScreen('THEY CAME', `a rope came down the hole on the ${['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'][Math.min(9, cave.attempts - 1)]} try. someone up there counted. you did not find the way out; you were found.`, 'CLICK FOR A NEW CAVE'), 2400);
+}
+function escape() {
+  if (player.out) return; player.out = true; record.escapes++;""")
 open(p,'w',encoding='utf-8').write(s); print('ok')

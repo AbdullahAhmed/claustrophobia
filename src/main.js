@@ -522,6 +522,7 @@ function updateRoping(dt) {
   player.y += Math.sign(target - player.y) * speed * dt; player.vy = 0; player.airT = 0; player.h = H_CROUCH;
   if (Math.floor(roping.t * 1.6) !== Math.floor((roping.t - dt) * 1.6)) sfx.play('scrape', { vol: 0.35, rate: 1.4, vary: 0.3, dur: 0.4, hrtf: false });
   if ((roping.dir < 0 && player.y <= r.bottom + 0.15) || (roping.dir > 0 && player.y >= r.top - 0.05)) {
+    if (roping.dir > 0 && r.rescue) { roping = null; rescued(); return; }
     if (roping.dir > 0) { player.y = r.top + 0.1; const dx = -Math.sin(player.yaw), dz = -Math.cos(player.yaw); player.x = r.x + dx * 0.9; player.z = r.z + dz * 0.9; }   // step off the lip
     else player.y = r.bottom + 0.15;
     roping = null; showHint(player.y < r.bottom + 1 ? 'down' : 'up');
@@ -846,6 +847,11 @@ function daylight() {
 }
 function placeSinkhole(p) {
   const dl = daylight();
+  if (!p.window && cave.deaths.length >= 6 && !ropes.some(r => r.rescue)) {   // someone up there has counted: a rope comes down the hole
+    const r = { x: p.x, z: p.z, top: p.y - 0.3, bottom: p.floor, rescue: true, mesh: new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, p.y - p.floor + 0.3, 5), new THREE.MeshStandardMaterial({ color: 0xd8442a, roughness: 0.8 })) };
+    r.mesh.position.set(p.x, (p.y + p.floor) / 2 - 0.15, p.z); scene.add(r.mesh); ropes.push(r);
+    gameDelay(() => showHint('a rope. down the hole you fell through. red, and new', true), 4000);
+  }
   const sky = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color: dl.sky, fog: false }));
   sky.position.set(p.x, p.y + 0.2, p.z); sky.rotation.x = Math.PI / 2; scene.add(sky);                    // seen from below
   const shaft = borrowSpot(dl.name === 'night' ? 0x6f7ea0 : dl.name === 'dusk' ? 0xd4a070 : 0x9fb2c8, 60 * Math.max(0.15, dl.k), 26, 0.18, p.x, p.y, p.z, p.x, p.floor, p.z);
@@ -1189,6 +1195,12 @@ function die(title, why, stat) {
   cave.notes = (cave.notes || []).concat(notes.filter(n => !(cave.notes || []).some(q => q.t === n.t && Math.hypot(q.x - n.x, q.z - n.z) < 9))); saveCave();
   $('hurt').style.opacity = 0.9;
   gameDelay(() => endScreen(title, why, 'TRY THIS CAVE AGAIN'), 1400);
+}
+function rescued() {
+  if (player.out) return; player.out = true; record.rescued = (record.rescued || 0) + 1;
+  cave.escaped = true; saveCave();
+  $('flash').style.opacity = 1; sfx.play('wind', { vol: 0.6, dur: 6 }); sfx.play('birds', { vol: 0.5, dur: 6 });
+  gameDelay(() => endScreen('THEY CAME', `a rope came down the hole on the ${['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'][Math.min(9, cave.attempts - 1)]} try. someone up there counted. you did not find the way out; you were found.`, 'CLICK FOR A NEW CAVE'), 2400);
 }
 function escape() {
   if (player.out) return; player.out = true; record.escapes++;
