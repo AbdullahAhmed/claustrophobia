@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 shots/
+assets/assets/
+vendor/vendor/
+*.blend1
+dist/

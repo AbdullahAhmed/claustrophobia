@@ -15,7 +15,7 @@ export function normalizeVisuals(s) {
 export class Presentation {
   constructor(renderer) {
     this.renderer = renderer; this.settings = {...visualDefaults};
-    this.target = new THREE.WebGLRenderTarget(1, 1, {depthBuffer: true});
+    this.target = new THREE.WebGLRenderTarget(1, 1, {depthBuffer: true,type:THREE.HalfFloatType});
     this.uniforms = {frame: {value: this.target.texture}, time: {value: 0}, strength: {value: .28}, motion: {value: 1}, resolution: {value: new THREE.Vector2(1,1)}};
     this.material = new THREE.ShaderMaterial({depthTest:false,depthWrite:false, uniforms:this.uniforms,
       vertexShader:`varying vec2 uv0; void main(){uv0=uv;gl_Position=vec4(position.xy,0.,1.);}`,
@@ -29,7 +29,7 @@ export class Presentation {
           vec2 shift=vec2((.7+edge)*s/resolution.x,0.);
           vec3 col=vec3(texture2D(frame,clamp(p+shift,0.,1.)).r,texture2D(frame,p).g,texture2D(frame,clamp(p-shift,0.,1.)).b);
           float l=dot(col,vec3(.299,.587,.114)); col=mix(col,vec3(l),s*.13);
-          col+=(hash(floor(p*resolution*.65)+tick)-.5)*.037*s;
+          col+=(hash(floor(p*resolution*.65)+tick)-.5)*.018*s;
           col*=1.-s*.026*(.5+.5*sin(p.y*resolution.y*3.14159));
           col*=1.-s*.12*pow(length(p-.5)*1.4,3.);
           gl_FragColor=vec4(max(col,0.),1.);
@@ -48,7 +48,7 @@ export class Presentation {
     this.uniforms.motion.value=s.reduced?0:1;
   }
   render(scene,camera,seconds=0) {
-    const r=this.renderer, size=r.getDrawingBufferSize(new THREE.Vector2());
+    const r=this.renderer, size=r.getDrawingBufferSize(new THREE.Vector2());r.info.autoReset=false;r.info.reset();
     if(this.target.width!==size.x||this.target.height!==size.y){this.target.setSize(size.x,size.y);this.uniforms.resolution.value.copy(size);}
     this.uniforms.time.value=this.settings.reduced?0:seconds;
     if(this.settings.tape==='off'){r.setRenderTarget(null);r.render(scene,camera);return;}

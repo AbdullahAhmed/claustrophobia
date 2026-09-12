@@ -34,7 +34,21 @@ async function load(committed) {
     assert(!G.segs.some(s => s.slabs.includes(slab)));
     assert(!G.nodes.some(n => n.slabs?.includes(slab)));
   }
+  // The numbered seeds are regression samples, never a fixed level catalogue.
+  const growing=local.G;growing.initGen(917263);const initialNodes=growing.nodes.length;
+  for(let leg=0;leg<8;leg++){const front=growing.worms.find(w=>w.kind==='trunk'&&!w.dead)||growing.worms[0];Object.assign(growing.focus,{x:front.x,y:front.y,z:front.z});growing.advanceWorms(30);}
+  assert(growing.nodes.length>initialNodes,'Exploration must grow the procedural cave');
   const code = fs.readFileSync('src/main.js', 'utf8');
+  const ceiling = code.slice(code.indexOf('function ceilingAt('),code.indexOf('function placeCurtain('));
+  const roofContext={G:{fieldAt:(x,y,z)=>y<1||y>=19?1:-1}};
+  vm.runInNewContext(ceiling+'\nresult=ceilingAt(0,0,0,20);',roofContext);
+  assert(roofContext.result>18.8&&roofContext.result<19.1,'High roof must be found after leaving floor rock');
+  const visualWater = code.slice(code.indexOf('function visualWater('),code.indexOf('function updateVisualWater('));
+  for(const floods of [true,false]){
+    const context={floodLevel:.37,G:{flood:.4,nearestSegAt:()=>({wl:2.4,floods})}};
+    vm.runInNewContext(visualWater+'\nresult=visualWater(0,0,0);',context);
+    assert(Math.abs(context.result-(floods?2.37:2.4))<.00001,'Visual flood must be applied once and leave still pools fixed');
+  }
   const onBuilt = code.slice(code.indexOf('function onBuilt(out)'), code.indexOf('function realizeChunk(ch)'));
   for (const dirty of [true, false]) {
     const ch = { dirty, building: true }, calls = [];
@@ -49,5 +63,5 @@ async function load(committed) {
   const manifest = JSON.parse(fs.readFileSync('sounds/out/manifest.json', 'utf8'));
   const sounds = [...new Set(Object.values(manifest).flat())];
   assert(sounds.every(f => fs.existsSync('sounds/out/' + f)));
-  console.log(JSON.stringify({ syntaxModules: 5, compatibleSeeds: 30, floorCases: floors, solidSamples, slabRemoval: 'pass', workerResults: 'pass', audioFiles: sounds.length }, null, 2));
+  console.log(JSON.stringify({ syntaxModules: fs.readdirSync('src').filter(f => f.endsWith('.js')).length, compatibleSeeds: 30, proceduralGrowth:{initialNodes,afterExploration:growing.nodes.length},highCeiling:'pass',floodInterpolation:'pass',floorCases: floors, solidSamples, slabRemoval: 'pass', workerResults: 'pass', audioFiles: sounds.length }, null, 2));
 })().catch(e => { console.error(e); process.exitCode = 1; });

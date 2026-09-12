@@ -1,6 +1,10 @@
-<title>Karst</title>
+<!doctype html>
+<html lang="en">
+<title>Claustrophobia — Free Browser Demo</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="A free cave survival horror demo. Find your way out with a fading torch, chalk and the sound of moving water.">
 <meta charset="utf-8">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500&family=IBM+Plex+Mono:wght@400;500&family=Caveat:wght@600&display=swap">
+<link rel="stylesheet" href="assets/fonts/fonts.css">
 <style>
   :root {
     color-scheme: dark;
@@ -89,10 +93,21 @@
   .settings input[type=checkbox] { accent-color: #a08a6a; }
   @keyframes pulse { 50% { opacity: .3; } }
   @media (prefers-reduced-motion: reduce) { .box .go, .meter.low .tag { animation: none; } }
+
+  .box {max-width:700px;padding:24px;} .box h1 {font-size:clamp(24px,4vw,44px);letter-spacing:.16em;margin-left:.16em;}
+  #overlay {overflow:auto;} .settings{flex-wrap:wrap;gap:14px;} .visual-settings{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:16px;font-size:11px;}
+  .visual-settings label{display:flex;align-items:center;gap:6px;} select{background:#181713;color:#c7beac;border:1px solid #595044;padding:5px;font:inherit;}
+  .visual-settings input[type=range]{width:75px;accent-color:#b59d74;} .calibration{width:100%;color:#9c9385;}
+  .calibration i{display:inline-block;width:20px;height:14px;background:#080808;margin:0 2px;vertical-align:middle;}.calibration i:nth-child(2){background:#141414}.calibration i:nth-child(3){background:#252525}
+  #recording{position:fixed;left:20px;top:18px;font:12px var(--mono);letter-spacing:2px;color:#a8b1a2;pointer-events:none;opacity:.75;}.rec-dot{color:#b7573f;} #recording-time{margin-left:12px;}
+  #loading,#load-error{margin-top:16px;color:#d2ba8e;} #build{font-size:10px;color:#8d8475;margin:10px;} a{color:#a89b84;font-size:11px;}
+  .reduced-motion *{animation:none!important;transition:none!important;}
+  @media(max-height:820px){#overlay{align-items:flex-start}.box .sub{margin-bottom:12px}.box p{line-height:1.65}.box .go{margin-top:14px}.settings{margin-top:12px}}
+details{margin-top:18px}summary{cursor:pointer;font-size:12px;letter-spacing:.08em;color:#c8b897}details[open] summary{margin-bottom:12px}#go:disabled{opacity:.35;cursor:wait;animation:none}
 </style>
 
 <canvas id="c"></canvas>
-<canvas id="grain" width="320" height="180"></canvas>
+<div id="recording"><span class="rec-dot">●</span> REC <span id="recording-time">00:00:00</span></div>
 <div id="vignette"></div>
 <div id="water"></div>
 <canvas id="drops" width="480" height="270" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .3s"></canvas>
@@ -114,8 +129,10 @@
 <input id="chalk" maxlength="26" spellcheck="false" autocomplete="off" placeholder="chalk…">
 <div id="notebook"><canvas id="nbc" width="1800" height="1280"></canvas><div class="nb-title" id="nb-title">survey</div><div class="nb-foot" id="nb-foot"></div></div>
 <div id="overlay"><div class="box">
-  <h1 id="ov-title">KARST</h1>
+  <h1 id="ov-title">CLAUSTROPHOBIA</h1>
   <div class="sub" id="ov-sub">the ground gave way. the hole you fell through is too far up. somewhere, this opens.</div>
+  <p>Find the way out. Keep the torch charged. Listen to the water.</p>
+  <details><summary>Controls and survival</summary>
   <p id="ov-body"><b>W A S D</b> walk &nbsp;·&nbsp; <b>mouse</b> look &nbsp;·&nbsp; <b>C</b> crouch / dive<br>
      low ceilings put you on your belly &nbsp;·&nbsp; <b>space</b> hop / surface / hold to climb a chimney<br>
      <b>shift</b> run &nbsp;·&nbsp; hold <b>left mouse</b> to charge the torch (blind while you do)<br>
@@ -127,16 +144,25 @@
      <b>esc</b> pauses the game &nbsp;·&nbsp; headphones help<br>
      controller: sticks move / look · A hop / climb · B crouch / dive<br>
      hold X charge · hold LB focus · hold Y tools · RB glowstick<br>
-     LT run · D-pad up rope · View survey · Menu pause</p>
+     LT run · D-pad up rope · View survey · Menu pause</p></details>
   <div class="settings" onclick="event.stopPropagation()">
     <label>LOOK <input type="range" id="s-sens" min="0.3" max="2.5" step="0.1" value="1"></label>
     <label>VOLUME <input type="range" id="s-vol" min="0" max="1" step="0.05" value="0.9"></label>
     <label><input type="checkbox" id="s-inv"> INVERT Y</label>
     <label><input type="checkbox" id="s-hud" checked> HUD</label>
   </div>
+  <div class="visual-settings" onclick="event.stopPropagation()">
+    <label>Graphics <select id="s-quality"><option value="low">Low</option><option value="standard" selected>Standard</option><option value="high">High</option></select></label>
+    <label>Tape effect <select id="s-tape"><option value="off">Off</option><option value="subtle" selected>Subtle</option><option value="full">Full</option></select></label>
+    <label>Camera motion <input id="s-motion" type="range" min="0" max="1" step=".1" value="1"></label>
+    <label>Brightness <input id="s-brightness" type="range" min=".7" max="1.5" step=".05" value="1"></label>
+    <label><input id="s-reduced" type="checkbox"> Reduced motion</label>
+    <span class="calibration">Calibrate: <i></i><i></i><i></i> three dark shades should be distinguishable</span>
+  </div>
   <div class="rec" id="ov-rec"></div>
+  <p id="loading" role="status">Preparing the cave…</p><p id="load-error" role="alert" hidden></p><div id="build">Free browser demo</div><a href="credits.html" target="_blank" rel="noopener" onclick="event.stopPropagation()">Credits</a>
   <div class="snd" id="ov-snd">loading sounds…</div>
-  <button type="button" class="go" id="go">CLICK TO GO IN</button>
+  <button type="button" class="go" id="go" disabled>CLICK TO GO IN</button>
   <div class="menu-actions" id="menu-actions" hidden><button type="button" id="abandon">New cave…</button></div>
   <div id="abandon-confirm" hidden>
     <p>Leave this cave? Your current attempt, remains, and chalk here will be replaced by a new cave.</p>
@@ -147,8 +173,11 @@
 
 <script type="importmap">
 { "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  "three": "./vendor/three/build/three.module.js",
+  "three/addons/": "./vendor/three/examples/jsm/"
 } }
 </script>
-<script type="module" src="src/main.js"></script>
+<script type="module">
+const fail=error=>{console.error(error);document.getElementById('loading').hidden=true;const el=document.getElementById('load-error');el.hidden=false;el.textContent='The cave could not load. Check your connection and WebGL support, then reload this page.';};
+import('./src/main.js').catch(fail);
+</script></html>

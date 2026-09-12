@@ -3,6 +3,11 @@ import * as THREE from 'three';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import * as G from './gen.js';
 import { Sfx } from './audio.js';
+import { assets } from './assets.js';
+import { Presentation, BUILD, visualDefaults, normalizeVisuals } from './presentation.js';
+import { VFX, StreamedInstances } from './vfx.js';
+import { RegionGeometry } from './regions.js';
+await assets.load((n,total)=>{document.getElementById('loading').textContent=`Preparing equipment ${n}/${total}…`;});
 
 const $ = id => document.getElementById(id);
 const { clamp, lerp, rr } = G;
@@ -68,28 +73,55 @@ scene.fog = new THREE.FogExp2(0x000000, 0.048);
 const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 90);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
+const presentation = new Presentation(renderer), vfx = new VFX(scene);
+const streamed = [], regionGeometry = new RegionGeometry();
+function visualWater(x,y,z){const sg=G.nearestSegAt(x,y,z);return sg?.wl!==undefined?sg.wl+(sg.floods?floodLevel-G.flood:0):-Infinity;}
+function updateVisualWater(){waterUniforms.uFlood.value=floodLevel;}
+let decorationTick=0;
+function updateDecorations(){
+  if(++decorationTick%30)return;
+  regionGeometry.update(camera.position);updateLightRegions();updateDripstone();
+  for(const list of [caches,ropes,loose,olms])for(const d of list)if(d.mesh)d.mesh.visible=!d.taken && Math.hypot(d.x-player.x,(d.y??d.top??player.y)-player.y,d.z-player.z)<48;
+  // Thread buffer only contains the visible region and has a fixed maximum.
+  const nearby=[];for(let i=0;i<threadPos.length&&nearby.length<2400*6;i+=6)if(Math.hypot(threadPos[i]-player.x,threadPos[i+1]-player.y,threadPos[i+2]-player.z)<48)nearby.push(...threadPos.slice(i,i+6));
+  const a=wormThreads.geometry.attributes.position;a.array.fill(0);a.array.set(nearby);a.needsUpdate=true;wormThreads.geometry.setDrawRange(0,nearby.length/3);
+}
+
+function stream(geometry, material, capacity) { const batch = new StreamedInstances(scene, geometry, material, capacity); streamed.push(batch); return batch; }
 
 // rock: flat-shaded, per-face colour, plus a per-vertex glow channel for the algae
 const rockMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.94, metalness: 0.0, flatShading: true, vertexColors: true });
 rockMat.onBeforeCompile = (sh) => {
   sh.vertexShader = sh.vertexShader
-    .replace('#include <common>', 'attribute float glow; attribute float wet; varying float vGlow; varying float vWet;\n#include <common>')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = glow; vWet = wet;');
+    .replace('#include <common>', 'attribute float glow; attribute float wet; varying vec3 vRock; varying float vGlow; varying float vWet;\n#include <common>')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = glow; vWet = wet; vRock=(modelMatrix*vec4(position,1.0)).xyz;');
   sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', 'varying float vGlow; varying float vWet;\n#include <common>')
+    .replace('#include <common>', 'varying vec3 vRock; varying float vGlow; varying float vWet;\n#include <common>')
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      float strata=sin(vRock.y*8.+sin(vRock.x*.53+vRock.z*.41)*1.7);
+      float mineral=sin(vRock.x*4.1+vRock.z*3.7+sin(vRock.y*2.9))*sin(vRock.z*5.3-vRock.x*2.1);
+      float grit=sin(vRock.x*81.+sin(vRock.z*43.))*sin(vRock.y*73.-vRock.z*61.);
+      diffuseColor.rgb *= .84+strata*.075+mineral*.075+grit*.055;
+      diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.77,.86,.83),vWet*.3);`)
     .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = roughnessFactor * (1.0 - 0.62 * vWet);')   // wet rock and flowstone catch the beam
     .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.10, 0.75, 0.55) * vGlow * vGlow * 0.32;');
 };
-const waterMat = new THREE.MeshStandardMaterial({ color: 0x0a2226, roughness: 0.08, metalness: 0.3, emissive: 0x03120f, vertexColors: true,
+const waterMat = new THREE.MeshStandardMaterial({ color: 0x0a2226, roughness: 0.08, metalness: 0.08, emissive: 0x010403, vertexColors: true,
                                                   transparent: true, opacity: 0.84, side: THREE.DoubleSide, depthWrite: false });
-const waterUniforms = { uTime: { value: 0 } };
+const waterUniforms = { uTime: { value: 0 }, uFlood: {value:0} };
 waterMat.onBeforeCompile = (sh) => {
-  sh.uniforms.uTime = waterUniforms.uTime;
+  sh.uniforms.uTime = waterUniforms.uTime; sh.uniforms.uFlood = waterUniforms.uFlood;
   sh.vertexShader = sh.vertexShader
-    .replace('#include <common>', 'attribute vec3 aFlow; varying vec3 vFlow; varying vec3 vWp;\n#include <common>')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFlow = aFlow; vWp = (modelMatrix * vec4(position, 1.0)).xyz;');
+    .replace('#include <common>', 'attribute vec3 aFlow; attribute float aFlood; attribute float aDepth; uniform float uFlood; varying float vDepth; varying vec3 vFlow; varying vec3 vWp;\n#include <common>')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y += aFlood*uFlood; vDepth=aDepth; vFlow = aFlow; vWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
   sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', 'uniform float uTime; varying vec3 vFlow; varying vec3 vWp;\n#include <common>')
+    .replace('#include <common>', 'uniform float uTime; varying float vDepth; varying vec3 vFlow; varying vec3 vWp;\n#include <common>')
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      float depthMix=1.0-exp(-max(vDepth,0.0)*1.4);
+      diffuseColor.rgb *= mix(vec3(1.8,2.1,1.65),vec3(.48,.72,.85),depthMix);
+      diffuseColor.a *= mix(.35,1.0,depthMix);
+      float contact=(1.0-smoothstep(.02,.22,vDepth))*.25;
+      diffuseColor.rgb += vec3(.06,.08,.065)*contact;`)
     .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
       float sp = length(vFlow.xz);
       vec2 dir = sp > 0.01 ? vFlow.xz / sp : vec2(0.7, 0.7);
@@ -99,7 +131,7 @@ waterMat.onBeforeCompile = (sh) => {
       float w1 = sin(along * 5.0 - uTime * (0.8 + 3.0 * sp) + across * 1.3);
       float w2 = sin(along * 11.0 - uTime * (1.3 + 5.0 * sp) + sin(across * 2.1 + uTime * 0.7) * 1.5);
       float w3 = sin(across * 6.0 + uTime * 0.9 + along * 0.4);
-      normal = normalize(normal + vec3(dir.x * (w1 * 0.7 + w2 * 0.3) * amp, 0.0, dir.y * (w1 * 0.7 + w2 * 0.3) * amp) + vec3(-dir.y, 0.0, dir.x) * w3 * amp * 0.5);`)
+      vec3 wave = vec3(dir.x * (w1 * 0.7 + w2 * 0.3) * amp, 0.0, dir.y * (w1 * 0.7 + w2 * 0.3) * amp) + vec3(-dir.y, 0.0, dir.x) * w3 * amp * 0.5; normal = normalize(normal + mat3(viewMatrix) * wave * faceDirection);`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       { float spf = length(vFlow.xz); if (spf > 1.0) { float f = smoothstep(0.5, 0.95, sin(dot(vWp.xz, normalize(vFlow.xz)) * 3.0 - uTime * (2.0 + spf * 2.0) + sin(vWp.x * 4.0 + vWp.z * 3.0) * 2.0)); totalEmissiveRadiance += vec3(0.14, 0.16, 0.15) * f * min(1.0, (spf - 1.0) * 1.2); } }`);
 };
@@ -114,31 +146,22 @@ torch.add(spot); torch.add(spot.target);
 const bounce = new THREE.PointLight(0xffc890, 0.9, 7, 1.5); scene.add(bounce);
 const touch = new THREE.PointLight(0x9fb0c8, 0, 1.6, 2.2); scene.add(touch);     // feeling your way: what an arm's reach of rock looks like to a dark-adapted eye
 // the hand that holds it: low-poly glove and torch, parented to the lagging rig so it sways and whips when you shake
-const hand = new THREE.Group();
-{
-  const glove = new THREE.MeshStandardMaterial({ color: 0x24201b, roughness: 0.95, flatShading: true });
-  const metal = new THREE.MeshStandardMaterial({ color: 0x2b2a2e, roughness: 0.5, metalness: 0.4, flatShading: true });
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.026, 0.19, 8), metal); body.rotation.x = Math.PI / 2; body.position.z = 0.02;
-  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.027, 0.055, 8), metal); head.rotation.x = Math.PI / 2; head.position.z = -0.1;
-  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.028, 10), new THREE.MeshStandardMaterial({ color: 0xffe0a0, emissive: 0xffc070, emissiveIntensity: 2, roughness: 0.3 }));
-  lens.position.z = -0.128;
-  const fist = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.11), glove); fist.position.set(0, -0.012, 0.03); fist.rotation.z = 0.15;
-  const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.03, 0.06), glove); thumb.position.set(-0.04, 0.02, 0.0); thumb.rotation.z = -0.5;
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.045, 0.4, 7), glove); arm.position.set(0.05, -0.16, 0.22); arm.rotation.set(1.05, 0, -0.35);
-  const torchModel = new THREE.Group(); torchModel.add(body, head, lens);
-  hand.add(fist, thumb, arm);
-  hand.position.set(0.21, -0.22, -0.4); hand.rotation.set(0.08, -0.12, 0.05);
-  torchModel.position.copy(hand.position); torchModel.rotation.copy(hand.rotation);
-  hand.userData.lens = lens; hand.userData.torchModel = torchModel;
-  torch.add(hand, torchModel);
-}
+const hand = assets.model('glove');
+const torchModel = assets.model('torch');
+hand.position.set(.21,-.22,-.4); hand.rotation.set(.08,-.12,.05);
+torchModel.position.copy(hand.position); torchModel.rotation.copy(hand.rotation);
+hand.userData.lens = torchModel.getObjectByName('lens');
+hand.userData.torchModel = torchModel; torch.add(hand,torchModel);
+// View equipment is behind the lamp aperture; it must not cast a giant shadow
+// across the beam. The dropped torch can use ordinary world lighting.
+for(const rig of [hand,torchModel])rig.traverse(m=>{if(m.isMesh){m.castShadow=false;m.receiveShadow=false;}});
 let torchHeld = true;
 const droppedTorch = { pos: new THREE.Vector3() };
 scene.add(new THREE.AmbientLight(0x1a1610, 0.06));
 // dust in the beam: a cloud of motes around the camera, lit only where the torch cone reaches them
 const MOTES = 220;
 const motePos = new Float32Array(MOTES * 3), moteVel = new Float32Array(MOTES * 3), moteSz = new Float32Array(MOTES);
-for (let i = 0; i < MOTES; i++) { motePos[i * 3] = 1e6; moteSz[i] = 0.007 + Math.random() * 0.014; }
+for (let i = 0; i < MOTES; i++) { motePos[i * 3] = 1e6; moteSz[i] = 0.003 + Math.random() * 0.005; }
 const moteTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d');
   const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.4, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = gr; g.fillRect(0, 0, 32, 32); const t = new THREE.CanvasTexture(c); return t; })();
@@ -162,7 +185,7 @@ function updateDraught(dt) {
   if (runTime > 120 && (tx || tz) && open < 12 && torchHeld && torchLevel(player.battery) > 0.4) teach('draught', 'watch the dust in the beam. it drifts one way: the air is going somewhere, and cavers follow it');
 }
 function updateMotes(dt, level) {
-  torch.getWorldDirection(_td).negate(); _tp.copy(camera.position);            // torch is a plain Object3D: +Z is backwards
+  spot.getWorldPosition(_tp); spot.target.getWorldPosition(_td); _td.sub(_tp).normalize();            // torch is a plain Object3D: +Z is backwards
   const t = gameClock * 0.001, ic = motes.instanceColor.array;
   const gust = 1 + (gustT > 0 ? 3 : 0);
   for (let i = 0; i < MOTES; i++) {
@@ -178,8 +201,8 @@ function updateMotes(dt, level) {
     motePos[i * 3] = x; motePos[i * 3 + 1] = y; motePos[i * 3 + 2] = z;
     // brightness: inside the cone, fading with distance and toward the cone edge
     const cosA = d > 0 ? (rx * _td.x + ry * _td.y + rz * _td.z) / d : 0;
-    const edge = clamp((cosA - 0.86) / 0.1, 0, 1);
-    const b = x > 1e5 ? 0 : 0.9 * level * edge * clamp(1.4 / (d + 0.4), 0, 1) * (0.55 + 0.45 * Math.sin(t * 3 + i * 2.1)) * (player.under ? 0.4 : 1);
+    const edge = clamp((cosA - Math.cos(spot.angle)) / Math.max(.015, 1-Math.cos(spot.angle * (1-spot.penumbra))), 0, 1);
+    const b = x > 1e5 ? 0 : 0.25 * level * edge * clamp(1.4 / (d + 0.4), 0, 1) * (0.55 + 0.45 * Math.sin(t * 3 + i * 2.1)) * (player.under ? 0.4 : 1);
     ic[i * 3] = b * 0.9; ic[i * 3 + 1] = b * 0.82; ic[i * 3 + 2] = b * 0.62;
     _mp.set(x, y, z); _ms.setScalar(moteSz[i] * (1 + d * 0.25));
     _mm.compose(_mp, camera.quaternion, _ms); motes.setMatrixAt(i, _mm);
@@ -200,6 +223,13 @@ function borrowLight(color, intensity, distance, decay, x, y, z) {
   l.userData.free = false; l.userData.keep = false; l.userData.owner = null;
   l.color.set(color); l.intensity = intensity; l.distance = distance; l.decay = decay; l.position.set(x, y, z);
   return l;
+}
+function updateLightRegions(){
+  const sources=[...glow.map(o=>({o,color:0x5cff7a,intensity:1.1,distance:9,decay:1.7,dy:.15})),...remains.filter(o=>!o.taken).map(o=>({o,color:0xffa050,intensity:.25,distance:4,decay:1.5,dy:.12})),...wormSites.map(o=>({o,color:0x5fd8b8,intensity:2.2,distance:24,decay:1.4,dy:-.8}))];
+  sources.forEach(q=>q.d=Math.hypot(q.o.x-player.x,q.o.y-player.y,q.o.z-player.z));sources.sort((a,b)=>a.d-b.d);
+  const free=lightPool.filter(l=>!l.userData.keep);
+  for(const l of free){if(l.userData.owner)l.userData.owner.light=null;returnLight(l);}
+  for(let i=0;i<Math.min(free.length,sources.length);i++){const q=sources[i];if(q.d>q.distance+20)break;const l=free[i];l.userData.free=false;l.userData.owner=q.o;q.o.light=l;l.color.set(q.color);l.intensity=q.intensity;l.distance=q.distance;l.decay=q.decay;l.position.set(q.o.x,q.o.y+q.dy,q.o.z);}
 }
 function returnLight(l) { if (!l) return; l.intensity = 0; l.userData.free = true; l.userData.keep = false; l.userData.owner = null; }
 function borrowSpot(color, intensity, distance, angle, x, y, z, tx, ty, tz) {
@@ -261,14 +291,22 @@ function meshChunk(ch, out) {
   }
   if (out.water) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(out.water, 3));
-    const fl = new Float32Array(out.water.length), col = new Float32Array(out.water.length / 3 * 4).fill(1), W = out.water;
-    for (let i = 0; i < W.length; i += 18) {                        // one lookup per quad
-      const f = G.flowAt(W[i] + 0.2, W[i + 1], W[i + 2] + 0.2);
-      if (f) for (let k = 0; k < 18; k += 3) { fl[i + k] = f.x * f.s; fl[i + k + 2] = f.z * f.s; }
-      const sg = G.nearestSegAt(W[i] + 0.2, W[i + 1], W[i + 2] + 0.2);
-      if (sg && sg.gour) for (let k = 0; k < 6; k++) { const c = (i / 3 + k) * 4; col[c] = 1.9; col[c + 1] = 2.3; col[c + 2] = 2.1; col[c + 3] = 0.45; }   // shallow clear water over white calcite
+    const W=out.water, fl=new Float32Array(W.length),col=new Float32Array(W.length/3*4).fill(1),depth=new Float32Array(W.length/3),flood=new Float32Array(W.length/3);
+    // Metadata is per triangle, so clipped shoreline cells need no fixed quad stride.
+    for(let i=0;i<W.length;i+=9){
+      const x=(W[i]+W[i+3]+W[i+6])/3,y=W[i+1],z=(W[i+2]+W[i+5]+W[i+8])/3;
+      const sg=G.nearestSegAt(x,y,z),f=sg?.wl!==undefined?sg.nb?.flow:null;
+      for(let k=0;k<9;k+=3){
+        const v=(i+k)/3;
+        if(f){fl[i+k]=f.x*f.s;fl[i+k+2]=f.z*f.s;}
+        let d=0;for(;d<2.4;d+=.2){const ly=(y-d-.05-ch.cy*G.CHUNK)/G.VOXEL;if(ly<0){d=2.4;break;}if(G.gridAt(ch.density,(W[i+k]-ch.cx*G.CHUNK)/G.VOXEL,ly,(W[i+k+2]-ch.cz*G.CHUNK)/G.VOXEL)>-.03)break;}
+        depth[v]=d;
+        if(sg?.floods){flood[v]=1;W[i+k+1]-=G.flood;}
+        if(sg?.gour){col[v*4]=1.9;col[v*4+1]=2.3;col[v*4+2]=2.1;col[v*4+3]=.65;}
+      }
     }
-    g.setAttribute('aFlow', new THREE.BufferAttribute(fl, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    g.setAttribute('aFlow',new THREE.BufferAttribute(fl,3));g.setAttribute('color',new THREE.BufferAttribute(col,4));
+    g.setAttribute('aDepth',new THREE.BufferAttribute(depth,1));g.setAttribute('aFlood',new THREE.BufferAttribute(flood,1));
     g.computeVertexNormals(); g.computeBoundingSphere();
     ch.water = new THREE.Mesh(g, waterMat); waterGroup.add(ch.water);
   }
@@ -290,24 +328,36 @@ function processQueue(ms, sync) {
 }
 
 // ---------- props: bones, daylight ----------
-const boneMat = new THREE.MeshStandardMaterial({ color: 0xe6dcc6, roughness: 0.8, flatShading: true });
+const boneMat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors:true, roughness: 0.8, flatShading: true });
 const boneGeos = {
-  skull: new THREE.IcosahedronGeometry(0.11, 0).scale(1, 0.85, 1.25),
-  long: new THREE.CapsuleGeometry(0.028, 0.34, 2, 6),
-  rib: new THREE.TorusGeometry(0.17, 0.018, 4, 9, Math.PI),
+  skull: assets.geometry('skull'),
+  long: assets.geometry('longbone'),
+  rib: assets.geometry('rib'),
 };
 const boneInst = {}; const boneCount = {};
-for (const k in boneGeos) { boneInst[k] = new THREE.InstancedMesh(boneGeos[k], boneMat, 900); boneInst[k].count = 0; boneInst[k].frustumCulled = false; boneInst[k].castShadow = true; boneInst[k].receiveShadow = true; scene.add(boneInst[k]); boneCount[k] = 0; }
+for (const k in boneGeos) { boneInst[k] = stream(boneGeos[k], boneMat, 600); boneCount[k] = 0; }
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Euler();
+const dripstone = stream(new THREE.CylinderGeometry(.15,1,1,9,4),new THREE.MeshStandardMaterial({color:0xb8a889,roughness:.65,flatShading:true}),500);
+const detailedSpel=new WeakSet();
+function updateDripstone(){
+  for(const n of G.nodes){if(Math.hypot(n.x-player.x,n.y-player.y,n.z-player.z)>44)continue;
+    for(const c of n.spel||[]){if(detailedSpel.has(c))continue;detailedSpel.add(c);if(c.r>.48||c.len<.3)continue;
+      const tipY=c.top+(c.up?1:-1)*c.len;
+      // Respect the collision core: only overlay formations that still exist.
+      if(G.fieldAt(c.x,tipY-(c.up?1:-1)*.18,c.z)<-.06)continue;
+      _p.set(c.x,c.top+(c.up?1:-1)*c.len*.5,c.z);_s.set(c.r*.94,c.len,c.r*.94);_e.set(c.up?0:Math.PI,0,0);_q.setFromEuler(_e);_m.compose(_p,_q,_s);dripstone.setMatrixAt(dripstone.count++,_m);
+    }
+  }
+}
 const bonePiles = [];       // {x,y,z, r, crunched}
 // gypsum blades for crystal pockets
-const crystalMat = new THREE.MeshStandardMaterial({ color: 0xf3f5ff, roughness: 0.28, metalness: 0.0, emissive: 0x2c3444, flatShading: true });
-const crystals = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 4), crystalMat, 6000); crystals.count = 0; crystals.frustumCulled = false; crystals.castShadow = true; scene.add(crystals);
+const crystalMat = new THREE.MeshStandardMaterial({ color: 0xc5c2b7, roughness: 0.42, metalness: 0.0, flatShading: true });
+const crystals = stream(assets.geometry('crystal'), crystalMat, 1800); crystals.count = 0; crystals.frustumCulled = false; crystals.castShadow = true;
 const _up = new THREE.Vector3(0, 1, 0), _nrm = new THREE.Vector3();
 function placeCrystals(p) {
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
-  const cy = p.y + p.ry * 0.7, n = 120 + (R() * 80 | 0);
-  for (let i = 0; i < n && crystals.count < 6000; i++) {
+  const cy = p.y + p.ry * 0.7, n = 30 + (R() * 30 | 0);
+  for (let i = 0; i < n; i++) {
     // a random direction from the middle of the pocket to its wall
     const u = R() * 2 - 1, a = R() * Math.PI * 2, r = Math.sqrt(1 - u * u), dx = r * Math.cos(a), dy = u, dz = r * Math.sin(a);
     const t = G.rayToRock(p.x, cy, p.z, dx, dy, dz, p.rx + p.ry + 2, 0.12);
@@ -316,7 +366,7 @@ function placeCrystals(p) {
     G.gradAt(hx, hy, hz); const g = G.G, gl = Math.hypot(g.x, g.y, g.z) || 1;
     _nrm.set(-g.x / gl, -g.y / gl, -g.z / gl);
     _q.setFromUnitVectors(_up, _nrm);
-    const rad = 0.03 + R() * 0.07, len = 0.18 + R() * 0.45;
+    const rad = 0.025 + R() * 0.035, len = 0.12 + R() * 0.30;
     _p.set(hx + _nrm.x * (len * 0.35), hy + _nrm.y * (len * 0.35), hz + _nrm.z * (len * 0.35)); _s.set(rad, len, rad);
     _e.set(0, R() * Math.PI, 0); const spin = new THREE.Quaternion().setFromEuler(_e); _q.multiply(spin);
     _m.compose(_p, _q, _s); crystals.setMatrixAt(crystals.count++, _m);
@@ -324,7 +374,7 @@ function placeCrystals(p) {
   crystals.instanceMatrix.needsUpdate = true;
 }
 function addBone(kind, x, y, z, yaw, pitch, roll, scale) {
-  const im = boneInst[kind]; if (im.count >= 900) return;
+  const im = boneInst[kind];
   _p.set(x, y, z); _e.set(pitch, yaw, roll); _q.setFromEuler(_e); _s.set(scale, scale, scale);
   _m.compose(_p, _q, _s); im.setMatrixAt(im.count++, _m); im.instanceMatrix.needsUpdate = true;
 }
@@ -344,8 +394,8 @@ function placeBones(p) {
     const kind = i === 0 ? 'skull' : R() < 0.4 ? 'rib' : 'long';
     if (R() < 0.3 && !p.big) {                      // sunk into the wall
       const ang = R() * Math.PI * 2, dx = Math.sin(ang), dz = Math.cos(ang);
-      const t = G.rayToRock(p.x, p.y + 0.6 + R() * 0.8, p.z, dx, 0, dz, 6, 0.1);
-      if (t < 6) { addBone(kind, p.x + dx * (t + 0.02), p.y + 0.6 + R() * 0.8, p.z + dz * (t + 0.02), ang + Math.PI / 2, R() * 0.6 - 0.3, R() * 6, sc); continue; }
+      const wallY = p.y + 0.6 + R() * 0.8; const t = G.rayToRock(p.x, wallY, p.z, dx, 0, dz, 6, 0.1);
+      if (t < 6) { addBone(kind, p.x + dx * (t + 0.02), (R(), wallY), p.z + dz * (t + 0.02), ang + Math.PI / 2, R() * 0.6 - 0.3, R() * 6, sc); continue; }
     }
     const fy = floorBelow(x, p.y + 1.0, z); if (fy === null) continue;
     addBone(kind, x, fy + (kind === 'skull' ? 0.06 : 0.02) * sc, z, R() * Math.PI * 2, kind === 'skull' ? R() * 0.4 - 0.2 : R() * 0.3, kind === 'long' ? Math.PI / 2 + R() * 0.4 : R() * 0.3, sc);
@@ -372,9 +422,9 @@ function placeRemains(p) {
 // bats: a colony on a chamber ceiling; light or noise sends it past your face
 const roosts = [];           // {x,y,z, floor, n, loop, spooked}
 const BATS = 90;
-const batGeo = new THREE.BufferGeometry();
-batGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-0.21, 0, 0.03, 0, 0, -0.07, 0, 0, 0.06, 0.21, 0, 0.03, 0, 0, -0.07, 0, 0, 0.06]), 3));
+const batGeo = assets.geometry('bat');
 const bats = new THREE.InstancedMesh(batGeo, new THREE.MeshBasicMaterial({ color: 0x0b0907, side: THREE.DoubleSide }), BATS);
+bats.material.onBeforeCompile=sh=>{sh.uniforms.uBatTime=waterUniforms.uTime;sh.vertexShader='uniform float uBatTime;\n'+sh.vertexShader;sh.vertexShader=sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nfloat wing=max(0.0,abs(position.x)-.035); transformed.y += wing*sin(uBatTime*18.0+instanceMatrix[3].x*2.0);');};
 bats.count = 0; bats.frustumCulled = false; scene.add(bats);
 const batList = [];          // {x,y,z, vx,vy,vz, t, phase}
 function placeRoost(p) {
@@ -411,7 +461,7 @@ function updateOlms(dt) {
       const d = Math.hypot(n.x - player.x, n.y - player.y, n.z - player.z); if (d > 18 || d < 3) continue;
       const key = n.w + ':' + n.i; if (olmNodesTried.has(key) || !G.chunkReadyAt(n.x, n.wl, n.z)) continue; olmNodesTried.add(key);
       if (G.hash3(Math.floor(n.x * 3.1), 0, Math.floor(n.z * 7.7)) > 0.22) continue;
-      const mesh = new THREE.Mesh(olmGeo, olmMat); scene.add(mesh);
+      const mesh = assets.model('olm'); scene.add(mesh);
       olms.push({ mesh, x: n.x, y: n.wl - 0.12, z: n.z, yaw: Math.random() * 6.28, speed: 0.12, flee: 0, t: Math.random() * 10 });
       if (olms.length >= OLMS) break;
     }
@@ -432,6 +482,7 @@ function updateOlms(dt) {
     else o.yaw += Math.PI * 0.6 + Math.random() * 0.8;                              // the edge of the pool: turn
     o.mesh.position.set(o.x, o.y, o.z); o.mesh.rotation.y = o.yaw + Math.sin(o.t * (o.flee > 0 ? 18 : 4)) * 0.15;
     o.mesh.scale.set(1, 1, 1 + Math.sin(o.t * (o.flee > 0 ? 18 : 4)) * 0.25);
+    const tail=o.mesh.getObjectByName('tail');if(tail)tail.rotation.y=Math.sin(o.t*(o.flee>0?18:4))*.18;
   }
 }
 // ---------- a whistle: the cave answers, and tells you how big it is ----------
@@ -468,10 +519,10 @@ function updateBats(dt) {
     b.life -= dt; if (b.life <= 0) { batList.splice(i, 1); continue; }
     b.x += b.vx * dt; b.y += b.vy * dt + Math.sin(b.t * 9 + b.phase) * 0.02; b.z += b.vz * dt;
     if (G.fieldAt(b.x, b.y, b.z) > -0.1) { b.vx *= -0.6; b.vz *= -0.6; b.vy = Math.abs(b.vy) * 0.5 + 1; }           // bounce off rock, upward
-    const flap = 0.6 + 0.6 * Math.abs(Math.sin(b.t * 18 + b.phase));
+    const flap = 1;
     _p.set(b.x, b.y, b.z); _e.set(0, Math.atan2(b.vx, b.vz), 0); _q.setFromEuler(_e); _s.set(flap, 1, 1);
     _m.compose(_p, _q, _s); bats.setMatrixAt(n++, _m);
-    if (Math.hypot(b.x - camera.position.x, b.y - camera.position.y, b.z - camera.position.z) < 0.5 && b.t > 0.2 && !b.hit) { b.hit = true; camera.rotation.z += (Math.random() - 0.5) * 0.06; }
+    if (Math.hypot(b.x - camera.position.x, b.y - camera.position.y, b.z - camera.position.z) < 0.5 && b.t > 0.2 && !b.hit) { b.hit = true; camera.rotation.z += ((Math.random() - 0.5) * 0.06) * motionAmount(); }
   }
   bats.count = n; if (n) bats.instanceMatrix.needsUpdate = true;
 }
@@ -486,9 +537,13 @@ function nearestVoid() {
 }
 // a rope somebody else left on a pitch: it works, unless it does not
 const oldRopeMat = new THREE.MeshStandardMaterial({ color: 0x6b5a48, roughness: 1 }), frayedMat = new THREE.MeshStandardMaterial({ color: 0x3e3128, roughness: 1 });
+function dressRope(r){
+  const anchor=assets.model('anchor');anchor.position.y=r.top-r.mesh.position.y;r.mesh.add(anchor);
+  if(r.frayed){for(let i=0;i<7;i++){const fiber=new THREE.Mesh(new THREE.CylinderGeometry(.001,.002,.12+i*.015,4),oldRopeMat);fiber.position.set(Math.sin(i)*.012,0,Math.cos(i)*.012);fiber.rotation.z=(i-3)*.11;r.mesh.add(fiber);}}
+}
 function placeOldRope(p) {
   const r = { x: p.x, z: p.z, top: p.y, bottom: p.bottom, old: true, frayed: p.frayed, mesh: new THREE.Mesh(new THREE.CylinderGeometry(p.frayed ? 0.009 : 0.013, 0.013, p.y - p.bottom + 0.3, 5), p.frayed ? frayedMat : oldRopeMat) };
-  r.mesh.position.set(p.x, (p.y + p.bottom) / 2 - 0.1, p.z); scene.add(r.mesh); ropes.push(r);
+  r.mesh.position.set(p.x, (p.y + p.bottom) / 2 - 0.1, p.z); scene.add(r.mesh);dressRope(r); ropes.push(r);
 }
 function useRope() {
   if (!running || !player.alive || player.out || roping) return;
@@ -502,7 +557,7 @@ function useRope() {
   if (player.rope <= 0) { showHint('you have no rope'); return; }
   player.rope--;
   const r = { x: v.x, z: v.z, top: v.top, bottom: v.y, mesh: new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, v.top - v.y + 0.3, 5), ropeMat) };
-  r.mesh.position.set(v.x, (v.top + v.y) / 2 - 0.1, v.z); scene.add(r.mesh); ropes.push(r);
+  r.mesh.position.set(v.x, (v.top + v.y) / 2 - 0.1, v.z); scene.add(r.mesh);dressRope(r); ropes.push(r);
   roping = { rope: r, dir: -1, t: 0 }; sfx.play('rattle', { vol: 0.5, rate: 0.6 }); showHint('rigged. going down');
 }
 function updateRoping(dt) {
@@ -527,10 +582,10 @@ function updateRoping(dt) {
 }
 // roots through the roof near the surface
 const rootMat = new THREE.MeshStandardMaterial({ color: 0x3d2f22, roughness: 0.95, flatShading: true });
-const roots = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 0.25, 1, 5), rootMat, 1200); roots.count = 0; roots.frustumCulled = false; scene.add(roots);
+const roots = stream(new THREE.CylinderGeometry(1, 0.25, 1, 5), rootMat, 800); roots.count = 0; roots.frustumCulled = false;
 function placeRoots(p) {
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
-  for (let i = 0; i < p.n && roots.count < 1200; i++) {
+  for (let i = 0; i < p.n; i++) {
     const a = R() * Math.PI * 2, d = R() * p.rx * 0.7, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
     // find the ceiling above this spot, hang a root from it
     let cy = null; for (let h = 0; h < 4; h += 0.1) { const yy = p.y - 1.5 + h; if (G.fieldAt(x, yy, z) > -0.05 && G.fieldAt(x, yy - 0.15, z) < -0.05) { cy = yy; break; } }
@@ -587,7 +642,7 @@ function updateThrown(dt) {
         if (sp < 1.2 || g.t > 6) hit = true;
       } else { g.x = nx; g.y = ny; g.z = nz; }
       const wl = G.waterLevelAt(g.x, g.y, g.z);
-      if (Number.isFinite(wl) && g.y < wl) { sfx.play('splash_small', { x: g.x, y: wl, z: g.z, vol: 0.5, wet: 0.6 }); g.vx *= 0.1; g.vz *= 0.1; g.vy = 0; g.y = wl - 0.05; hit = true; }
+      if (Number.isFinite(wl) && g.y < wl) { vfx.emit('splash',g.x,visualWater(g.x,wl,g.z),g.z,16); sfx.play('splash_small', { x: g.x, y: wl, z: g.z, vol: 0.5, wet: 0.6 }); g.vx *= 0.1; g.vz *= 0.1; g.vy = 0; g.y = wl - 0.05; hit = true; }
     }
     g.mesh.position.set(g.x, g.y, g.z); g.mesh.rotation.x += dt * g.spin; if (g.light) g.light.position.set(g.x, g.y + 0.1, g.z);
     if (hit) { thrown.splice(i, 1); const gl = { x: g.x, y: g.y, z: g.z, light: g.light, mesh: g.mesh }; if (g.light) { g.light.userData.owner = gl; g.light.userData.keep = false; } glow.push(gl); }
@@ -598,9 +653,9 @@ const caches = [];           // {x,y,z, kind, taken, mesh}
 const packGeo = new THREE.BoxGeometry(0.28, 0.2, 0.16), packMat = new THREE.MeshStandardMaterial({ color: 0x3b3a36, roughness: 0.9, flatShading: true });
 function placeCache(x, y, z, kind, text) {
   if (kind === 'page' && (cave.pages || []).some(pg => pg.key === `${x.toFixed(0)},${z.toFixed(0)}`)) return;   // already read, on an earlier attempt
-  const mesh = new THREE.Mesh(kind === 'page' ? pageGeo : packGeo, kind === 'page' ? pageMat : packMat); mesh.position.set(x, y + (kind === 'page' ? 0.015 : 0.1), z); mesh.rotation.y = rr(0, 6); if (kind !== 'page') mesh.rotation.z = rr(-0.3, 0.3); scene.add(mesh);
+  const mesh = kind === 'page' ? new THREE.Mesh(pageGeo,pageMat) : assets.model(assets.models.has(kind)?kind:'pack'); mesh.position.set(x, y + 0.015, z); mesh.rotation.y = rr(0, 6); if (kind !== 'page') mesh.rotation.z = rr(-0.3, 0.3); scene.add(mesh);
   const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : kind === 'rope' ? 0xff7a5c : kind === 'cells' ? 0xffffff : kind === 'page' ? 0xf1e6cc : kind === 'kit' ? 0xff4d4d : 0x9dffb0, fog: false }));
-  tag.position.set(x, y + 0.22, z); scene.add(tag);
+  tag.position.set(x, y + 0.22, z); tag.visible=false; scene.add(tag);
   caches.push({ x, y, z, kind, text, taken: false, mesh, tag });
 }
 const pageGeo = new THREE.PlaneGeometry(0.21, 0.28).rotateX(-Math.PI / 2), pageMat = new THREE.MeshStandardMaterial({ color: 0xd9ccb0, roughness: 0.9, side: THREE.DoubleSide });
@@ -650,10 +705,10 @@ function placeNote(p) {
   if (p.lasting) { cave.marks.push({ text: p.text, x: best.x, y: best.y, z: best.z, nx: -g.x / gl, ny: -g.y / gl, nz: -g.z / gl }); saveCave(); }
 }
 // cave pearls: calcite spheres, polished by the water that made them
-const pearlInst = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 6, 5), new THREE.MeshStandardMaterial({ color: 0xf2ead8, roughness: 0.35 }), 1500); pearlInst.count = 0; pearlInst.frustumCulled = false; scene.add(pearlInst);
+const pearlInst = stream(new THREE.SphereGeometry(1, 6, 5), new THREE.MeshStandardMaterial({ color: 0xf2ead8, roughness: 0.35 }), 800); pearlInst.count = 0; pearlInst.frustumCulled = false;
 function placePearls(p) {
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
-  for (let i = 0; i < p.n && pearlInst.count < 1500; i++) {
+  for (let i = 0; i < p.n; i++) {
     const a = R() * Math.PI * 2, d = Math.sqrt(R()) * p.r, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
     const fy = floorBelow(x, p.y + 0.3, z); if (fy === null || fy > p.y - 0.02) continue;      // on the pool floor, under the water
     const r = 0.025 + R() * 0.035;
@@ -663,9 +718,17 @@ function placePearls(p) {
 }
 // draperies: a wavy calcite sheet hung from the roof
 const curtainMat = new THREE.MeshStandardMaterial({ color: 0xe8d9b8, roughness: 0.5, emissive: 0x1a1408, side: THREE.DoubleSide, flatShading: true, transparent: true, opacity: 0.92 });
+function ceilingAt(x,z,floor,roof) {
+  let air=false;
+  for(let y=floor+.35;y<=Math.min(floor+40,roof+4);y+=.15){
+    const solid=G.fieldAt(x,y,z)>-.04;
+    if(!solid)air=true;
+    else if(air){let lo=y-.15,hi=y;for(let i=0;i<4;i++){const mid=(lo+hi)/2;if(G.fieldAt(x,mid,z)>-.04)hi=mid;else lo=mid;}return lo;}
+  }return null;
+}
 function placeCurtain(p) {
   // the roof at this spot
-  let cy = null; for (let h = 0; h < 8; h += 0.12) { const yy = p.floor + 1.5 + h; if (G.fieldAt(p.x, yy, p.z) > -0.04) { cy = yy; break; } }
+  const cy = ceilingAt(p.x,p.z,p.floor,p.top || p.y+14);
   if (cy === null) return;
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
   const W = p.width, L = Math.min(p.len, cy - p.floor - 0.9), segs = 14;
@@ -676,24 +739,24 @@ function placeCurtain(p) {
     pos.setY(i, y - (1 - t) * Math.abs(Math.sin(x * freq * 0.7 + ph)) * 0.35);            // a scalloped bottom edge
   }
   g.computeVertexNormals();
-  const m = new THREE.Mesh(g, curtainMat); m.position.set(p.x, cy - L / 2 + 0.05, p.z); m.rotation.y = R() * Math.PI; m.castShadow = true; scene.add(m);
+  const m = new THREE.Mesh(g, curtainMat); m.position.set(p.x, cy - L / 2 + 0.05, p.z); m.rotation.y = R() * Math.PI; m.castShadow = true; scene.add(m);regionGeometry.track(m);
 }
 // mist: a few soft, slow sheets just above still water
 const mistTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const r = g.createRadialGradient(64, 64, 4, 64, 64, 62); r.addColorStop(0, 'rgba(200,215,210,0.3)'); r.addColorStop(0.5, 'rgba(200,215,210,0.1)'); r.addColorStop(1, 'rgba(200,215,210,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
-const mistMat = new THREE.MeshBasicMaterial({ map: mistTex, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide, fog: false });
+const mistMat = new THREE.MeshStandardMaterial({ color:0x8c9b95, map: mistTex, transparent: true, opacity: 0.22, roughness:1, depthWrite: false, side: THREE.DoubleSide });
 const mists = [];
 function placeMist(p) {
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
   for (let k = 0; k < 3; k++) {
-    const sz = Math.min(7, p.r * 0.9);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(sz, sz), mistMat); m.rotation.x = -Math.PI / 2;
+    const sz = Math.min(3.8, p.r * 0.65);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(sz, sz), mistMat); m.rotation.x = -Math.PI / 2 + .4;
     m.position.set(p.x + (R() - 0.5) * p.r, p.y + 0.5 + k * 0.25, p.z + (R() - 0.5) * p.r); m.rotation.z = R() * 6.28; scene.add(m);
     mists.push({ mesh: m, x0: m.position.x, z0: m.position.z, ph: R() * 6.28, sp: 0.03 + R() * 0.04 });
   }
 }
 function updateMists(dt) {
   const t = gameClock * 0.001;
-  for (const m of mists) { m.mesh.position.x = m.x0 + Math.sin(t * m.sp + m.ph) * 1.2; m.mesh.position.z = m.z0 + Math.cos(t * m.sp * 0.8 + m.ph) * 1.2; m.mesh.rotation.z += dt * 0.02; }
+  for (const m of mists) { m.mesh.visible=Math.hypot(m.x0-player.x,m.z0-player.z)<32; m.mesh.position.x = m.x0 + Math.sin(t * m.sp + m.ph) * 1.2; m.mesh.position.z = m.z0 + Math.cos(t * m.sp * 0.8 + m.ph) * 1.2; m.mesh.rotation.z += dt * 0.02; }
 }
 // fossils: drawn on a canvas, pressed into the nearest wall like chalk
 function fossilTexture(kind, seed) {
@@ -745,11 +808,11 @@ function updateFossils(dt) {
 }
 // cascades: water falling from the ceiling into a pool
 const cascades = [];         // {x,y,z, wl, drops: Float32Array phases, inst, foam, loop}
-const dropMat = new THREE.MeshBasicMaterial({ color: 0xcfe6ff, map: moteTex, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
+const dropMat = new THREE.MeshStandardMaterial({ color: 0xcfe6ff, map: moteTex, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
 function placeCascade(p) {
   const n = p.big ? 140 : p.quiet ? 30 : 70, inst = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dropMat, n);
-  inst.frustumCulled = false; scene.add(inst);
-  const foam = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dropMat, 24); foam.frustumCulled = false; scene.add(foam);
+  inst.frustumCulled = false; scene.add(inst);regionGeometry.track(inst,new THREE.Vector3(p.x,p.y,p.z));
+  const foam = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dropMat, 24); foam.frustumCulled = false; scene.add(foam);regionGeometry.track(foam,new THREE.Vector3(p.x,p.y,p.z));
   const c = { ...p, n, inst, foam, ph: new Float32Array(n).map(() => Math.random()), ox: new Float32Array(n).map(() => (Math.random() - 0.5) * (p.big ? 1.6 : 0.7)), oz: new Float32Array(n).map(() => (Math.random() - 0.5) * (p.big ? 1.6 : 0.7)),
               loop: soundsOn ? sfx.loop(p.quiet ? 'drips_cave' : p.big ? 'cascade_big' : 'cascade', { x: p.x, y: p.wl + 0.5, z: p.z, rolloff: 0.8, wet: 0.5 }) : null };
   if (c.loop) c.loop.setVol(p.quiet ? 0.5 : p.big ? 0.8 : 0.55, 1);
@@ -760,7 +823,8 @@ function updateCascades(dt) {
   for (const c of cascades) {
     const d = Math.hypot(c.x - camera.position.x, c.y - camera.position.y, c.z - camera.position.z);
     c.inst.visible = c.foam.visible = d < 45; if (d >= 45) continue;
-    const h = Math.max(0.5, c.y - c.wl);
+    const surface = visualWater(c.x,c.wl,c.z); const wl=Number.isFinite(surface)?surface:c.wl;
+    const h = Math.max(0.1, c.y - wl);
     for (let i = 0; i < c.n; i++) {
       c.ph[i] += dt * (1.4 + 0.35 * (i % 3)) / Math.sqrt(h / 3); if (c.ph[i] > 1) c.ph[i] -= 1;
       const yy = c.y - c.ph[i] * h, sp = 0.6 + c.ph[i] * 0.8;
@@ -769,7 +833,7 @@ function updateCascades(dt) {
     }
     for (let i = 0; i < 24; i++) {
       const a = i / 24 * Math.PI * 2 + t * 0.4, r = (c.big ? 1.3 : 0.7) * (0.7 + 0.3 * Math.sin(t * 3 + i));
-      _p.set(c.x + Math.cos(a) * r, c.wl + 0.03 + 0.05 * Math.abs(Math.sin(t * 5 + i)), c.z + Math.sin(a) * r); _s.set(0.35, 0.18, 1);
+      _p.set(c.x + Math.cos(a) * r, wl + 0.03 + 0.05 * Math.abs(Math.sin(t * 5 + i)), c.z + Math.sin(a) * r); _s.set(0.35, 0.18, 1);
       _m.compose(_p, camera.quaternion, _s); c.foam.setMatrixAt(i, _m);
     }
     c.inst.instanceMatrix.needsUpdate = true; c.foam.instanceMatrix.needsUpdate = true;
@@ -992,9 +1056,15 @@ document.addEventListener('pointerlockchange', () => {
 });
 addEventListener('blur', () => { if (canAct()) pauseGame(); else { clearInputs(); playRequest++; } });
 document.addEventListener('visibilitychange', () => { if (document.hidden && canAct()) pauseGame(); });
-let settings = { sens: 1, vol: 0.9, inv: false, hud: true };
+let settings = { sens: 1, vol: 0.9, inv: false, hud: true, ...visualDefaults };
 try { settings = Object.assign(settings, JSON.parse(localStorage.getItem('karst.settings') || '{}')); } catch (e) {}
+function motionAmount(){return settings.reduced?0:settings.motion;}
 function applySettings() {
+  normalizeVisuals(settings);presentation.apply(settings);vfx.quality(settings.quality);resize();
+  for(const id of ['quality','tape','motion','brightness']) $('s-'+id).value=settings[id];
+  $('s-reduced').checked=settings.reduced;
+  $('recording').hidden=settings.tape==='off';
+  document.body.classList.toggle('reduced-motion',settings.reduced);
   $('s-sens').value = settings.sens; $('s-vol').value = settings.vol; $('s-inv').checked = settings.inv; $('s-hud').checked = settings.hud;
   for (const id of ['torchm', 'breathm', 'hint', 'hud', 'context']) $(id).style.visibility = settings.hud ? 'visible' : 'hidden';
   if (sfx.master) sfx.master.gain.value = settings.vol;
@@ -1004,6 +1074,7 @@ $('s-sens').addEventListener('input', e => { settings.sens = +e.target.value; ap
 $('s-vol').addEventListener('input', e => { settings.vol = +e.target.value; applySettings(); });
 $('s-inv').addEventListener('change', e => { settings.inv = e.target.checked; applySettings(); });
 $('s-hud').addEventListener('change', e => { settings.hud = e.target.checked; applySettings(); });
+for(const id of ['quality','tape','motion','brightness','reduced']) $('s-'+id).addEventListener('input',e=>{settings[id]=id==='reduced'?e.target.checked:['motion','brightness'].includes(id)?+e.target.value:e.target.value;applySettings();});
 const padPrev = {}; let padSeen = false;
 function pollGamepad(dt) {
   const pads = navigator.getGamepads ? navigator.getGamepads() : []; let gp = null;
@@ -1329,6 +1400,7 @@ function updateFollower(dt) {
 }
 let lastMoveX = 0, lastMoveZ = 0;
 function footstep(kind) {
+  if(Number.isFinite(player.wl) && player.y < player.wl+.1) vfx.emit('splash',player.x,visualWater(player.x,player.wl,player.z),player.z,kind==='swim'?8:4);
   if (!soundsOn) return;
   const o = { x: player.x, y: player.y, z: player.z, wet: 0.5, vary: 0.15, hrtf: false };
   lastMoveX = player.x - lastStepX; lastMoveZ = player.z - lastStepZ; lastStepX = player.x; lastStepZ = player.z;
@@ -1373,7 +1445,7 @@ function updatePlayer(dt) {
   const l = !still && (keys.KeyA || keys.ArrowLeft) ? 1 : 0, r = !still && (keys.KeyD || keys.ArrowRight) ? 1 : 0;
   if (stuck > 0 && !typing && !toolsOpen && !notebookOpen) {     // wiggle: alternate A and D to work yourself loose
     const side = keys.KeyA || keys.ArrowLeft ? -1 : keys.KeyD || keys.ArrowRight ? 1 : 0;
-    if (side !== 0 && side !== stuckSide) { stuckSide = side; wiggles++; sfx.play('scrape', { x: player.x, y: player.y + 0.3, z: player.z, vol: 0.5, rate: 1.3, vary: 0.3, dur: 0.5, hrtf: false }); camera.rotation.z += side * 0.05;
+    if (side !== 0 && side !== stuckSide) { stuckSide = side; wiggles++; sfx.play('scrape', { x: player.x, y: player.y + 0.3, z: player.z, vol: 0.5, rate: 1.3, vary: 0.3, dur: 0.5, hrtf: false }); camera.rotation.z += (side * 0.05) * motionAmount();
       if (!stuckTight) stuck--;
       else if (wiggles % 3 === 0) showHint('no. wiggling does nothing here. breathe out and push — hold C', true);
       if (stuck === 0) { showHint('free'); sfx.play('gasp', { vol: 0.7 }); } }
@@ -1381,7 +1453,7 @@ function updatePlayer(dt) {
     if (stuckTight) {
       if (keys.KeyC || keys.ControlLeft) {
         exhaling = true; player.breath = Math.max(0, player.breath - dt / (BREATH_S * 0.7)); exhaleT += dt;
-        if (exhaleT > 0.9) { exhaleT = 0; stuck--; sfx.play('drag', { x: player.x, y: player.y + 0.3, z: player.z, vol: 0.6, rate: 0.8, dur: 0.8, hrtf: false }); camera.rotation.z += (Math.random() - 0.5) * 0.04; if (stuck === 0) { showHint('through. breathe', true); sfx.play('gasping', { vol: 0.8 }); } }
+        if (exhaleT > 0.9) { exhaleT = 0; stuck--; sfx.play('drag', { x: player.x, y: player.y + 0.3, z: player.z, vol: 0.6, rate: 0.8, dur: 0.8, hrtf: false }); camera.rotation.z += ((Math.random() - 0.5) * 0.04) * motionAmount(); if (stuck === 0) { showHint('through. breathe', true); sfx.play('gasping', { vol: 0.8 }); } }
         if (player.breath <= 0) { player.breath = 0; die('WEDGED', 'you breathed in. the rock did not give it back', 'wedged'); }
       } else { exhaling = false; exhaleT = 0; player.breath = Math.min(1, player.breath + dt / 3); }
     }
@@ -1444,7 +1516,7 @@ function updatePlayer(dt) {
         lakeT = rr(35, 80);
         const a = Math.random() * Math.PI * 2, d = rr(4, 9);
         if (Math.random() < 0.65) { sfx.play('splash', { x: player.x + Math.sin(a) * d, y: player.wl, z: player.z + Math.cos(a) * d, vol: 0.7, rate: 0.85, wet: 0.7, rolloff: 0.5 }); gameDelay(() => sfx.play('stroke', { x: player.x + Math.sin(a) * d * 0.7, y: player.wl, z: player.z + Math.cos(a) * d * 0.7, vol: 0.4, rate: 0.7, wet: 0.7 }), 900); showHint('something moved in the water'); }
-        else { sfx.play('bubbles', { vol: 0.5, rate: 0.8, dur: 1.4 }); camera.rotation.z += (Math.random() - 0.5) * 0.08; player.vy -= 0.6; showHint('something touched your leg'); sfx.play('gasp', { vol: 0.7 }); }
+        else { sfx.play('bubbles', { vol: 0.5, rate: 0.8, dur: 1.4 }); camera.rotation.z += ((Math.random() - 0.5) * 0.08) * motionAmount(); player.vy -= 0.6; showHint('something touched your leg'); sfx.play('gasp', { vol: 0.7 }); }
         lakeFear = 1;
       }
     }
@@ -1629,12 +1701,12 @@ function updatePlayer(dt) {
   player.bob += dt * (moving ? speed * 2.6 : 0);
   const phase = Math.floor(player.bob / (stepKind === 'swim' ? Math.PI * 2 : Math.PI));
   if (phase !== player.stepPhase) { player.stepPhase = phase; if (moving) footstep(stepKind); }
-  const bobA = moving ? (player.swim ? 0.02 : 0.028 * stance) : 0;
-  const limp = player.hurt ? Math.sin(player.bob * 0.5) * 0.02 : 0;
-  const shiver = player.cold > 0.35 ? (player.cold - 0.35) * 0.012 * Math.sin(gameClock * 0.041) * Math.sin(gameClock * 0.0173) : 0;
+  const bobA = moving && motionAmount() ? (player.swim ? 0.02 : 0.028 * stance) * motionAmount() : 0;
+  const limp = player.hurt && motionAmount() ? Math.sin(player.bob * 0.5) * 0.02 : 0;
+  const shiver = player.cold > 0.35 && motionAmount() ? (player.cold - 0.35) * 0.012 * Math.sin(gameClock * 0.041) * Math.sin(gameClock * 0.0173) : 0;
   camera.position.set(player.x + Math.cos(player.bob * 0.5) * bobA * 0.6, player.y + player.h - 0.1 + Math.sin(player.bob) * bobA, player.z);
   camera.rotation.set(player.pitch + shiver, player.yaw + shiver * 0.7, Math.sin(player.bob * 0.5) * bobA * 0.35 + limp + shiver);
-  camera.fov += (lerp(58, 75, (player.h - 0.5) / 1.22) - camera.fov) * Math.min(1, dt * 6);
+  camera.fov += ((settings.reduced ? 75 : lerp(58, 75, (player.h - 0.5) / 1.22)) - camera.fov) * Math.min(1, dt * 6);
   camera.updateProjectionMatrix();
   G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
 }
@@ -1682,10 +1754,14 @@ function updateTorch(dt) {
   if (running && player.alive && !player.out && !resting) player.battery = Math.max(0, player.battery - dt / (BATTERY_S * (player.cells ? 1.6 : 1) * (beamNarrow ? 0.8 : 1)));
   if (torchHeld) {
     torch.position.copy(camera.position);
+    const movement=motionAmount(), t=gameClock*.001;
+    hand.position.set(.21 + Math.sin(player.bob*.5)*.006*movement,-.22+Math.sin(t*1.8)*.003*movement+(beamNarrow?.016:0),-.4+(shakeT>0?Math.sin(t*34)*.025*movement:0));
+    hand.rotation.set(.08+(shakeT>0?Math.sin(t*34)*.12*movement:0),-.12,.05);
+    torchModel.position.copy(hand.position);torchModel.rotation.copy(hand.rotation);
     const a = 1 - Math.pow(shakeT > 0 ? 0.05 : 0.0005, dt);
     torch.quaternion.slerp(camera.quaternion, a);
     // cold hands: the beam shivers, and so does the hand in front of you
-    const shiver = player.cold > 0.45 ? (player.cold - 0.45) * (coldT > 40 ? 3.2 : 1.6) : 0;
+    const shiver = player.cold > 0.45 && motionAmount() ? (player.cold - 0.45) * (coldT > 40 ? 3.2 : 1.6) : 0;
     if (shiver > 0) {
       const t = gameClock * 0.001;
       torch.rotateX((Math.sin(t * 23.0) + Math.sin(t * 31.7)) * 0.006 * shiver); torch.rotateY((Math.sin(t * 27.3) + Math.sin(t * 19.1)) * 0.006 * shiver);
@@ -1731,31 +1807,26 @@ function updateTorch(dt) {
   if (touch.intensity > 0.01) { camera.getWorldDirection(viewDir); touch.position.set(camera.position.x + viewDir.x * 0.5, camera.position.y - 0.2, camera.position.z + viewDir.z * 0.5); }
   bounce.position.copy(torchHeld ? camera.position : torch.position);
   hand.userData.lens.material.emissiveIntensity = 2.5 * level;
+  spot.position.copy(torchModel.position);spot.position.z-=.16;
+  spot.target.position.copy(spot.position);spot.target.position.z-=8;
+  torch.updateMatrixWorld(true);
   updateMotes(dt, level * (0.5 + 0.5 * adapt));
   // silt: every stroke in a sump stirs the floor, and the water closes in behind you — a flood does the same to all of it
   if (player.under) { siltT = Math.min(14, siltT + dt * (Math.hypot(player.x - siltX, player.z - siltZ) > 0.01 ? 1 : 0.15)); if (siltT > 8) teach('silt', 'the silt is up. you stirred it, and now you cannot see. keep going the way you were going'); }
   else siltT = Math.max(0, siltT - dt * 2);
   siltX = player.x; siltZ = player.z;
-  if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15 + 0.22 * floodLevel + (player.flow ? 0.05 : 0) + 0.3 * Math.min(1, siltT / 12); $('water').style.opacity = 1; updateBubbles(dt); }
+  if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15 + 0.22 * floodLevel + (player.flow ? 0.05 : 0) + 0.3 * Math.min(1, siltT / 12); $('water').style.opacity = 1; }
   else { scene.fog.color.copy(FOG_AIR); scene.fog.density = 0.048; $('water').style.opacity = 0; }
-  waterGroup.position.y = Math.sin(t * 1.1) * 0.012;
+  waterGroup.position.y = 0;
   for (const r of remains) if (!r.taken && r.light) r.light.intensity = 0.18 + 0.1 * Math.sin(t * 7 + r.x) * Math.sin(t * 2.3);
 }
 
 // ---------- something crosses the passage ----------
 // the beam finds it low on the floor, looking back at you; then it goes, across and into the wall
 let crosser = null, crosserT = rr(120, 260);
-const crosserMesh = new THREE.Group(), crosserEyes = [];
-{
-  const dark = new THREE.MeshStandardMaterial({ color: 0x1d1814, roughness: 1 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.3), dark); body.position.y = 0.42;
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 0.22), dark); head.position.set(0.55, 0.38, 0); head.name = 'head';
-  crosserMesh.add(body, head);
-  const shine = new THREE.MeshBasicMaterial({ color: 0xd8ff9c, fog: false });
-  for (const sz of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 5), shine); e.position.set(0.14, 0.03, sz * 0.075); e.scale.y = 0.75; head.add(e); crosserEyes.push(e); }
-  for (let i = 0; i < 4; i++) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.4, 0.07), dark); leg.position.set(i < 2 ? 0.3 : -0.3, 0.2, i % 2 ? 0.1 : -0.1); leg.userData.i = i; crosserMesh.add(leg); }
-  crosserMesh.visible = false; scene.add(crosserMesh);
-}
+const crosserMesh = assets.model('crosser'), crosserEyes = [], crosserLegs = [];
+crosserMesh.traverse(m=>{if(m.name.startsWith('eye')) {m.material=new THREE.MeshBasicMaterial({color:0xd8ff9c});crosserEyes.push(m);}if(m.name.startsWith('leg'))crosserLegs.push(m);});
+crosserMesh.visible=false;scene.add(crosserMesh);
 function spawnCrosser() {
   camera.getWorldDirection(viewDir);
   for (let tries = 0; tries < 24; tries++) {
@@ -1781,43 +1852,43 @@ function updateCrosser(dt) {
   }
   crosser.t += dt;
   if (crosser.t < crosser.hold) {                                   // frozen, eyeshine on the beam
-    for (const e of crosserEyes) e.visible = torchHeld && torchLevel() > 0.05;
+    for (const e of crosserEyes) e.visible = torchHeld && torchLevel(player.battery) > 0.05;
     return;
   }
   if (!crosser.gone) {
-    crosser.gone = true; for (const e of crosserEyes) e.visible = false;
+    crosser.gone = true; const encounter = {...crosser}; for (const e of crosserEyes) e.visible = false;
     crosserMesh.rotation.y = Math.atan2(crosser.x1 - crosser.x0, crosser.z1 - crosser.z0) - Math.PI / 2;
-    for (let k = 0; k < 5; k++) gameDelay(() => sfx.play('step_rock', { x: crosser ? crosserMesh.position.x : crosser.x0, y: crosser.y, z: crosser ? crosserMesh.position.z : crosser.z0, vol: 0.5, rate: 1.5, vary: 0.25, wet: 0.7 }), k * 90);
-    gameDelay(() => sfx.play('rockfall', { x: crosser.x1, y: crosser.y, z: crosser.z1, vol: 0.28, rate: 1.3, dur: 1.0, wet: 0.8 }), 450);
+    for (let k = 0; k < 5; k++) gameDelay(() => sfx.play('step_rock', { x: encounter.x0, y: encounter.y, z: encounter.z0, vol: 0.5, rate: 1.5, vary: 0.25, wet: 0.7 }), k * 90);
+    gameDelay(() => sfx.play('rockfall', { x: encounter.x1, y: encounter.y, z: encounter.z1, vol: 0.28, rate: 1.3, dur: 1.0, wet: 0.8 }), 450);
   }
   const k = Math.min(1, (crosser.t - crosser.hold) / crosser.dur);
   crosserMesh.position.set(crosser.x0 + (crosser.x1 - crosser.x0) * k, crosser.y, crosser.z0 + (crosser.z1 - crosser.z0) * k);
-  for (const c of crosserMesh.children) if (c.userData.i !== undefined) c.rotation.z = Math.sin(crosser.t * 42 + c.userData.i * 1.6) * 0.7;
+  crosserLegs.forEach((c,i)=>c.rotation.z = Math.sin(crosser.t * 42 + i * 1.6) * 0.7);
   if (k >= 1) { crosser = null; crosserMesh.visible = false; }
 }
 // ---------- glow-worms: the roof, lit ----------
 const wormMat = new THREE.MeshBasicMaterial({ color: 0x8cf0d0, fog: false });
-const wormInst = new THREE.InstancedMesh(new THREE.SphereGeometry(0.018, 5, 4), wormMat, 4000); wormInst.count = 0; wormInst.frustumCulled = false; scene.add(wormInst);
-const wormThreads = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x9fe8d4, transparent: true, opacity: 0.35 }));
-const threadPos = []; wormThreads.frustumCulled = false; scene.add(wormThreads);
+const wormInst = stream(new THREE.SphereGeometry(0.018, 5, 4), wormMat, 2400); wormInst.count = 0; wormInst.frustumCulled = false;
+const wormThreads = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(new Float32Array(2400*6),3)), new THREE.LineBasicMaterial({ color: 0x9fe8d4, transparent: true, opacity: 0.35 }));
+const threadPos = []; wormThreads.frustumCulled = false; scene.add(wormThreads);wormThreads.geometry.setDrawRange(0,0);
 const wormSites = [];
 // placed a few dozen per call, so a big roof spreads over several frames; returns true when the prop is finished
 function placeGlowworms(p) {
   if (p.sd === undefined) { p.sd = p.seed * 233280 | 0; p.done = 0; p.placed = 0; }
   const R = () => (p.sd = (p.sd * 9301 + 49297) % 233280) / 233280;
   const stop = Math.min(p.n, p.done + 60);
-  for (; p.done < stop && wormInst.count < 4000; p.done++) {
+  for (; p.done < stop; p.done++) {
     const a = R() * Math.PI * 2, d = Math.sqrt(R()) * p.rx, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
     // the roof above this spot: a coarse climb, then a fine one
-    let cy = null; for (let h = 0; h < 6; h += 0.3) { const yy = p.floor + 1.2 + h; if (G.fieldAt(x, yy, z) > -0.04) { for (let f = yy - 0.3; f <= yy; f += 0.06) if (G.fieldAt(x, f, z) > -0.04) { cy = f - 0.06; break; } break; } }
+    const cy = ceilingAt(x,z,p.floor,p.y+3);
     if (cy === null) continue;
     const drop = 0.05 + R() * 0.35, y = cy - drop;
     _m.compose(_p.set(x, y, z), _q.identity(), _s.set(1, 1, 1)); wormInst.setMatrixAt(wormInst.count++, _m);
     threadPos.push(x, cy, z, x, y, z); p.placed++;
   }
   wormInst.instanceMatrix.needsUpdate = true;
-  wormThreads.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(threadPos), 3));
-  if (p.done < p.n && wormInst.count < 4000) return false;
+
+  if (p.done < p.n) return false;
   if (p.placed > 20) { const site = { x: p.x, y: p.y, z: p.z, n: p.placed, light: borrowLight(0x5fd8b8, 2.2, p.rx * 3, 1.4, p.x, p.y - 0.8, p.z) }; if (site.light) site.light.userData.owner = site; wormSites.push(site); }
   return true;
 }
@@ -1849,7 +1920,7 @@ function updateLoose(dt) {
       const load = player.sprint ? 3.0 : moving ? 1.0 : 0.15;                          // running under it is what brings it down
       L.strain += dt * load * (1 - hd / 4.5);
       if (L.strain > L.patience) {
-        L.state = 'warning'; L.t = 0;
+        L.state = 'warning'; L.t = 0; vfx.emit('chips',L.x,L.y,L.z,10);vfx.crack(L.x,L.mesh.position.y-L.r*.5,L.z,L.r);
         sfx.play('rattle', { x: L.x, y: L.y, z: L.z, vol: 0.9, rate: 0.85, wet: 0.7, rolloff: 0.5 });
         gameDelay(() => sfx.play('rockfall', { x: L.x, y: L.y, z: L.z, vol: 0.5, rate: 1.2, dur: 0.9, wet: 0.7 }), 350);
         teach('loose', 'something moved up there. do not stand under it');
@@ -1860,7 +1931,7 @@ function updateLoose(dt) {
     } else if (L.state === 'falling') {
       L.vy -= GRAV * dt; L.mesh.position.y += L.vy * dt; L.mesh.rotation.x += dt * 2.2; L.mesh.rotation.z += dt * 1.1;
       if (L.mesh.position.y <= L.rest) {
-        L.mesh.position.y = L.rest; L.state = 'down';
+        L.mesh.position.y = L.rest; L.state = 'down'; vfx.emit('dust',L.x,L.rest,L.z,40);vfx.emit('chips',L.x,L.rest,L.z,20);
         cave.fallen = (cave.fallen || []).concat([L.key]); saveCave();
         sfx.play('rockslide', { x: L.x, y: L.rest, z: L.z, vol: 1.0, wet: 0.9, rolloff: 0.35 });
         sfx.play('rumble', { x: L.x, y: L.rest, z: L.z, vol: 0.8, rate: 0.9, dur: 2.5, wet: 0.8, rolloff: 0.3 });
@@ -1885,11 +1956,11 @@ function updateFalseFloors(dt) {
     if (f.state === 'gone' || !f.slab) continue;
     const hd = Math.hypot(player.x - f.x, player.z - f.z), onIt = hd < f.r - 0.4 && Math.abs(player.y - f.y) < 0.9 && player.grounded;
     if (f.state === 'whole') {
-      if (onIt) { f.state = 'cracking'; f.t = 0; sfx.play('rattle', { x: f.x, y: f.y, z: f.z, vol: 0.8, rate: 0.7, wet: 0.5 }); sfx.play('rockfall', { x: f.x, y: f.y - 3, z: f.z, vol: 0.4, rate: 1.4, dur: 0.6, wet: 0.9 }); showHint('the floor moved', true); }
+      if (onIt) { f.state = 'cracking'; f.t = 0; vfx.emit('chips',f.x,f.y,f.z,8);vfx.crack(f.x,f.y+.02,f.z,f.r); sfx.play('rattle', { x: f.x, y: f.y, z: f.z, vol: 0.8, rate: 0.7, wet: 0.5 }); sfx.play('rockfall', { x: f.x, y: f.y - 3, z: f.z, vol: 0.4, rate: 1.4, dur: 0.6, wet: 0.9 }); showHint('the floor moved', true); }
     } else if (f.state === 'cracking') {
-      f.t += dt; camera.rotation.z += (Math.random() - 0.5) * 0.01;
+      f.t += dt; camera.rotation.z += ((Math.random() - 0.5) * 0.01) * motionAmount();
       if (f.t > 0.75) {
-        f.state = 'gone'; G.breakSlab(f.slab);
+        f.state = 'gone'; G.breakSlab(f.slab); vfx.emit('dust',f.x,f.y,f.z,35);vfx.emit('chips',f.x,f.y,f.z,25);
         sfx.play('rockslide', { x: f.x, y: f.y - 2, z: f.z, vol: 0.9, wet: 0.9, rolloff: 0.4 }); sfx.play('gasp', { vol: 0.8 });
         for (let k = 0; k < 4; k++) gameDelay(() => sfx.play('rockfall', { x: f.x, y: f.bottom, z: f.z, vol: 0.45, rate: rr(0.9, 1.2), dur: 0.8, wet: 0.9 }), 500 + k * 250);
         if (onIt || hd < f.r) { player.grounded = false; player.vy = Math.min(player.vy, -0.5); teach('falsefloor', 'that was not floor. it was a crust of mud over a hole, and it took the weight for as long as it did'); }
@@ -1900,7 +1971,7 @@ function updateFalseFloors(dt) {
 }
 function restoreBrokenFloors() {
   if (!cave.broken) return;
-  for (const f of falseFloors) if (f.state === 'whole' && f.slab && cave.broken.includes(`${f.x.toFixed(0)},${f.z.toFixed(0)}`)) { f.state = 'gone'; G.breakSlab(f.slab); }
+  for (const f of falseFloors) if (f.state === 'whole' && f.slab && cave.broken.includes(`${f.x.toFixed(0)},${f.z.toFixed(0)}`)) { f.state = 'gone'; G.breakSlab(f.slab); vfx.emit('dust',f.x,f.y,f.z,35);vfx.emit('chips',f.x,f.y,f.z,25); }
 }
 
 // ---------- the passage that closes behind you ----------
@@ -1917,7 +1988,7 @@ function updateCollapse(dt) {
       // you are through, and farther in than it is: it comes down behind you
       collapsed.add(key); cave.collapsed = (cave.collapsed || []).concat([key]); saveCave();
       sfx.play('rattle', { x: n.x, y: n.y + 0.5, z: n.z, vol: 0.8, rate: 0.8, wet: 0.7, rolloff: 0.5 });
-      gameDelay(() => { sfx.play('rockslide', { x: n.x, y: n.y + 0.5, z: n.z, vol: 1.0, wet: 0.9, rolloff: 0.3 }); sfx.play('rumble', { x: n.x, y: n.y + 0.5, z: n.z, vol: 0.9, rate: 0.8, dur: 3, wet: 0.8, rolloff: 0.3 }); G.collapseAt(n); }, 700);
+      gameDelay(() => { sfx.play('rockslide', { x: n.x, y: n.y + 0.5, z: n.z, vol: 1.0, wet: 0.9, rolloff: 0.3 }); sfx.play('rumble', { x: n.x, y: n.y + 0.5, z: n.z, vol: 0.9, rate: 0.8, dur: 3, wet: 0.8, rolloff: 0.3 }); vfx.emit('dust',n.x,n.y+.5,n.z,50);vfx.emit('chips',n.x,n.y+1,n.z,20); G.collapseAt(n); }, 700);
       for (let k = 0; k < 6; k++) gameDelay(() => sfx.play('rockfall', { x: n.x + rr(-1.5, 1.5), y: n.y + 0.3, z: n.z + rr(-1.5, 1.5), vol: 0.4, rate: rr(0.8, 1.2), dur: 0.8, wet: 0.7 }), 900 + k * 220);
       gameDelay(() => { showHint('the roof came down behind you. that way is gone', true); sfx.play('gasp', { vol: 0.6 }); }, 1600);
     }
@@ -1994,7 +2065,7 @@ function floodFlowMul() { return 1 + 1.6 * floodLevel; }
 let tremorAt = rr(420, 900), tremorT = 0;
 function updateTremor(dt) {
   if (!running || !player.alive || player.out) return;
-  if (tremorT > 0) { tremorT -= dt; camera.rotation.z += (Math.random() - 0.5) * 0.02 * Math.min(1, tremorT); camera.position.y += (Math.random() - 0.5) * 0.012 * Math.min(1, tremorT); return; }
+  if (tremorT > 0) { tremorT -= dt; camera.rotation.z += ((Math.random() - 0.5) * 0.02 * Math.min(1, tremorT)) * motionAmount(); camera.position.y += ((Math.random() - 0.5) * 0.012 * Math.min(1, tremorT)) * motionAmount(); return; }
   if (runTime < tremorAt) return;
   tremorAt = runTime + rr(600, 1200); tremorT = 4.5;
   sfx.play('rumble', { vol: 1.0, rate: 0.55, dur: 6, wet: 1.0 });
@@ -2151,7 +2222,7 @@ const bubbleGeo = new THREE.SphereGeometry(1, 6, 5);
 const bubbles = []; let bubbleSpawnT = 0;
 function updateBubbles(dt) {
   bubbleSpawnT -= dt;
-  if (bubbleSpawnT <= 0 && bubbles.length < 40) {
+  if (player.under && bubbleSpawnT <= 0 && bubbles.length < 40) {
     bubbleSpawnT = 0.12 + Math.random() * 0.25;
     camera.getWorldDirection(viewDir);
     const m = new THREE.Mesh(bubbleGeo, bubbleMat); const r = 0.005 + Math.random() * 0.014; m.scale.setScalar(r);
@@ -2184,15 +2255,7 @@ function updateDrops(dt) {
 }
 
 // ---------- overlays / hud ----------
-const grainCtx = $('grain').getContext('2d');
-const grainImg = grainCtx.createImageData(320, 180);
 let frameNo = 0;
-function grain() {
-  if (frameNo & 1) return;
-  const d = grainImg.data;
-  for (let i = 0; i < d.length; i += 4) { const v = (Math.random() * 255) | 0; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
-  grainCtx.putImageData(grainImg, 0, 0);
-}
 let fpsAcc = 0, fpsN = 0, fps = 0;
 const torchM = $('torchm'), breathM = $('breathm');
 function hud(dt) {
@@ -2241,15 +2304,17 @@ function init() {
     $('go').textContent = 'CLICK TO CARRY ON';
   }
   updatePlayer(0); updateTorch(1);
-  window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
-               get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
+  window.K = { presentation, settings, applySettings, vfx, assets, renderer, streamed, bubbles, ceilingAt, visualWater, placeGlowworms, placeCurtain, placeCrystals, placeCache, player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
+               get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => presentation.render(scene, camera, gameClock*.001), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
                run: () => { running = true; overlay.classList.add('hidden'); sfx.resume(); }, pause: pauseGame, schedule: gameDelay, get controls() { return { running, toolsOpen, typing, beamNarrow, resting, restRequested, toolChoice, gameClock }; }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, falseFloors, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, tremor: () => { tremorAt = 0; }, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; }, tight: (n) => { stuck = n; stuckTight = true; wiggles = 0; exhaleT = 0; } };
 }
 init();
+$('loading').hidden=true; $('go').disabled=false; $('build').textContent=`Free browser demo · ${BUILD}`;
 // warm the shaders now, not the first time a lake or a loose block comes into view (a compile can cost a quarter second)
 {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1]), 3));
+  g.setAttribute('aDepth', new THREE.BufferAttribute(new Float32Array(3).fill(1),1));g.setAttribute('aFlood', new THREE.BufferAttribute(new Float32Array(3),1));
   g.setAttribute('aFlow', new THREE.BufferAttribute(new Float32Array(9), 3)); g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(12).fill(1), 4));
   g.computeVertexNormals();
   const warm = [new THREE.Mesh(g, waterMat), new THREE.Mesh(looseGeo, looseMat), new THREE.Mesh(olmGeo, olmMat), new THREE.Mesh(pageGeo, pageMat), new THREE.Mesh(packGeo, packMat), new THREE.Mesh(torchGeo, torchMat), new THREE.Mesh(stickGeo, stickMat)];
@@ -2270,9 +2335,9 @@ function stepFrame(dt) {
   frameNo++;
   if (innerWidth !== lastW || innerHeight !== lastH) { lastW = innerWidth; lastH = innerHeight; resize(); }
   pollGamepad(dt);
-  if (!running) { updateContext(); renderer.render(scene, camera); return; }
+  if (!running) { updateContext(); presentation.render(scene, camera, gameClock*.001); return; }
   advanceGameTimers(dt);
-  if (!running) { updateContext(); renderer.render(scene, camera); return; }
+  if (!running) { updateContext(); presentation.render(scene, camera, gameClock*.001); return; }
   updateHeldControls(dt);
   const tf = performance.now(); let tp = tf; const lap = (k) => { const n = performance.now(); if (n - tp > (stats.phase[k] || 0)) stats.phase[k] = n - tp; tp = n; };
   if (running && player.alive && !player.out) { updatePlayer(dt); runTime += dt; saveT += dt; if (saveT > 5) { saveT = 0; saveRun(); }
@@ -2290,6 +2355,7 @@ function stepFrame(dt) {
   updateMists(dt);
   updateThrown(dt);
   updateDrops(dt);
+  updateBubbles(dt);
   whistleT -= dt;
   updateFollower(dt);
   updateFlood(dt);
@@ -2303,10 +2369,15 @@ function stepFrame(dt) {
   updatePlaces(dt);
   updateCrosser(dt);
   updateBats(dt);
-  updateCascades(dt); lap('systems');
+  updateCascades(dt);
+  for(const batch of streamed)batch.update(player,settings.quality==='low'?32:48);
+  updateVisualWater(); updateDecorations();
+  vfx.update(dt,(x,z)=>visualWater(x,player.y,z));
+  $('recording-time').textContent=new Date(runTime*1000).toISOString().slice(11,19);
+  lap('systems');
   updateSound(dt); lap('sound');
-  renderer.render(scene, camera); lap('render');
-  grain(); hud(dt); updateContext(); lap('hud');
+  presentation.render(scene, camera, gameClock*.001); lap('render');
+  hud(dt); updateContext(); lap('hud');
   stats.frameMs = performance.now() - tf;
 }
 requestAnimationFrame(frame);

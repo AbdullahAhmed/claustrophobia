@@ -10,7 +10,9 @@ export class VFX {
     this.rings=new THREE.InstancedMesh(new THREE.RingGeometry(.86,1,24).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({color:0x91aaa2,transparent:true,opacity:.22,side:THREE.DoubleSide,depthWrite:false}),64);
     this.rings.count=0;this.rings.frustumCulled=false;scene.add(this.rings);this.ripples=[];
     this.dummy=new THREE.Object3D();
+    this.cracks=[];this.crackMesh=new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(new Float32Array(12*8*6),3)),new THREE.LineBasicMaterial({color:0x17120e}));this.crackMesh.geometry.setDrawRange(0,0);this.crackMesh.frustumCulled=false;scene.add(this.crackMesh);
   }
+  crack(x,y,z,r){if(this.cracks.length>=12)this.cracks.shift();this.cracks.push({x,y,z,r,age:0});}
   quality(q){this.limit={low:100,standard:280,high:420}[q]||280;}
   emit(kind,x,y,z,count=12) {
     const r=this.random;
@@ -31,8 +33,11 @@ export class VFX {
     this.ripples=this.ripples.filter(p=>(p.age+=dt)<2);this.rings.count=this.ripples.length;
     this.ripples.forEach((p,i)=>{const wl=waterAt(p.x,p.z);d.position.set(p.x,Number.isFinite(wl)?wl+.025:p.y+.025,p.z);const s=.04+p.age*.38;d.scale.set(s,1,s);d.rotation.set(0,0,0);d.updateMatrix();this.rings.setMatrixAt(i,d.matrix);this.rings.setColorAt(i,new THREE.Color().setScalar((1-p.age/2)*.7));});
     this.rings.instanceMatrix.needsUpdate=true;if(this.rings.instanceColor)this.rings.instanceColor.needsUpdate=true;
+    this.cracks=this.cracks.filter(c=>(c.age+=dt)<1.2);const attr=this.crackMesh.geometry.attributes.position;let v=0;
+    for(const c of this.cracks)for(let i=0;i<8;i++){const a=i*Math.PI/4,reach=c.r*Math.min(.8,c.age*2+.1);attr.setXYZ(v++,c.x,c.y,c.z);attr.setXYZ(v++,c.x+Math.cos(a)*reach,c.y,c.z+Math.sin(a)*reach);}
+    attr.needsUpdate=true;this.crackMesh.geometry.setDrawRange(0,v);
   }
-  dispose(){for(const m of [this.mesh,this.rings]){this.scene.remove(m);m.geometry.dispose();m.material.dispose();}this.particles=[];this.ripples=[];}
+  dispose(){for(const m of [this.mesh,this.rings,this.crackMesh]){this.scene.remove(m);m.geometry.dispose();m.material.dispose();}this.particles=[];this.ripples=[];this.cracks=[];}
 }
 
 // CPU matrices are cheap records. Only nearby regions occupy the bounded GPU pool;
@@ -43,7 +48,7 @@ export class StreamedInstances {
     this.records=[];this.capacity=capacity;this.count=0;this.instanceMatrix={needsUpdate:false};this.lastCell='';
   }
   setMatrixAt(i,m){this.records[i]=m.clone();this.lastCell='';}
-  update(p,radius=48){const cell=`${Math.floor(p.x/4)},${Math.floor(p.y/4)},${Math.floor(p.z/4)},${this.count}`;if(cell===this.lastCell)return;this.lastCell=cell;
+  update(p,radius=48){const cell=`${Math.floor(p.x/4)},${Math.floor(p.y/4)},${Math.floor(p.z/4)},${this.count},${radius}`;if(cell===this.lastCell)return;this.lastCell=cell;
     const near=[];for(const m of this.records){if(!m)continue;const e=m.elements;const dist=(e[12]-p.x)**2+(e[13]-p.y)**2+(e[14]-p.z)**2;if(dist<radius*radius)near.push({m,dist});}
     near.sort((a,b)=>a.dist-b.dist);this.mesh.count=Math.min(this.capacity,near.length);for(let i=0;i<this.mesh.count;i++)this.mesh.setMatrixAt(i,near[i].m);this.mesh.instanceMatrix.needsUpdate=true;
   }

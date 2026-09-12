@@ -13,7 +13,7 @@ export class Assets {
   geometry(name){
     if(this.geometries.has(name))return this.geometries.get(name);
     const source=this.models.get(name);source.updateMatrixWorld(true);const parts=[];
-    source.traverse(m=>{if(!m.isMesh)return;let g=m.geometry.clone().applyMatrix4(m.matrixWorld);if(g.index)g=g.toNonIndexed();for(const key of Object.keys(g.attributes))if(!['position','normal'].includes(key))g.deleteAttribute(key);parts.push(g);});
+    source.traverse(m=>{if(!m.isMesh)return;let g=m.geometry.clone().applyMatrix4(m.matrixWorld);if(g.index)g=g.toNonIndexed();for(const key of Object.keys(g.attributes))if(!['position','normal'].includes(key))g.deleteAttribute(key);const colors=new Float32Array(g.attributes.position.count*3),c=m.material.color;for(let i=0;i<colors.length;i+=3){colors[i]=c.r;colors[i+1]=c.g;colors[i+2]=c.b;}g.setAttribute('color',new THREE.BufferAttribute(colors,3));parts.push(g);});
     const geometry=mergeGeometries(parts);for(const g of parts)g.dispose();this.geometries.set(name,geometry);return geometry;
   }
 }

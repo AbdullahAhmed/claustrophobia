@@ -1,0 +1,55 @@
+<!doctype html><meta charset="utf-8"><title>Claustrophobia visual verification</title>
+<style>body{margin:0;background:#171816;color:#e7e0d2;font:13px monospace}header{padding:10px}button,select{padding:6px;margin-right:7px}iframe{width:1280px;height:720px;border:0}pre{white-space:pre-wrap;max-height:120px;overflow:auto}#views img{width:420px}</style>
+<header><button id="run">Run visual checks</button><button id="freeze">Freeze view</button><button id="resume">Resume</button><button id="diagnostic">Read diagnostics</button><button id="capture">Capture view</button><select id="scene"><option>entrance</option><option>dry</option><option>crystal</option><option>lake</option><option>high cavern</option><option>underwater</option><option>collapse</option><option>creature</option></select><button id="visit">Visit scene</button><button id="profile">Profile 20 seconds</button></header>
+<pre id="report">Loading isolated test origin…</pre><iframe id="game" src="../index.html?seed=2"></iframe><div id="views"></div>
+<script>
+const frame=document.querySelector('#game'),report=document.querySelector('#report'),wait=ms=>new Promise(r=>setTimeout(r,ms));let savedAlive=true;
+const api=()=>frame.contentWindow.K;
+frame.onload=()=>{frame.contentWindow.addEventListener('error',e=>report.textContent+='\nERROR '+e.message+' '+e.filename+':'+e.lineno);};
+document.querySelector('#diagnostic').onclick=()=>{const k=api();report.textContent=JSON.stringify({ready:!!k,controls:k?.controls,player:k?.player,render:k?.renderer.info.memory,errors:frame.contentDocument.querySelector('#load-error')?.textContent},(key,v)=>['trail'].includes(key)?undefined:v,2);};
+document.querySelector('#freeze').onclick=()=>{const k=api();savedAlive=k.player.alive;k.player.alive=true;k.pause();k.player.alive=savedAlive;frame.contentDocument.querySelector('#overlay').classList.add('hidden');k.render();};
+document.querySelector('#resume').onclick=()=>api().run();
+document.querySelector('#capture').onclick=()=>{api().render();const img=new Image();img.src=frame.contentDocument.querySelector('#c').toDataURL();document.querySelector('#views').append(img);};
+document.querySelector('#visit').onclick=async()=>{
+  const k=api(),kind=document.querySelector('#scene').value;
+  if(!frame.dataset.prepared){for(let i=0;i<14;i++){k.G.advanceWorms(1000);const heads=k.G.worms.filter(w=>w.kind==='trunk');if(!heads.length)break;const w=heads[i%heads.length];Object.assign(k.G.focus,{x:w.x,y:w.y,z:w.z});}frame.dataset.prepared='true';}const nodes=k.G.nodes;
+  let n=kind==='entrance'?nodes[0]:kind==='crystal'?nodes.find(n=>n.tint===5&&n.rx>2):kind==='lake'||kind==='underwater'?nodes.find(n=>n.wl!==undefined&&n.rx>7&&n.ry>4):kind==='high cavern'?nodes.reduce((a,b)=>b.ry>a.ry?b:a):kind==='collapse'?(nodes.find(n=>n.unstable&&n.ry>2)||nodes.find(n=>n.rx>3&&n.ry>2&&n.wl===undefined&&Math.hypot(n.x,n.z)>20)):nodes.find(n=>n.rx>3&&n.ry>2&&n.wl===undefined&&Math.hypot(n.x,n.z)>20);
+  if(!n){report.textContent='No matching scene in this seed';return;}
+  Object.assign(k.player,{x:n.x,y:n.y+.2,z:n.z,yaw:0,pitch:0,vy:0,battery:1,breath:1,cold:0,alive:false,out:false,under:kind==='underwater',swim:kind==='underwater',wl:n.wl??-Infinity});Object.assign(k.G.focus,{x:n.x,y:n.y,z:n.z});
+  if(kind==='underwater')k.player.y=n.wl-2;else if(kind==='lake')k.player.y=Math.max(n.y,n.wl-.9);
+  const next=nodes.find(q=>q.w===n.w&&q.i===n.i+3)||{x:n.x,z:n.z+3};
+  k.camera.position.set(k.player.x,k.player.y+1.5,k.player.z);k.camera.rotation.set(kind==='high cavern'?.5:-.12,Math.atan2(-(next.x-n.x),-(next.z-n.z)),0,'YXZ');k.torch.quaternion.copy(k.camera.quaternion);
+  k.run();for(let i=0;i<24;i++){for(let j=0;j<4;j++)k.tick(.016);await wait(10);}
+  if(kind==='creature')k.spawnCrosser();
+  if(kind==='collapse'){k.vfx.emit('dust',n.x,n.y+1,n.z,45);k.vfx.emit('chips',n.x,n.y+2,n.z,25);for(let i=0;i<12;i++)k.tick(.016);}
+  report.textContent=JSON.stringify({kind,node:{x:n.x,y:n.y,z:n.z,rx:n.rx,ry:n.ry,theme:n.theme},stats:k.renderer.info.memory},null,2);
+};
+const audit=document.createElement('button');audit.textContent='Capture eight scene audit';document.querySelector('header').append(audit);
+audit.onclick=async()=>{const results=[];for(const kind of ['entrance','dry','crystal','lake','high cavern','underwater','collapse','creature']){document.querySelector('#scene').value=kind;await document.querySelector('#visit').onclick();const k=api();const snapshot=JSON.parse(report.textContent);k.render();const image=frame.contentDocument.querySelector('#c').toDataURL();const result=await fetch('/evidence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:kind.replace(' ','-'),image,report:snapshot})});if(!result.ok)throw Error('Evidence server unavailable');results.push(snapshot);report.textContent='Captured '+results.map(v=>v.kind).join(', ');}report.textContent=JSON.stringify({complete:true,scenes:results},null,2);};
+document.querySelector('#profile').onclick=async()=>{
+ const k=api(),samples=[];k.run();let last=performance.now(),start=last;
+ report.textContent='Profiling 1280 × 720 for 20 seconds… visibility: '+document.visibilityState;
+ await new Promise(resolve=>{function sample(now){samples.push(now-last);last=now;if(now-start<20000)requestAnimationFrame(sample);else resolve();}requestAnimationFrame(sample);});
+ samples.sort((a,b)=>a-b);const gl=k.renderer.getContext(),ext=gl.getExtension('WEBGL_debug_renderer_info');
+ report.textContent=JSON.stringify({visibility:document.visibilityState,gameVisibility:frame.contentDocument.visibilityState,samples:samples.length,medianMs:samples[Math.floor(samples.length*.5)],p95Ms:samples[Math.floor(samples.length*.95)],medianFPS:1000/samples[Math.floor(samples.length*.5)],gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',settings:k.settings,resources:k.renderer.info.memory,calls:k.renderer.info.render.calls},null,2);
+};
+const throughput=document.createElement('button');throughput.textContent='Measure CPU + GPU throughput';document.querySelector('header').append(throughput);
+throughput.onclick=()=>{const k=api(),gl=k.renderer.getContext(),times=[];k.player.alive=false;k.run();for(let i=0;i<140;i++){const t=performance.now();k.tick(1/60);gl.finish();if(i>=20)times.push(performance.now()-t);}times.sort((a,b)=>a-b);report.textContent=JSON.stringify({measurement:'Synchronous CPU + GPU throughput, not display FPS',visibility:document.visibilityState,medianMs:times[60],p95Ms:times[114],samples:times.length,resources:k.renderer.info.memory,calls:k.renderer.info.render.calls,triangles:k.renderer.info.render.triangles},null,2);};
+document.querySelector('#run').onclick=async()=>{
+ report.textContent='';let count=0;const check=(ok,label)=>{report.textContent+=(ok?'PASS ':'FAIL ')+label+'\n';if(!ok)throw Error(label);count++;};
+ try{
+  const k=api();check(!!k,'initialized');check(k.assets.models.size===16,'16 original model assets loaded');
+  for(const name of ['torch','glove','skull','crosser'])check(k.assets.geometry(name).attributes.position.count>36,name+' has authored geometry');
+  const caveBefore=JSON.stringify(k.G.nodes.map(n=>[n.x,n.y,n.z,n.rx,n.ry]));
+  for(const q of ['low','standard','high'])for(const tape of ['off','subtle','full']){Object.assign(k.settings,{quality:q,tape});k.applySettings();k.render();check(k.renderer.getContext().getError()===0,q+'/'+tape+' renders without GL error');}
+  check(caveBefore===JSON.stringify(k.G.nodes.map(n=>[n.x,n.y,n.z,n.rx,n.ry])),'quality settings preserve cave geometry');
+  Object.assign(k.settings,{quality:'standard',tape:'subtle',reduced:false});k.applySettings();
+  for(let i=0;i<100;i++)k.vfx.emit('dust',0,1,0,30);check(k.vfx.particles.length<=280,'dust pool is bounded');
+  for(let i=0;i<100;i++)k.vfx.ripple(0,0,0);check(k.vfx.ripples.length===64,'ripple pool is bounded');
+  k.vfx.update(10,()=>0);check(k.vfx.particles.length===0&&k.vfx.ripples.length===0,'expired effects are removed');
+  const b=k.streamed[0],before=b.count,m=k.camera.matrix.clone();m.makeTranslation(1000,0,0);b.setMatrixAt(b.count++,m);b.update({x:1000,y:0,z:0});check(b.mesh.count>0,'far region decorations reconstruct');b.update({x:0,y:0,z:0});check(b.mesh.count<=b.capacity,'streamed GPU batch bounded');b.records.length=before;b.count=before;
+  k.run();for(let i=0;i<10;i++)k.tick(.016);check(k.controls.gameClock>0,'simulation advances with presentation enabled');
+  report.textContent+='\n'+count+' visual checks passed';
+ }catch(e){report.textContent+='\nERROR '+e.stack;}
+};
+</script>

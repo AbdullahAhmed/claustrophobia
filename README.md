@@ -1,4 +1,4 @@
-# Karst
+# Claustrophobia — Free Browser Demo
 
 A roguelike caving simulator in the browser. The cave is endless and procedurally carved; it is pitch black; you have a
 hand-crank torch, sixteen seconds of breath (a little more with every sump you come up from), and a piece of chalk. Somewhere, if you persist, it opens to daylight.
@@ -21,9 +21,15 @@ For browser smoke checks, run `python tools/serve.py 8794`, open http://127.0.0.
 and click **Run checks in this test tab**. Use this separate test port: the checks create a saved attempt there.
 The browser checks cover rendering, sound decoding, walking, torch charging, the survey, autosave, and resume.
 
-Static hosting needs `index.html`, `src/`, `sounds/out/`, and `sounds/CREDITS.md` with their paths intact.
-Three.js and fonts load from the external URLs in `index.html`; the game needs an internet connection for them.
-Development tools, screenshots, `.git`, and `.claude` are not needed on the web server.
+The cave continues to generate as the player explores. The 30 numbered seeds above are regression samples, not a level catalogue. A separate regression verifies growth beyond the initially generated region.
+
+The demo uses original low-poly Blender assets, world-space mineral detail, clipped water edges, depth coloration, splash rings, debris/dust, streamed decorations and configurable VHS presentation. Tape is **Subtle** by default; Graphics defaults to **Standard**. Reduced motion and brightness controls are in the pause menu. Existing `karst.*` save keys remain compatible.
+
+Runtime dependencies are local: Three.js **0.160.0**, fonts, models and sound. Static hosting needs `index.html`, `credits.html`, `src/`, `vendor/three/`, `assets/fonts/`, `assets/models/*.glb`, `sounds/out/` and `sounds/CREDITS.md`. No CDN requests are needed. The Blender source, development tools, screenshots, `.git` and `.claude` stay off the web server.
+
+`tools/build_art.py` rebuilds the original model library using Blender 5.2; `assets/models/claustrophobia-library.blend` retains editable source. The glTF exports and named parts can be reused during the later engine port. `src/assets.js`, `src/presentation.js`, `src/vfx.js` and `src/regions.js` separate assets, display effects and regional resource lifetime from survival logic.
+
+`python tools/serve_qa.py 8798` exposes the local visual harness at `/tools/visual-check.html`; its evidence endpoint writes only to the named local audit folder and accepts its own origin. This tool is excluded from deployment. Scene captures use diagnostic viewpoints, not a certified playthrough. Use `tools/package_demo.py` for a versioned runtime archive and publish its entry point last.
 
 | Control | Action |
 |---|---|

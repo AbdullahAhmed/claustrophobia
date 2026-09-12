@@ -160,7 +160,18 @@ export function waterQuads(list, dens, cx, cy, cz) {
       const ns = nearestSeg(list, x, wl, z);
       if (!ns || ns.wl !== wl) continue;
       const x0 = x - VOXEL / 2, x1 = x + VOXEL / 2, z0 = z - VOXEL / 2, z1 = z + VOXEL / 2;
-      pos.push(x0, wl, z0, x0, wl, z1, x1, wl, z1, x0, wl, z0, x1, wl, z1, x1, wl, z0);
+      // Clip each triangle against the interpolated shore. Terrain density and
+      // collision stay untouched; only rendered water intersects the shoreline.
+      const corners=[[x0,z0,i,k],[x0,z1,i,k+1],[x1,z1,i+1,k+1],[x1,z0,i+1,k]];
+      for(const ids of [[0,1,2],[0,2,3]]){
+        const input=ids.map(id=>{const v=corners[id];return {x:v[0],z:v[1],d:gridAt(dens,v[2],ly,v[3])+.03};}),poly=[];
+        for(let c=0;c<3;c++){
+          const a=input[c],b=input[(c+1)%3],inside=a.d<0,next=b.d<0;
+          if(inside)poly.push(a);
+          if(inside!==next){const t=a.d/(a.d-b.d);poly.push({x:a.x+(b.x-a.x)*t,z:a.z+(b.z-a.z)*t});}
+        }
+        for(let c=1;c<poly.length-1;c++)for(const v of [poly[0],poly[c],poly[c+1]])pos.push(v.x,wl,v.z);
+      }
     }
   }
   return pos.length ? new Float32Array(pos) : null;
