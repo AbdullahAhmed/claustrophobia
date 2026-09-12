@@ -16,7 +16,7 @@ For development without stale browser caching, run `python tools/serve.py 8793` 
 http://127.0.0.1:8793/. Opening `index.html` directly from File Explorer will not load the ES modules.
 
 Regression checks: `node --experimental-vm-modules --no-warnings tools/check.cjs` checks source syntax,
-30 cave seeds against commit `7d015f0`, intact slab collision, slab removal, stale worker results, and audio files.
+30 cave seeds against commit `06adfdb` (bump that hash in tools/check.cjs when generation changes on purpose), intact slab collision, slab removal, stale worker results, and audio files.
 For browser smoke checks, run `python tools/serve.py 8794`, open http://127.0.0.1:8794/tools/smoke.html,
 and click **Run checks in this test tab**. Use this separate test port: the checks create a saved attempt there.
 The browser checks cover rendering, sound decoding, walking, torch charging, the survey, autosave, and resume.
