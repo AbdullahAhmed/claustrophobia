@@ -34,7 +34,8 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) saveR
 
 const PR = 0.26;                                           // player collision radius
 const H_STAND = 1.72, H_CROUCH = 0.95, H_PRONE = 0.5;
-const BREATH_S = 16, BATTERY_S = 130;                      // seconds of breath; seconds of torch at full
+const BREATH_BASE = 16, BATTERY_S = 130;                   // seconds of breath; seconds of torch at full
+let BREATH_S = BREATH_BASE;                                 // grows a little with every sump you come up from, across attempts
 const GRAV = 14;
 
 const player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, h: H_STAND, grounded: false, bob: 0, stamina: 1, sprint: false,
@@ -898,6 +899,7 @@ if (matchMedia('(pointer: coarse)').matches) $('warn').style.display = 'block';
 
 // ---------- run record ----------
 record.runs++;
+BREATH_S = BREATH_BASE + Math.min(6, (record.sumps || 0) * 0.4);
 try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {}
 $('ov-rec').textContent = `cave ${SEED}${cave.tier ? ` (the ${['second', 'third', 'fourth', 'fifth', 'sixth', 'seventh'][Math.min(cave.tier, 6) - 1] || 'next'} cave: deeper)` : ''} · attempt ${cave.attempts}${cave.deaths.length ? ` · ${cave.deaths.length} of you lie in it` : ''} · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
 {
@@ -1363,6 +1365,7 @@ function updatePlayer(dt) {
   if (player.under && !wasUnder) { sfx.play('bubbles', { vol: 0.5, rate: 1.1, dur: 1.2 }); player.underT = 0; }
   if (!player.under && wasUnder) {
     sfx.play('splash_small', { x: player.x, y: wy, z: player.z, vol: 0.7 });
+    if (player.underT > 5) { record.sumps = (record.sumps || 0) + 1; saveRecord(); const nb = BREATH_BASE + Math.min(6, record.sumps * 0.4); if (nb > BREATH_S + 0.01) { BREATH_S = nb; if (record.sumps % 5 === 0) showHint(`you can hold it a little longer now: ${BREATH_S.toFixed(0)} seconds`, true); } }
     if (player.underT > 2.5 && gaspT <= 0) { sfx.play(player.breath < 0.4 ? 'gasping' : 'gasp', { vol: 0.8 }); gaspT = 3; }
   }
   if (player.under) { player.underT += dt; bubbleT -= dt; if (bubbleT <= 0) { bubbleT = rr(2.5, 5); sfx.play('bubbles', { vol: 0.25, rate: rr(0.9, 1.2), dur: 1.0 }); } }

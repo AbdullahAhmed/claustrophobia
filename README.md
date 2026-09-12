@@ -1,7 +1,7 @@
 # Karst
 
 A roguelike caving simulator in the browser. The cave is endless and procedurally carved; it is pitch black; you have a
-hand-crank torch, sixteen seconds of breath, and a piece of chalk. Somewhere, if you persist, it opens to daylight.
+hand-crank torch, sixteen seconds of breath (a little more with every sump you come up from), and a piece of chalk. Somewhere, if you persist, it opens to daylight.
 
 **Play:** serve the folder with any static server and open `index.html` (ES modules need http, not `file://`):
 
