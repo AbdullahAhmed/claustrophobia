@@ -66,3 +66,4 @@ All clips are Creative Commons 0 (public domain dedication). Sources are Freesou
 - `waterfall_rocks.ogg` — "Waterfall under rocks.Wav" by BonnyOrbit — https://freesound.org/s/442433/ — CC0 1.0
 - `stream_small.ogg` — "Stream, Running Water | Aviemore Scotland" by BurghRecords — https://freesound.org/s/415151/ — CC0 1.0
 - `stream_rocks.ogg` — "Forest river flows over rocks.wav" by BonnyOrbit — https://freesound.org/s/442478/ — CC0 1.0
+- `whistle.ogg` — "Whistle 07" by chaosportal — https://freesound.org/s/137106/ — CC0 1.0

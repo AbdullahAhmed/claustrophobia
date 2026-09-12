@@ -384,6 +384,21 @@ function updateOlms(dt) {
     o.mesh.scale.set(1, 1, 1 + Math.sin(o.t * (o.flee > 0 ? 18 : 4)) * 0.25);
   }
 }
+// ---------- a whistle: the cave answers, and tells you how big it is ----------
+let whistleT = 0;
+function whistle() {
+  if (whistleT > 0 || player.under) return; whistleT = 1.6;
+  sfx.play('whistle', { vol: 0.7, rate: rr(0.95, 1.05) });
+  camera.getWorldDirection(viewDir);
+  const o = Math.max(2, open), delay = clamp(o * 2 / 340, 0.04, 0.4);
+  const ex = camera.position.x + viewDir.x * o, ey = camera.position.y + viewDir.y * o, ez = camera.position.z + viewDir.z * o;
+  setTimeout(() => sfx.play('whistle', { x: ex, y: ey, z: ez, vol: 0.32 * clamp(o / 14, 0.25, 1), rate: 0.98, wet: 1.0, rolloff: 0.4 }), delay * 1000);
+  if (o > 9) setTimeout(() => sfx.play('whistle', { x: ex - viewDir.x * o * 0.5, y: ey, z: ez - viewDir.z * o * 0.5, vol: 0.14, rate: 0.96, wet: 1.0, rolloff: 0.3 }), delay * 2200);
+  if (o > 16) setTimeout(() => sfx.play('rumble', { vol: 0.25, rate: 1.4, dur: 1.2, wet: 1.0 }), delay * 2600);
+  for (const r of roosts) if (!r.spooked && Math.hypot(r.x - player.x, r.y - player.y, r.z - player.z) < 22) setTimeout(() => spookRoost(r), 300);
+  if (following > 0) { following = 0; followT = rr(40, 90); }                          // whatever it is, it stops when you do that
+  teach('whistle', o > 9 ? 'listen to it come back. that took a while: this is a big space' : 'it came straight back. there is not much room here');
+}
 function updateBats(dt) {
   camera.getWorldDirection(viewDir);
   for (const r of roosts) {
@@ -653,6 +668,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyF' && !e.repeat) shakeTorch();
   if (e.code === 'KeyT' && !e.repeat) { e.preventDefault(); openChalk(); }
   if (e.code === 'KeyG' && !e.repeat) dropGlowstick();
+  if (e.code === 'KeyH' && !e.repeat) whistle();
   if (e.code === 'KeyE' && !e.repeat) useRope();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
@@ -1637,6 +1653,7 @@ function stepFrame(dt) {
   updateTorch(dt);
   updateEyes(dt);
   updateLoose(dt);
+  whistleT -= dt;
   updateFollower(dt);
   updateFlood(dt);
   updateOlms(dt);

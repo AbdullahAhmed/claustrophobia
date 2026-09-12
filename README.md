@@ -19,6 +19,7 @@ Then http://localhost:8080/ — add `?seed=123` to fix the cave layout. Mouse + 
 | F (tap repeatedly) | shake the torch to charge it — the bulb is dark while you do |
 | T | chalk a note on the rock you're looking at |
 | G | drop a glowstick (three per attempt) |
+| H | whistle — the echo tells you how big the space is, even with the torch dead; bats mind it |
 | M | your survey notebook — a pencil trace of where you have been, chalk notes, water in blue, the dead's routes faint |
 | ` | debug survey line |
 | Esc | release the mouse |

@@ -151,6 +151,8 @@ oneshot('flap', ['flap1', 'flap2', 'flap3'], -8)
 # ---- water features ----
 loop('cascade', 'waterfall_small', 16.0, target_db=-22, xf=0.8)
 loop('cascade_big', 'waterfall_rocks', 16.0, target_db=-22, xf=0.8)
+# ---- voice ----
+oneshot('whistle', ['whistle'], -4)
 # ---- streamway ----
 loop('stream', 'stream_small', 18.0, target_db=-24, xf=1.0)
 loop('stream_rocks', 'stream_rocks', 18.0, start=20, target_db=-22, xf=1.0)
