@@ -1333,7 +1333,7 @@ function footstep(kind) {
 
 // ---------- player ----------
 let duckT = 0, duckLevel = 0, duckHold = 0, bubbleT = 2, ropeHintT = 0, blockedT = 0;
-let foulT = 0, lakeT = rr(20, 50), lakeFear = 0, climbing = false, climbT = 0, resting = false, restT = 0;
+let foulT = 0, lakeT = rr(20, 50), lakeFear = 0, climbing = false, climbT = 0, resting = false, restT = 0, siltT = 0, siltX = 0, siltZ = 0;
 let stuck = 0, stuckSide = 0, stuckT = 0, wiggles = 0, coldT = 0, coldDropped = false, stuckTight = false, exhaling = false, exhaleT = 0;                      // stuck > 0: wedged, that many wiggles still needed
 function updatePlayer(dt) {
   if (!G.chunkReadyAt(player.x, player.y + 0.3, player.z)) { G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return; }
@@ -1713,7 +1713,11 @@ function updateTorch(dt) {
   bounce.position.copy(torchHeld ? camera.position : torch.position);
   hand.userData.lens.material.emissiveIntensity = 2.5 * level;
   updateMotes(dt, level * (0.5 + 0.5 * adapt));
-  if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15 + 0.22 * floodLevel + (player.flow ? 0.05 : 0); $('water').style.opacity = 1; updateBubbles(dt); }   // silt in a flood: you cannot see your hand
+  // silt: every stroke in a sump stirs the floor, and the water closes in behind you — a flood does the same to all of it
+  if (player.under) { siltT = Math.min(14, siltT + dt * (Math.hypot(player.x - siltX, player.z - siltZ) > 0.01 ? 1 : 0.15)); if (siltT > 8) teach('silt', 'the silt is up. you stirred it, and now you cannot see. keep going the way you were going'); }
+  else siltT = Math.max(0, siltT - dt * 2);
+  siltX = player.x; siltZ = player.z;
+  if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15 + 0.22 * floodLevel + (player.flow ? 0.05 : 0) + 0.3 * Math.min(1, siltT / 12); $('water').style.opacity = 1; updateBubbles(dt); }
   else { scene.fog.color.copy(FOG_AIR); scene.fog.density = 0.048; $('water').style.opacity = 0; }
   waterGroup.position.y = Math.sin(t * 1.1) * 0.012;
   for (const r of remains) if (!r.taken) r.light.intensity = 0.18 + 0.1 * Math.sin(t * 7 + r.x) * Math.sin(t * 2.3);
