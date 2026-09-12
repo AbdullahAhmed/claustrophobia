@@ -6,7 +6,7 @@ window.walk = async function walk(opts = {}) {
   const y = () => new Promise(r => setTimeout(r, 0));
   const p = K.player, log = [], stances = {};
   let pi = 0, blocked = 0, avoid = 0, avoidDir = 1, lastX = p.x, lastZ = p.z, lastMoveCheck = 0, maxFrame = 0, wp = { x: 0, z: 0 }, retreat = 0, stuckHere = 0;
-  const startDist = p.dist;
+  const startDist = p.dist, ropedOnce = new Set();
   K.run();
   for (let f = 0; f < secs * 60; f++) {
     const path = K.G.nodes.filter(n => n.w === wid);
@@ -22,6 +22,9 @@ window.walk = async function walk(opts = {}) {
     p.yaw = Math.atan2(-(gx - p.x), -(gz - p.z));
     p.pitch = Math.max(-1.0, Math.min(0.6, Math.atan2(aimY - (p.y + p.h - 0.1), Math.hypot(t.x - p.x, t.z - p.z))));
     K.keys.KeyW = true; K.keys.KeyS = false;
+    // a drop ahead: rig a rope if we have one (E is a tap: down/up), else walk on and take the fall like a fool who ignores hints
+    const vd = K.G.voids.find(v => Math.hypot(v.x - p.x, v.z - p.z) < 2.6 && p.y > v.y + 2 && Math.abs(v.top - p.y) < 1.5);
+    if (vd && p.rope > 0 && !ropedOnce.has(vd)) { ropedOnce.add(vd); window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE' })); await new Promise(r => setTimeout(r, 60)); window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyE' })); log.push(['rope', (f / 60).toFixed(0)]); }
     // a chimney: the next node is well above and close by — hold space and climb (only with the legs for it)
     const climbNode = t.y - p.y > 1.2 && Math.hypot(t.x - p.x, t.z - p.z) < 1.6 && !p.swim;
     K.keys.Space = climbNode && (p.stamina > 0.3 || !p.grounded);
