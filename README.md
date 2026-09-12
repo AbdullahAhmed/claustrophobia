@@ -12,26 +12,48 @@ python -m http.server 8080
 Then http://localhost:8080/ — add `?seed=123` to fix the cave layout; the title screen links today's cave (the date as
 a seed, the same for everyone). Mouse + keyboard or a controller, headphones recommended.
 
-| key | action |
+For development without stale browser caching, run `python tools/serve.py 8793` and open
+http://127.0.0.1:8793/. Opening `index.html` directly from File Explorer will not load the ES modules.
+
+Regression checks: `node --experimental-vm-modules --no-warnings tools/check.cjs` checks source syntax,
+30 cave seeds against commit `7d015f0`, intact slab collision, slab removal, stale worker results, and audio files.
+For browser smoke checks, run `python tools/serve.py 8794`, open http://127.0.0.1:8794/tools/smoke.html,
+and click **Run checks in this test tab**. Use this separate test port: the checks create a saved attempt there.
+The browser checks cover rendering, sound decoding, walking, torch charging, the survey, autosave, and resume.
+
+Static hosting needs `index.html`, `src/`, `sounds/out/`, and `sounds/CREDITS.md` with their paths intact.
+Three.js and fonts load from the external URLs in `index.html`; the game needs an internet connection for them.
+Development tools, screenshots, `.git`, and `.claude` are not needed on the web server.
+
+| Control | Action |
 |---|---|
-| W A S D / mouse | move / look |
-| C (hold) | crouch — low ceilings put you on your belly automatically; underwater: dive |
-| Space | hop / mantle; underwater: surface; in a chimney (a narrow rift going up): hold to climb — it drains you, and if you run out you come off |
-| F (tap repeatedly) | shake the torch to charge it — the bulb is dark while you do |
-| Q | spot or flood beam — narrow reaches the far wall of a cavern and the bottom of a pit, wide shows you the floor either side; the spot eats the battery faster |
-| R (hold) | rest on dry ground: the torch goes off to spare it, the cold and the tiredness go; the dark is not empty |
-| T | chalk a note on the rock you're looking at |
-| G | drop a glowstick (three per attempt); hold and release to throw one — down a pit, across a chamber; you hear where it lands |
-| H | whistle — the echo tells you how big the space is, even with the torch dead; bats mind it |
-| M | your survey notebook — a pencil trace of where you have been, chalk notes, water in blue, the dead's routes faint |
-| controller | sticks move and look · A hop / climb · B crouch · X shake · Y whistle · LB beam · RB glowstick · LT run · start survey · back rope |
-| V | hide the interface, for a look |
-| ` | debug survey line |
-| Esc | release the mouse |
+| WASD / arrows + mouse | Move / look |
+| Shift (hold) | Run |
+| C / Ctrl (hold) | Crouch or dive; breathe out when tightly wedged. Release to breathe. Low ceilings still crouch/crawl automatically. |
+| Space | Hop; hold to climb a chimney or swim upward |
+| Left mouse (hold) | Shake and recharge the torch continuously; the beam dims while charging |
+| Right mouse (hold) | Focus the beam; release for wide. The focused beam uses more battery. |
+| E | Use or rig a nearby rope |
+| G | Tap to drop a glowstick; hold and release to throw |
+| Q (hold) | Tools wheel: move the mouse toward chalk, whistle, or rest, then release Q. Release at the center to cancel. |
+| Tab | Open / close the survey notebook |
+| Esc | Pause movement, resources, hazards, delayed events, and audio; open settings and the new-cave option |
+| Alternating A / D | Work free from ordinary wedging |
+| Backtick | Developer debug display |
+
+Rest is selected from the tools wheel on dry ground and continues until you move or charge the torch.
+Chalk opens a text field: Enter writes, Esc cancels and pauses. The tools wheel and notebook do **not** pause the cave.
+HUD visibility and starting a new cave are in the pause menu; N no longer abandons a cave.
+When pointer lock is unavailable, use the middle mouse button to drag-look.
+
+Controller: left/right sticks move/look; A hops/climbs/swims upward; B crouches/dives/exhales;
+hold X to charge, hold LB to focus, hold Y and aim the right stick for the tools wheel;
+RB drops/throws a glowstick, LT runs, D-pad up uses a rope, View opens the survey, and Menu pauses/resumes.
+Chalk text entry still needs a keyboard. Controller mappings have browser simulation coverage; physical controller feel needs a playtest.
 
 One cave per seed: you keep the same cave until you get out of it. Your dead stay where they fell (bones, and your old
 torch — worth 25 % if you reach it), last attempt's chalk is still on the walls, and an interrupted attempt resumes where it
-stopped. `N` on the death screen abandons the cave for a new one.
+stopped. Choose **New cave** in the pause or death menu to abandon it.
 
 ## How it works
 

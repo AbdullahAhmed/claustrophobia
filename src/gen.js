@@ -50,7 +50,7 @@ function addSeg(a, b) {
               old: (b.theme || a.theme) === 'old', broken: (b.theme || a.theme) === 'broken',
               steep: Math.abs(b.y - a.y) > 0.6 * len,          // shafts: no sediment floor
               algae: Math.max(a.algae || 0, b.algae || 0), tint: b.tint || a.tint || 0, foul: !!(a.foul && b.foul), gour: !!(a.gour && b.gour),
-              boulders: (a.boulders || []).concat(b.boulders || []),
+              boulders: (a.boulders || []).concat(b.boulders || []), slabs: (a.slabs || []).concat(b.slabs || []),
               spel: (a.spel || []).concat(b.spel || []),
               fx: a.x, fy: a.y + CORE_H, fz: a.z, fdx: b.x - a.x, fdy: b.y - a.y, fdz: b.z - a.z, nb: b };
   s.inv = 1 / ((s.bx * s.bx + s.by * s.by + s.bz * s.bz) || 1e-6);
@@ -227,9 +227,15 @@ class Worm {
       const P = this.pit;
       if (P.phase === 'ledge') { this.pitch = 0; this.rx = lerp(this.rx, 1.3, 0.6); this.ry = lerp(this.ry, 1.3, 0.6); P.phase = 'drop'; P.ledge = this.node; P.ledgeYaw = this.yaw; voids.push({ x: this.x, y: P.bottom, z: this.z, top: this.y, wet: P.wl !== undefined });
         if (R() < 0.22) props.push({ type: 'oldrope', x: this.x, y: this.y, z: this.z, bottom: P.bottom, frayed: R() < 0.3 });   // someone rigged this once, and left it
+        else if (P.wl === undefined && mulberry32((SEED ^ Math.imul(this.id, 73856093) ^ Math.imul(this.n, 19349663)) >>> 0)() < 0.3) { // independent draw: existing seeds keep their layout
+          const slab = { x: this.x + Math.sin(this.yaw) * 1.2, y: this.y - 0.05, z: this.z + Math.cos(this.yaw) * 1.2, r: 2.2 };
+          this.node.slabs = (this.node.slabs || []).concat([slab]); P.slab = slab;
+          props.push({ type: 'falsefloor', x: slab.x, y: this.y, z: slab.z, r: slab.r, bottom: P.bottom, node: this.node });
+        }
       }
       else if (P.phase === 'drop') {
         this.pitch = -1.45; this.rx = 1.3; this.ry = 1.3;
+        if (P.slab && this.y > P.slab.y - 3) this.pendingSlab = P.slab; else this.pendingSlab = null;
         if (P.wl !== undefined && this.y - STEP < P.wl + 0.3) wl = P.wl;
         if (this.y - STEP <= P.bottom) {
           P.phase = 'out';
@@ -381,6 +387,7 @@ class Worm {
     const n = { x: this.x + Math.sin(this.yaw) * cp * STEP, y: this.y + Math.sin(this.pitch) * STEP,
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
                 algae: core ? this.algae : 0, tint: this.tint, foul: this.foul, gour: !!(this.mode && this.mode.name === 'gour' && !this.pit && !this.sump), chimney: this.chimney > 0 };
+    if (this.pendingSlab) { n.slabs = [this.pendingSlab]; this.pendingSlab = null; }
     if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; if (this.stream || this.sump || this.pit || this.lake || (this.mode && this.mode.name === 'duck')) n.floods = true; }   // live water: it rises when it rains up top
     if (this.sump && !this.sump.marked) { this.sump.marked = true; n.sump = { len: this.sump.left, bell: this.sump.bellAt !== null, trap: this.sump.trap }; sumpNodes.push(n); }
     else if (core && this.mode && (this.mode.name === 'passage' || this.mode.name === 'bedding' || this.mode.name === 'chamber') && Math.abs(this.pitch) < 0.12 && R() < 0.07) n.wl = n.y + 0.07;   // a puddle in a low spot
@@ -559,6 +566,8 @@ export function fieldAt(x, y, z) {
   if (g <= -0.45 || g > 0.3) return g;
   // the crawl core is thinner than a voxel, so the grid smears it; near it, trust the line the mesh was built from
   const list = cellSegs.get(ckey(cx, cy, cz)); if (!list) return g;
+  // An intact slab deliberately closes the core. Near it, collision must use the same grid as the visible floor.
+  if (list.some(s => s.slabs && s.slabs.some(sl => Math.abs(y - sl.y) < 0.2 + VOXEL * 2 && Math.hypot(x - sl.x, z - sl.z) < sl.r + VOXEL * 2))) return g;
   const s = nearestSeg(list, x, y, z);
   if (s && s.core) { const c = coreDist(s, x, y, z); if (c < g) return c; }
   return g;
@@ -572,6 +581,13 @@ export function waterLevelAt(x, y, z) {
   return s && s.wl !== undefined ? s.wl : -Infinity;
 }
 // the roof of a low passage comes down: the segments through the node lose their crawl core and gain a block of rock
+// a false floor gives way: the slab leaves every segment that carried it, and the chunks rebuild
+export function breakSlab(slab) {
+  for (const s of segs) { if (!s.slabs || !s.slabs.includes(slab)) continue; s.slabs = s.slabs.filter(q => q !== slab); }
+  for (const n of nodes) if (n.slabs && n.slabs.includes(slab)) n.slabs = n.slabs.filter(q => q !== slab);
+  const cx = Math.floor(slab.x / CHUNK), cy = Math.floor(slab.y / CHUNK), cz = Math.floor(slab.z / CHUNK);
+  for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const ch = chunks.get(ckey(cx + dx, cy + dy, cz + dz)); if (ch) ch.dirty = true; }
+}
 export function collapseAt(n) {
   const r = Math.max(n.rx, n.ry) * 1.2 + 0.4, b = { x: n.x, y: n.y + n.ry * 0.5, z: n.z, r };
   for (const s of segs) {

@@ -7,6 +7,17 @@ import { Sfx } from './audio.js';
 const $ = id => document.getElementById(id);
 const { clamp, lerp, rr } = G;
 const params = new URLSearchParams(location.search);
+// Gameplay delays advance with the simulation, so pausing also freezes a pending collapse or fall.
+let gameClock = 0;
+const gameTimers = [];
+function gameDelay(fn, milliseconds) { gameTimers.push({ fn, left: milliseconds / 1000 }); }
+function advanceGameTimers(dt) {
+  gameClock += dt * 1000;
+  for (const timer of gameTimers.slice()) {
+    timer.left -= dt;
+    if (timer.left <= 0) { gameTimers.splice(gameTimers.indexOf(timer), 1); timer.fn(); }
+  }
+}
 // the cave you are in stays the same cave until you get out of it; your dead stay in it too
 let cave = null;
 try { cave = JSON.parse(localStorage.getItem('karst.cave') || 'null'); } catch (e) {}
@@ -152,7 +163,7 @@ function updateDraught(dt) {
 }
 function updateMotes(dt, level) {
   torch.getWorldDirection(_td).negate(); _tp.copy(camera.position);            // torch is a plain Object3D: +Z is backwards
-  const t = performance.now() * 0.001, ic = motes.instanceColor.array;
+  const t = gameClock * 0.001, ic = motes.instanceColor.array;
   const gust = 1 + (gustT > 0 ? 3 : 0);
   for (let i = 0; i < MOTES; i++) {
     let x = motePos[i * 3], y = motePos[i * 3 + 1], z = motePos[i * 3 + 2];
@@ -200,8 +211,8 @@ function onBuilt(out) {
   const ch = pendingBuilds.get(out.key); if (!ch) return;
   pendingBuilds.delete(out.key); ch.building = false;
   if (G.chunks.get(out.key) !== ch) return;                          // disposed while building
-  G.applyChunkData(ch, out);
   if (ch.dirty) return;                                              // carved again meanwhile; the scan will re-queue it
+  G.applyChunkData(ch, out);
   disposeChunk(ch);
   if (!out.solid) meshChunk(ch, out);
 }
@@ -361,7 +372,7 @@ function spookRoost(r) {
     const dx = tx - r.x, dy = ty - r.y, dz = tz - r.z, L = Math.hypot(dx, dy, dz) || 1, sp = 5 + Math.random() * 4;
     batList.push({ x: r.x + (Math.random() - 0.5) * 2, y: r.y - Math.random() * 0.6, z: r.z + (Math.random() - 0.5) * 2, vx: dx / L * sp, vy: dy / L * sp, vz: dz / L * sp, t: -Math.random() * 1.4, phase: Math.random() * 6, life: 5 + Math.random() * 2 });
   }
-  for (let k = 0; k < 6; k++) setTimeout(() => sfx.play('flap', { x: camera.position.x + (Math.random() - 0.5) * 2, y: camera.position.y + 0.3, z: camera.position.z + (Math.random() - 0.5) * 2, vol: 0.5, vary: 0.3 }), 600 + k * 260 + Math.random() * 200);
+  for (let k = 0; k < 6; k++) gameDelay(() => sfx.play('flap', { x: camera.position.x + (Math.random() - 0.5) * 2, y: camera.position.y + 0.3, z: camera.position.z + (Math.random() - 0.5) * 2, vol: 0.5, vary: 0.3 }), 600 + k * 260 + Math.random() * 200);
   showHint('bats');
 }
 // ---------- olms: pale, blind, slow, in the still water ----------
@@ -411,14 +422,14 @@ function whistle() {
   camera.getWorldDirection(viewDir);
   const o = Math.max(2, open), delay = clamp(o * 2 / 340, 0.04, 0.4);
   const ex = camera.position.x + viewDir.x * o, ey = camera.position.y + viewDir.y * o, ez = camera.position.z + viewDir.z * o;
-  setTimeout(() => sfx.play('whistle', { x: ex, y: ey, z: ez, vol: 0.32 * clamp(o / 14, 0.25, 1), rate: 0.98, wet: 1.0, rolloff: 0.4 }), delay * 1000);
-  if (o > 9) setTimeout(() => sfx.play('whistle', { x: ex - viewDir.x * o * 0.5, y: ey, z: ez - viewDir.z * o * 0.5, vol: 0.14, rate: 0.96, wet: 1.0, rolloff: 0.3 }), delay * 2200);
-  if (o > 16) setTimeout(() => sfx.play('rumble', { vol: 0.25, rate: 1.4, dur: 1.2, wet: 1.0 }), delay * 2600);
-  for (const r of roosts) if (!r.spooked && Math.hypot(r.x - player.x, r.y - player.y, r.z - player.z) < 22) setTimeout(() => spookRoost(r), 300);
+  gameDelay(() => sfx.play('whistle', { x: ex, y: ey, z: ez, vol: 0.32 * clamp(o / 14, 0.25, 1), rate: 0.98, wet: 1.0, rolloff: 0.4 }), delay * 1000);
+  if (o > 9) gameDelay(() => sfx.play('whistle', { x: ex - viewDir.x * o * 0.5, y: ey, z: ez - viewDir.z * o * 0.5, vol: 0.14, rate: 0.96, wet: 1.0, rolloff: 0.3 }), delay * 2200);
+  if (o > 16) gameDelay(() => sfx.play('rumble', { vol: 0.25, rate: 1.4, dur: 1.2, wet: 1.0 }), delay * 2600);
+  for (const r of roosts) if (!r.spooked && Math.hypot(r.x - player.x, r.y - player.y, r.z - player.z) < 22) gameDelay(() => spookRoost(r), 300);
   if (following > 0) { following = 0; followT = rr(40, 90); }                          // whatever it is, it stops when you do that
   if (dread > 0.35 && Math.random() < 0.22 + 0.3 * dread) {                             // and sometimes something answers, late, from the wrong place
     const a = Math.random() * Math.PI * 2, d = rr(12, 22);
-    setTimeout(() => { if (player.alive) { sfx.play('whistle', { x: player.x + Math.sin(a) * d, y: player.y + 0.5, z: player.z + Math.cos(a) * d, vol: 0.4, rate: 0.9, wet: 0.9, rolloff: 0.4 }); showHint('that was not an echo', true); } }, rr(2600, 4200));
+    gameDelay(() => { if (player.alive) { sfx.play('whistle', { x: player.x + Math.sin(a) * d, y: player.y + 0.5, z: player.z + Math.cos(a) * d, vol: 0.4, rate: 0.9, wet: 0.9, rolloff: 0.4 }); showHint('that was not an echo', true); } }, rr(2600, 4200));
   }
   teach('whistle', o > 9 ? 'listen to it come back. that took a while: this is a big space' : 'it came straight back. there is not much room here');
 }
@@ -661,7 +672,7 @@ function placeMist(p) {
   }
 }
 function updateMists(dt) {
-  const t = performance.now() * 0.001;
+  const t = gameClock * 0.001;
   for (const m of mists) { m.mesh.position.x = m.x0 + Math.sin(t * m.sp + m.ph) * 1.2; m.mesh.position.z = m.z0 + Math.cos(t * m.sp * 0.8 + m.ph) * 1.2; m.mesh.rotation.z += dt * 0.02; }
 }
 // fossils: drawn on a canvas, pressed into the nearest wall like chalk
@@ -725,7 +736,7 @@ function placeCascade(p) {
   cascades.push(c);
 }
 function updateCascades(dt) {
-  const t = performance.now() * 0.001;
+  const t = gameClock * 0.001;
   for (const c of cascades) {
     const d = Math.hypot(c.x - camera.position.x, c.y - camera.position.y, c.z - camera.position.z);
     c.inst.visible = c.foam.visible = d < 45; if (d >= 45) continue;
@@ -791,6 +802,7 @@ function processProps(dt) {
     else if (p.type === 'curtain') placeCurtain(p);
     else if (p.type === 'oldrope') placeOldRope(p);
     else if (p.type === 'pearls') placePearls(p);
+    else if (p.type === 'falsefloor') falseFloors.push({ ...p, slab: p.node.slabs && p.node.slabs[0], state: 'whole', t: 0 });
     else if (p.type === 'mist') placeMist(p);
     else placeBones(p);
     G.props.splice(i, 1);
@@ -833,90 +845,214 @@ function clearanceAbove(x = player.x, z = player.z) {
 }
 
 // ---------- input ----------
-const keys = {};
+const keys = {}, keyboard = {};
 let running = false, dragLook = false, dragging = false, typing = false, showDebug = false;
-const overlay = $('overlay'), chalkIn = $('chalk');
+let toolsOpen = false, toolChoice = -1, wheelX = 0, wheelY = 0, restRequested = false;
+let mouseCharge = false, mouseFocus = false, padCharge = false, padFocus = false, chargeT = 0;
+let glowHeldAt = null, playRequest = 0, wheelSource = 'keyboard';
+const overlay = $('overlay'), chalkIn = $('chalk'), toolNames = ['chalk', 'whistle', 'rest'];
+const controlHelp = $('ov-body').innerHTML;
+function canAct() { return running && player.alive && !player.out; }
+function clearInputs() {
+  for (const k in keys) keys[k] = false;
+  for (const k in keyboard) keyboard[k] = false;
+  mouseCharge = mouseFocus = padCharge = padFocus = dragging = false;
+  glowHeldAt = null; chargeT = 0; beamNarrow = false;
+}
+function selectTool(x, y) {
+  wheelX = clamp(x, -120, 120); wheelY = clamp(y, -120, 120);
+  toolChoice = Math.hypot(wheelX, wheelY) < 22 ? -1 : wheelY < -Math.abs(wheelX) * 0.45 ? 0 : wheelX >= 0 ? 1 : 2;
+  $('wheel-cursor').style.transform = `translate(${wheelX}px, ${wheelY}px)`;
+  toolNames.forEach((name, i) => $('tool-' + name).classList.toggle('selected', i === toolChoice));
+}
+function openTools(source = 'keyboard') {
+  if (!canAct() || typing || toolsOpen) return;
+  if (notebookOpen) toggleNotebook();
+  clearInputs();
+  toolsOpen = true; wheelSource = source; mouseCharge = mouseFocus = false; glowHeldAt = null;
+  $('tools').hidden = false; selectTool(0, 0);
+  $('tools-help').innerHTML = source === 'gamepad' ? 'Right stick to choose · release Y to use<br>The cave keeps moving · Menu pauses' : 'Move the mouse to choose · release Q to use<br>The cave keeps moving · Esc pauses';
+}
+function closeTools(use = false) {
+  const choice = toolChoice;
+  toolsOpen = false; $('tools').hidden = true; selectTool(0, 0);
+  if (!use || !canAct() || choice < 0) return;
+  if (choice === 0) openChalk();
+  else if (choice === 1) whistle();
+  else {
+    if (restRequested) restRequested = false;
+    else if (player.grounded && !player.swim && player.wl - player.y < 0.2 && stuck === 0 && !roping && !climbing) { restRequested = true; clearInputs(); showHint('resting. move to stand up', true); }
+    else showHint('find dry, steady ground to rest');
+  }
+}
+for (const [i, name] of toolNames.entries()) $('tool-' + name).addEventListener('click', e => { e.stopPropagation(); toolChoice = i; closeTools(true); });
+function openChalk() {
+  typing = true; clearInputs(); chalkIn.value = ''; chalkIn.style.display = 'block'; chalkIn.focus();
+  showHint('write a note · Enter to mark · Esc to cancel', true);
+}
+function closeChalk() { typing = false; chalkIn.style.display = 'none'; chalkIn.blur(); }
+function beginGlow() { if (canAct() && !typing && !toolsOpen && !notebookOpen) glowHeldAt = performance.now(); }
+function releaseGlow() {
+  if (glowHeldAt === null) return;
+  const held = (performance.now() - glowHeldAt) / 1000; glowHeldAt = null;
+  if (!canAct() || typing || toolsOpen || notebookOpen) return;
+  if (held > 0.3) throwGlowstick(Math.min(1, (held - 0.3) / 0.9)); else dropGlowstick();
+}
+function pauseGame() {
+  if (!canAct()) return;
+  saveRun(); running = false; playRequest++; clearInputs(); closeTools();
+  if (typing) closeChalk();
+  $('ov-title').textContent = 'PAUSED'; $('ov-sub').textContent = 'take a breath. the cave can wait.';
+  $('ov-body').innerHTML = controlHelp; $('go').textContent = 'CONTINUE';
+  $('menu-actions').hidden = false; $('abandon-confirm').hidden = true;
+  overlay.classList.remove('hidden'); overlay.classList.remove('over');
+  if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+  sfx.ctx.suspend().catch(() => {});
+}
+function requestPlay() {
+  if (player.out) { newCave(); return; }
+  if (!player.alive) { sameCave(); return; }
+  const request = ++playRequest; sfx.resume();
+  if (!canvas.requestPointerLock) { dragLook = true; start(); return; }
+  try {
+    const result = canvas.requestPointerLock({ unadjustedMovement: true });
+    if (result && result.catch) result.catch(() => { if (request === playRequest) { dragLook = true; start(); } });
+  } catch (e) { if (request === playRequest) { dragLook = true; start(); } }
+}
+$('go').addEventListener('click', requestPlay);
+$('abandon').addEventListener('click', () => { $('abandon-confirm').hidden = false; $('keep-cave').focus(); });
+$('keep-cave').addEventListener('click', () => { $('abandon-confirm').hidden = true; $('abandon').focus(); });
+$('leave-cave').addEventListener('click', newCave);
 addEventListener('keydown', e => {
-  if (typing) {
-    if (e.code === 'Enter') { const t = chalkIn.value.trim(); closeChalk(); if (t) placeMark(t); }
-    else if (e.code === 'Escape') closeChalk();
+  if (e.code === 'Escape') {
+    e.preventDefault();
+    if (typing) closeChalk();
+    if (canAct()) pauseGame();
+    else if (!$('abandon-confirm').hidden) $('abandon-confirm').hidden = true;
     return;
   }
-  keys[e.code] = true; keys['_kb' + e.code.replace('Key', '').replace('Left', '')] = true;
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
-  if (e.code === 'Backquote') showDebug = !showDebug;
-  if (e.code === 'KeyN' && (!player.alive || !running)) { newCave(); return; }
-  if (e.code === 'KeyM' && !e.repeat && running) toggleNotebook();
-  if (!running || !player.alive || player.out) return;
-  if (e.code === 'KeyF' && !e.repeat) shakeTorch();
-  if (e.code === 'KeyT' && !e.repeat) { e.preventDefault(); openChalk(); }
-  if (e.code === 'KeyG' && !e.repeat) gHeldAt = performance.now();
-  if (e.code === 'KeyH' && !e.repeat) whistle();
-  if (e.code === 'KeyV' && !e.repeat) { hudHidden = !hudHidden; for (const id of ['torchm', 'breathm', 'hint', 'hud']) $(id).style.visibility = hudHidden ? 'hidden' : ''; }
-  if (e.code === 'KeyQ' && !e.repeat && torchHeld) { beamNarrow = !beamNarrow; sfx.play('torch_click', { vol: 0.5, rate: beamNarrow ? 1.3 : 1.0 }); showHint(beamNarrow ? 'spot: further, and nothing to either side' : 'flood: wide, and not far'); }
-  if (e.code === 'KeyE' && !e.repeat) useRope();
+  if (typing) {
+    if (e.code === 'Enter') { e.preventDefault(); const text = chalkIn.value.trim(); closeChalk(); if (text) placeMark(text); }
+    return;
+  }
+  if (!canAct()) return;
+  if (['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyQ'].includes(e.code)) e.preventDefault();
+  if (toolsOpen) return;
+  if (notebookOpen) { if (e.code === 'Tab' && !e.repeat) toggleNotebook(); return; }
+  keyboard[e.code] = keys[e.code] = true;
+  if (e.code === 'Backquote' && !e.repeat) showDebug = !showDebug;
+  if (e.code === 'Tab' && !e.repeat && !toolsOpen) { mouseCharge = mouseFocus = false; glowHeldAt = null; toggleNotebook(); }
+  if (e.code === 'KeyQ' && !e.repeat) openTools();
+  if (toolsOpen || notebookOpen) return;
+  if (e.code === 'KeyG' && !e.repeat) beginGlow();
+  if (e.code === 'KeyE' && !e.repeat) { restRequested = false; useRope(); }
 });
 addEventListener('keyup', e => {
-  keys[e.code] = false; keys['_kb' + e.code.replace('Key', '').replace('Left', '')] = false;
-  if (e.code === 'KeyG' && gHeldAt && running && player.alive && !player.out && !typing) { const held = (performance.now() - gHeldAt) / 1000; gHeldAt = 0; if (held > 0.3) throwGlowstick(Math.min(1, (held - 0.3) / 0.9)); else dropGlowstick(); }
+  keyboard[e.code] = keys[e.code] = false;
+  if (e.code === 'KeyQ' && toolsOpen && wheelSource === 'keyboard') closeTools(true);
+  if (e.code === 'KeyG') releaseGlow();
 });
-let gHeldAt = 0;
-function openChalk() { typing = true; for (const k in keys) keys[k] = false; chalkIn.value = ''; chalkIn.style.display = 'block'; chalkIn.focus(); }
-function closeChalk() { typing = false; chalkIn.style.display = 'none'; chalkIn.blur(); canvas.focus(); }
-let settings = { sens: 1, vol: 0.9, inv: false };
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('mousedown', e => {
+  if (!canAct() || typing || toolsOpen || notebookOpen) return;
+  if (e.button === 0) { mouseCharge = true; restRequested = false; }
+  if (e.button === 2) mouseFocus = true;
+  // If pointer lock is unavailable, middle-drag looks without also charging or focusing.
+  if (e.button === 1) { e.preventDefault(); dragging = true; }
+});
+addEventListener('mouseup', e => { if (e.button === 0) mouseCharge = false; if (e.button === 2) mouseFocus = false; if (e.button === 1) dragging = false; });
+function look(dx, dy) { player.yaw -= dx * 0.0022 * settings.sens; player.pitch = clamp(player.pitch - dy * 0.0022 * settings.sens * (settings.inv ? -1 : 1), -1.5, 1.5); }
+addEventListener('mousemove', e => {
+  if (!canAct() || typing) return;
+  if (toolsOpen) { selectTool(wheelX + e.movementX, wheelY + e.movementY); return; }
+  if (!notebookOpen && (document.pointerLockElement === canvas || (dragLook && dragging))) look(e.movementX, e.movementY);
+});
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === canvas) { dragLook = false; if (!running) start(); }
+  else if (canAct()) pauseGame();
+});
+addEventListener('blur', () => { if (canAct()) pauseGame(); else { clearInputs(); playRequest++; } });
+document.addEventListener('visibilitychange', () => { if (document.hidden && canAct()) pauseGame(); });
+let settings = { sens: 1, vol: 0.9, inv: false, hud: true };
 try { settings = Object.assign(settings, JSON.parse(localStorage.getItem('karst.settings') || '{}')); } catch (e) {}
 function applySettings() {
-  $('s-sens').value = settings.sens; $('s-vol').value = settings.vol; $('s-inv').checked = settings.inv;
+  $('s-sens').value = settings.sens; $('s-vol').value = settings.vol; $('s-inv').checked = settings.inv; $('s-hud').checked = settings.hud;
+  for (const id of ['torchm', 'breathm', 'hint', 'hud', 'context']) $(id).style.visibility = settings.hud ? 'visible' : 'hidden';
   if (sfx.master) sfx.master.gain.value = settings.vol;
   try { localStorage.setItem('karst.settings', JSON.stringify(settings)); } catch (e) {}
 }
 $('s-sens').addEventListener('input', e => { settings.sens = +e.target.value; applySettings(); });
 $('s-vol').addEventListener('input', e => { settings.vol = +e.target.value; applySettings(); });
 $('s-inv').addEventListener('change', e => { settings.inv = e.target.checked; applySettings(); });
-// a gamepad, if there is one: sticks move and look, A hop/climb, B crouch, X shake, Y whistle, LB beam, RB glowstick, LT run, start survey, back rope
+$('s-hud').addEventListener('change', e => { settings.hud = e.target.checked; applySettings(); });
 const padPrev = {}; let padSeen = false;
 function pollGamepad(dt) {
-  const pads = navigator.getGamepads ? navigator.getGamepads() : []; let gp = null; for (const g of pads) if (g && g.connected) { gp = g; break; }
-  if (!gp) return;
-  if (!padSeen) { padSeen = true; showHint('controller: sticks move and look · A hop · B crouch · X shake · Y whistle · LB beam · RB glowstick · LT run · start survey', true); }
-  const dz = (v) => Math.abs(v) < 0.18 ? 0 : v;
-  const lx = dz(gp.axes[0] || 0), ly = dz(gp.axes[1] || 0), rx = dz(gp.axes[2] || 0), ry = dz(gp.axes[3] || 0);
-  keys.KeyW = ly < -0.3 || keys._kbW; keys.KeyS = ly > 0.3 || keys._kbS; keys.KeyA = lx < -0.3 || keys._kbA; keys.KeyD = lx > 0.3 || keys._kbD;
-  if (rx || ry) look(rx * 900 * dt, ry * 700 * dt);
-  const b = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
-  keys.Space = b(0) || keys._kbSpace; keys.KeyC = b(1) || keys._kbC; keys.ShiftLeft = b(6) || keys._kbShift; keys._padRest = b(13);
-  const edge = (i) => { const now = b(i), was = !!padPrev[i]; padPrev[i] = now; return now && !was; };
-  if (!running) { if (edge(0) || edge(9)) overlay.click(); return; }
-  if (edge(2)) shakeTorch(); if (edge(3)) whistle(); if (edge(5)) throwGlowstick(0.5); if (edge(9)) toggleNotebook(); if (edge(8)) useRope();
-  if (edge(4) && torchHeld) { beamNarrow = !beamNarrow; sfx.play('torch_click', { vol: 0.5, rate: beamNarrow ? 1.3 : 1.0 }); showHint(beamNarrow ? 'spot: further, and nothing to either side' : 'flood: wide, and not far'); }
+  const pads = navigator.getGamepads ? navigator.getGamepads() : []; let gp = null;
+  for (const g of pads) if (g && g.connected) { gp = g; break; }
+  const merged = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'Space', 'KeyC', 'ShiftLeft'];
+  if (!gp) {
+    if (padSeen) { for (const k of merged) keys[k] = !!keyboard[k]; padSeen = false; padCharge = padFocus = false; glowHeldAt = null; for (const k in padPrev) delete padPrev[k]; if (toolsOpen && wheelSource === 'gamepad') closeTools(); }
+    return;
+  }
+  padSeen = true;
+  const pressed = Array.from({ length: 16 }, (_, i) => !!gp.buttons[i]?.pressed);
+  const down = i => pressed[i] && !padPrev[i], up = i => !pressed[i] && padPrev[i];
+  const finish = () => pressed.forEach((v, i) => { padPrev[i] = v; });
+  if (!canAct()) { if (down(0) || down(9)) { if (!$('abandon-confirm').hidden) $('abandon-confirm').hidden = true; else if (!overlay.classList.contains('hidden')) { if (!player.alive || player.out) requestPlay(); else { dragLook = true; start(); } } } finish(); return; }
+  if (down(9)) { pauseGame(); finish(); return; }
+  if (typing) { if (down(1)) closeChalk(); finish(); return; }
+  const lx = gp.axes[0] || 0, ly = gp.axes[1] || 0, rx = gp.axes[2] || 0, ry = gp.axes[3] || 0;
+  for (const [code, value] of Object.entries({ KeyW: ly < -0.3, KeyS: ly > 0.3, KeyA: lx < -0.3, KeyD: lx > 0.3, Space: pressed[0], KeyC: pressed[1], ShiftLeft: pressed[6] })) keys[code] = value || !!keyboard[code];
+  if (down(3)) openTools('gamepad');
+  if (toolsOpen) { for (const k of merged) keys[k] = false; padCharge = padFocus = false; if (wheelSource === 'gamepad') { if (up(3)) closeTools(true); else selectTool(rx * 120, ry * 120); } finish(); return; }
+  if (down(8)) toggleNotebook();
+  if (notebookOpen) { for (const k of merged) keys[k] = false; }
+  if (!notebookOpen) {
+    if (Math.abs(rx) > 0.18 || Math.abs(ry) > 0.18) look((Math.abs(rx) > 0.18 ? rx : 0) * 900 * dt, (Math.abs(ry) > 0.18 ? ry : 0) * 700 * dt);
+    if (down(12)) { restRequested = false; useRope(); }
+    if (down(5)) beginGlow(); if (up(5)) releaseGlow();
+  }
+  padCharge = pressed[2] && !notebookOpen; padFocus = pressed[4] && !notebookOpen;
+  if (padCharge) restRequested = false;
+  finish();
 }
-function look(dx, dy) { player.yaw -= dx * 0.0022 * settings.sens; player.pitch = clamp(player.pitch - dy * 0.0022 * settings.sens * (settings.inv ? -1 : 1), -1.5, 1.5); }
-addEventListener('mousemove', e => { if (document.pointerLockElement === canvas || (dragLook && dragging)) look(e.movementX, e.movementY); });
-canvas.addEventListener('mousedown', () => { dragging = true; }); addEventListener('mouseup', () => { dragging = false; });
-overlay.addEventListener('click', () => {
-  sfx.resume();
-  if (player.out) { newCave(); return; }
-  if (!player.alive) { sameCave(); return; }
-  if (!canvas.requestPointerLock) { dragLook = true; start(); return; }
-  const p = canvas.requestPointerLock({ unadjustedMovement: true });
-  if (p && p.catch) p.catch(() => { dragLook = true; start(); });
-});
-document.addEventListener('pointerlockchange', () => {
-  if (document.pointerLockElement === canvas) start();
-  else if (!dragLook && player.alive && !player.out) { running = false; overlay.classList.remove('hidden'); $('go').innerHTML = 'CLICK TO CONTINUE &nbsp;·&nbsp; <span style="opacity:.6">N to give this cave up</span>'; }
-});
-document.addEventListener('pointerlockerror', () => { dragLook = true; start(); });
+function updateHeldControls(dt) {
+  const available = canAct() && !typing && !toolsOpen && !notebookOpen;
+  const focus = available && torchHeld && (mouseFocus || padFocus);
+  if (focus !== beamNarrow) { beamNarrow = focus; sfx.play('torch_click', { vol: 0.5, rate: focus ? 1.3 : 1.0 }); }
+  if (available && torchHeld && (mouseCharge || padCharge)) {
+    chargeT -= dt;
+    if (chargeT <= 0) { shakeTorch(); chargeT = 0.14; }
+  } else chargeT = 0;
+}
+function updateContext() {
+  let text = '';
+  if (canAct() && !typing && !toolsOpen && !notebookOpen) {
+    if (stuck > 0) text = stuckTight ? 'Hold C / B to breathe out · release to breathe' : 'Alternate left and right to work free';
+    else if (roping) text = 'On the rope';
+    else if (resting) text = 'Resting · move to stand up';
+    else if (G.chimneyAt(player.x, player.y + 1.5, player.z)) text = padSeen ? 'Hold A to climb' : 'Hold Space to climb';
+    else if (ropes.some(r => Math.hypot(r.x - player.x, r.z - player.z) < 1.8 && Math.min(Math.abs(player.y - r.top), Math.abs(player.y - r.bottom)) < 1.8)) text = padSeen ? 'D-pad up · use rope' : 'E · use rope';
+    else if (nearestVoid() && player.rope > 0) text = padSeen ? 'D-pad up · rig rope' : 'E · rig rope';
+    else text = padSeen ? 'Hold X · charge   LB · focus   Y · tools   View · survey' : 'Hold left mouse · charge   right mouse · focus   Q · tools   Tab · survey';
+    if (dragLook && !padSeen) text += '   middle-drag · look';
+  }
+  $('context').textContent = text;
+  $('torchm').querySelector('.tag').textContent = padSeen ? 'hold X' : 'hold left mouse';
+}
+
 let introDone = false, resumed = false;
 function start() {
-  overlay.classList.add('hidden'); running = true;
+  overlay.classList.add('hidden'); overlay.classList.remove('over'); running = true;
+  $('abandon-confirm').hidden = true; clearInputs(); sfx.resume();
   if (!introDone && !resumed && cave.attempts === 1 && runTime < 1) {                  // the fall: white, a rush, the ground, then the hole far above
     introDone = true;
     const fl = $('flash'); fl.style.transition = 'none'; fl.style.opacity = 1; void fl.offsetWidth;
     player.pitch = 1.25; player.yaw = Math.atan2(-0.6, 0.4) + Math.PI;
     sfx.play('whoosh', { vol: 0.9, rate: 0.7 });
-    setTimeout(() => { sfx.play('body_fall', { vol: 1 }); sfx.play('rockfall', { vol: 0.6, rate: 0.9, dur: 1.5, wet: 0.8 }); camera.rotation.z = 0.12; fl.style.transition = 'opacity 3s ease-in'; fl.style.opacity = 0; $('hurt').style.opacity = 0.6; setTimeout(() => { $('hurt').style.opacity = 0; }, 1200); }, 900);
-    setTimeout(() => sfx.play('gasping', { vol: 0.6 }), 1900);
-    setTimeout(() => showHint('the hole you fell through. it is a long way up', true), 3200);
+    gameDelay(() => { sfx.play('body_fall', { vol: 1 }); sfx.play('rockfall', { vol: 0.6, rate: 0.9, dur: 1.5, wet: 0.8 }); camera.rotation.z = 0.12; fl.style.transition = 'opacity 3s ease-in'; fl.style.opacity = 0; $('hurt').style.opacity = 0.6; gameDelay(() => { $('hurt').style.opacity = 0; }, 1200); }, 900);
+    gameDelay(() => sfx.play('gasping', { vol: 0.6 }), 1900);
+    gameDelay(() => showHint('the hole you fell through. it is a long way up', true), 3200);
   } else if (!introDone) introDone = true;
 }
 if (matchMedia('(pointer: coarse)').matches) $('warn').style.display = 'block';
@@ -938,7 +1074,8 @@ if (cave.attempts > 1) $('ov-sub').textContent = 'the same cave. it remembers.';
 function saveRecord() { record.best = Math.max(record.best, player.dist); try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {} }
 let runTime = 0;
 function endScreen(title, sub, go) {
-  running = false; saveRecord();
+  running = false; clearInputs(); closeTools(); if (typing) closeChalk(); saveRecord();
+  $('menu-actions').hidden = false; $('abandon-confirm').hidden = true;
   delete cave.run; saveCave();
   const t = Math.round(runTime);
   $('ov-title').textContent = title; $('ov-sub').textContent = sub;
@@ -960,7 +1097,7 @@ function die(title, why, stat) {
   cave.marks.push(...runMarks); cave.places = (cave.places || []).concat(places.filter(p => !(cave.places || []).some(q => q.name === p.name)));
   cave.notes = (cave.notes || []).concat(notes.filter(n => !(cave.notes || []).some(q => q.t === n.t && Math.hypot(q.x - n.x, q.z - n.z) < 9))); saveCave();
   $('hurt').style.opacity = 0.9;
-  setTimeout(() => endScreen(title, why, 'CLICK TO GO BACK DOWN &nbsp;·&nbsp; <span style="opacity:.6">N for a new cave</span>'), 1400);
+  gameDelay(() => endScreen(title, why, 'TRY THIS CAVE AGAIN'), 1400);
 }
 function escape() {
   if (player.out) return; player.out = true; record.escapes++;
@@ -971,10 +1108,10 @@ function escape() {
       const names = [...new Set([...txt.matchAll(/ by ([^\u2014\n]+?) \u2014/g)].map(m => m[1].trim()))].filter(n => !/deleted_user/.test(n));
       const el = document.createElement('div'); el.className = 'rec'; el.style.marginTop = '14px'; el.style.opacity = '0.7'; el.style.maxWidth = '520px'; el.style.lineHeight = '1.7';
       el.textContent = 'every sound down there was recorded by someone and given away (CC0, on Freesound): ' + names.join(' · ');
-      setTimeout(() => $('ov-rec').after(el), 2600);
+      $('ov-rec').after(el);
     }).catch(() => {});
   }
-  setTimeout(() => endScreen('DAYLIGHT', `you found the way out. ${Math.round(runTime / 60) >= 1 ? `you were down there ${Math.round(runTime / 60)} minute${Math.round(runTime / 60) > 1 ? 's' : ''}. ` : ''}the next one is deeper.`, 'CLICK FOR A NEW CAVE'), 2400);
+  gameDelay(() => endScreen('DAYLIGHT', `you found the way out. ${Math.round(runTime / 60) >= 1 ? `you were down there ${Math.round(runTime / 60)} minute${Math.round(runTime / 60) > 1 ? 's' : ''}. ` : ''}the next one is deeper.`, 'CLICK FOR A NEW CAVE'), 2400);
 }
 function newCave() { location.href = location.pathname + '?seed=' + ((Math.random() * 1e9) | 0); }
 function sameCave() { location.href = location.pathname + '?seed=' + SEED; }
@@ -1120,7 +1257,7 @@ function updateSound(dt) {
       const bx = player.x - viewDir.x * rr(5, 9), bz = player.z - viewDir.z * rr(5, 9);       // behind you
       const r = Math.random();
       if (r < 0.5) {                                                                           // footsteps that stop when you turn
-        for (let k = 0; k < 3 + (Math.random() * 3 | 0); k++) setTimeout(() => sfx.play('step_rock', { x: bx + k * viewDir.x * 0.7, y: player.y, z: bz + k * viewDir.z * 0.7, vol: 0.28, wet: 0.8, rate: 0.9 }), k * 520);
+        for (let k = 0; k < 3 + (Math.random() * 3 | 0); k++) gameDelay(() => sfx.play('step_rock', { x: bx + k * viewDir.x * 0.7, y: player.y, z: bz + k * viewDir.z * 0.7, vol: 0.28, wet: 0.8, rate: 0.9 }), k * 520);
       } else if (r < 0.8 || dread < 0.5) {                                                    // a pebble, a settling
         sfx.play('rockfall', { x: bx, y: player.y + 1, z: bz, vol: 0.3, wet: 0.9, rate: 1.2, dur: 1.2 });
       } else {                                                                                 // breath, close
@@ -1179,7 +1316,7 @@ function footstep(kind) {
   if (following > 0 && kind !== 'swim' && kind !== 'crawl') {
     // one step behind, a little late, a little heavier — six or seven metres back along the passage
     const L = Math.hypot(lastMoveX, lastMoveZ) || 1, bx = player.x - lastMoveX / L * 6.5, bz = player.z - lastMoveZ / L * 6.5;
-    setTimeout(() => sfx.play(kind === 'wade' || kind === 'puddle' ? 'wade' : 'step_rock', { x: bx, y: player.y, z: bz, vol: 0.5, rate: 0.85, vary: 0.1, wet: 0.8, rolloff: 0.7 }), 260 + Math.random() * 120);
+    gameDelay(() => sfx.play(kind === 'wade' || kind === 'puddle' ? 'wade' : 'step_rock', { x: bx, y: player.y, z: bz, vol: 0.5, rate: 0.85, vary: 0.1, wet: 0.8, rolloff: 0.7 }), 260 + Math.random() * 120);
   }
   if (kind === 'wade') sfx.play('wade', { ...o, vol: 0.7 });
   else if (kind === 'puddle') sfx.play('splash_small', { ...o, vol: 0.5, rate: 1.2 });
@@ -1187,8 +1324,8 @@ function footstep(kind) {
   else if (kind === 'crawl') sfx.play(Math.random() < 0.5 ? 'drag' : 'scrape', { ...o, vol: 0.45, rate: 0.9 });
   else sfx.play(Math.random() < 0.3 ? 'step_gravel' : 'step_rock', { ...o, vol: kind === 'crouch' ? 0.35 : 0.55 });
   for (const b of bonePiles) {
-    if (Math.hypot(b.x - player.x, b.z - player.z) < b.r && Math.abs(b.y - player.y) < 2 && b.crunched < performance.now() - 4000) {
-      b.crunched = performance.now(); sfx.play('bone_crunch', { ...o, vol: 0.6 });
+    if (Math.hypot(b.x - player.x, b.z - player.z) < b.r && Math.abs(b.y - player.y) < 2 && b.crunched < gameClock - 4000) {
+      b.crunched = gameClock; sfx.play('bone_crunch', { ...o, vol: 0.6 });
       teach('bones', 'bones. someone came this way. their pack, if it’s here, is worth a look — and T writes on the wall');
     }
   }
@@ -1205,15 +1342,17 @@ function updatePlayer(dt) {
     camera.position.set(player.x, player.y + player.h - 0.1, player.z); camera.rotation.set(player.pitch, player.yaw, 0);
     G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z; return;
   }
-  // resting: hold R on dry ground — the torch goes off to save it, you sit, and the cold and the tiredness go, slowly. the dark is not empty
-  const wantRest = (keys.KeyR || keys._padRest) && player.grounded && !player.swim && (player.wl - player.y) < 0.2 && stuck === 0 && !climbing;
+  // Rest is selected from the tools wheel and ends when the player tries to move.
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'Space', 'KeyC', 'ControlLeft'].some(k => keys[k]) && !toolsOpen && !typing) restRequested = false;
+  const wantRest = restRequested && player.grounded && !player.swim && (player.wl - player.y) < 0.2 && stuck === 0 && !climbing;
+  if (!wantRest) restRequested = false;
   if (wantRest && !resting) { resting = true; restT = 0; sfx.play('torch_click', { vol: 0.5, rate: 0.9 }); teach('rest', 'sitting down, torch off. the cold goes, the legs come back; the battery is spared. listen while you wait'); }
   if (!wantRest && resting) { resting = false; sfx.play('torch_click', { vol: 0.5, rate: 1.1 }); }
   if (resting) { restT += dt; player.cold = Math.max(0, player.cold - dt / 12); player.stamina = Math.min(1, player.stamina + dt / 4); if (restT > 25 && Math.floor(restT) % 20 === 0 && Math.floor(restT) !== Math.floor(restT - dt)) showHint('still here'); }
-  const still = notebookOpen || stuck > 0 || resting;         // you stop walking to write; or the rock has you; or you are sitting
+  const still = notebookOpen || toolsOpen || typing || stuck > 0 || resting;         // you stop walking to write; or the rock has you; or you are sitting
   const f = !still && (keys.KeyW || keys.ArrowUp) ? 1 : 0, b = !still && (keys.KeyS || keys.ArrowDown) ? 1 : 0;
   const l = !still && (keys.KeyA || keys.ArrowLeft) ? 1 : 0, r = !still && (keys.KeyD || keys.ArrowRight) ? 1 : 0;
-  if (stuck > 0) {                                            // wiggle: alternate A and D to work yourself loose
+  if (stuck > 0 && !typing && !toolsOpen && !notebookOpen) {     // wiggle: alternate A and D to work yourself loose
     const side = keys.KeyA || keys.ArrowLeft ? -1 : keys.KeyD || keys.ArrowRight ? 1 : 0;
     if (side !== 0 && side !== stuckSide) { stuckSide = side; wiggles++; sfx.play('scrape', { x: player.x, y: player.y + 0.3, z: player.z, vol: 0.5, rate: 1.3, vary: 0.3, dur: 0.5, hrtf: false }); camera.rotation.z += side * 0.05;
       if (!stuckTight) stuck--;
@@ -1263,7 +1402,7 @@ function updatePlayer(dt) {
   if (player.swim) teach('swim', 'chest deep: you’re swimming. look down + W or C to dive. space to surface. watch your breath');
   if (!player.swim && player.h <= 0.52 && depthW > 0.18) teach('duck', 'flat out with your chin in the water. keep your head up, keep moving, and do not stop where it dips');
   if (player.under) teach('under', 'under. the bar at the top is your breath. turn back at half if you can’t see air');
-  if (player.battery < 0.3) teach('torch', 'the torch is dying. tap F to shake it — you’re blind while you do');
+  if (player.battery < 0.3) teach('torch-hold', 'the torch is dying. hold left mouse (X on controller) to charge — you’re blind while you do');
   if (player.hurt) teach('hurt', 'something is broken. you’re slower now, and a second fall will finish you');
   if (player.cold > 0.6) teach('cold', 'you’re cold. keep moving to warm up. too long and your hands stop working');
   player.sprint = sprintKey && ml > 0 && stance === 1 && !player.swim && player.stamina > 0.05 && !player.hurt;
@@ -1285,7 +1424,7 @@ function updatePlayer(dt) {
       if (lakeT <= 0) {
         lakeT = rr(35, 80);
         const a = Math.random() * Math.PI * 2, d = rr(4, 9);
-        if (Math.random() < 0.65) { sfx.play('splash', { x: player.x + Math.sin(a) * d, y: player.wl, z: player.z + Math.cos(a) * d, vol: 0.7, rate: 0.85, wet: 0.7, rolloff: 0.5 }); setTimeout(() => sfx.play('stroke', { x: player.x + Math.sin(a) * d * 0.7, y: player.wl, z: player.z + Math.cos(a) * d * 0.7, vol: 0.4, rate: 0.7, wet: 0.7 }), 900); showHint('something moved in the water'); }
+        if (Math.random() < 0.65) { sfx.play('splash', { x: player.x + Math.sin(a) * d, y: player.wl, z: player.z + Math.cos(a) * d, vol: 0.7, rate: 0.85, wet: 0.7, rolloff: 0.5 }); gameDelay(() => sfx.play('stroke', { x: player.x + Math.sin(a) * d * 0.7, y: player.wl, z: player.z + Math.cos(a) * d * 0.7, vol: 0.4, rate: 0.7, wet: 0.7 }), 900); showHint('something moved in the water'); }
         else { sfx.play('bubbles', { vol: 0.5, rate: 0.8, dur: 1.4 }); camera.rotation.z += (Math.random() - 0.5) * 0.08; player.vy -= 0.6; showHint('something touched your leg'); sfx.play('gasp', { vol: 0.7 }); }
         lakeFear = 1;
       }
@@ -1336,9 +1475,9 @@ function updatePlayer(dt) {
         sfx.play('body_fall', { vol: 0.9 }); sfx.play('gasping', { vol: 0.7 });
         if (player.hurt) die('THE SECOND FALL', 'something gave way, then you did', 'fell');
         else {
-          player.hurt = true; $('hurt').style.opacity = 0.7; setTimeout(() => { $('hurt').style.opacity = 0; }, 900);
+          player.hurt = true; $('hurt').style.opacity = 0.7; gameDelay(() => { $('hurt').style.opacity = 0; }, 900);
           if (torchHeld && Math.random() < 0.45) dropTorch(); else showHint('something is broken');
-          if (player.kit) setTimeout(() => { if (player.hurt && player.alive) { player.hurt = false; player.kit = false; showHint('you use the kit. it holds, for now', true); } }, 4000);
+          if (player.kit) gameDelay(() => { if (player.hurt && player.alive) { player.hurt = false; player.kit = false; showHint('you use the kit. it holds, for now', true); } }, 4000);
         }
       } else if (hEq > 1.2) sfx.play(soft ? 'splash' : 'body_fall', { vol: soft ? 0.8 : 0.4 });
       player.airT = 0; player.whooshed = false;
@@ -1419,8 +1558,8 @@ function updatePlayer(dt) {
     if (v.kicked || Math.hypot(v.x - player.x, v.z - player.z) > 2.6 || Math.abs(v.top - player.y) > 1.5) continue;
     v.kicked = true; const h = Math.max(1, v.top - v.y), delay = Math.sqrt(2 * h / 9.8);
     sfx.play('step_gravel', { x: v.x, y: v.top, z: v.z, vol: 0.5, rate: 1.3 });
-    setTimeout(() => sfx.play(v.wet ? 'splash_small' : 'rockfall', { x: v.x, y: v.y, z: v.z, vol: v.wet ? 0.6 : 0.45, rate: 1.2, dur: 0.7, wet: 0.9, rolloff: 0.5 }), delay * 1000);
-    if (h > 5) setTimeout(() => sfx.play('rockfall', { x: v.x, y: v.y, z: v.z, vol: 0.25, rate: 1.5, dur: 0.5, wet: 1.0, rolloff: 0.4 }), delay * 1000 + 350);
+    gameDelay(() => sfx.play(v.wet ? 'splash_small' : 'rockfall', { x: v.x, y: v.y, z: v.z, vol: v.wet ? 0.6 : 0.45, rate: 1.2, dur: 0.7, wet: 0.9, rolloff: 0.5 }), delay * 1000);
+    if (h > 5) gameDelay(() => sfx.play('rockfall', { x: v.x, y: v.y, z: v.z, vol: 0.25, rate: 1.5, dur: 0.5, wet: 1.0, rolloff: 0.4 }), delay * 1000 + 350);
     teach('edge', h > 5 ? 'that stone took a while to land. there is a drop here' : 'a stone went over an edge, close by');
   }
   if (player.under && !wasUnder) surveyNote('sump', player.x, player.z);
@@ -1473,7 +1612,7 @@ function updatePlayer(dt) {
   if (phase !== player.stepPhase) { player.stepPhase = phase; if (moving) footstep(stepKind); }
   const bobA = moving ? (player.swim ? 0.02 : 0.028 * stance) : 0;
   const limp = player.hurt ? Math.sin(player.bob * 0.5) * 0.02 : 0;
-  const shiver = player.cold > 0.35 ? (player.cold - 0.35) * 0.012 * Math.sin(performance.now() * 0.041) * Math.sin(performance.now() * 0.0173) : 0;
+  const shiver = player.cold > 0.35 ? (player.cold - 0.35) * 0.012 * Math.sin(gameClock * 0.041) * Math.sin(gameClock * 0.0173) : 0;
   camera.position.set(player.x + Math.cos(player.bob * 0.5) * bobA * 0.6, player.y + player.h - 0.1 + Math.sin(player.bob) * bobA, player.z);
   camera.rotation.set(player.pitch + shiver, player.yaw + shiver * 0.7, Math.sin(player.bob * 0.5) * bobA * 0.35 + limp + shiver);
   camera.fov += (lerp(58, 75, (player.h - 0.5) / 1.22) - camera.fov) * Math.min(1, dt * 6);
@@ -1482,9 +1621,9 @@ function updatePlayer(dt) {
 }
 
 // ---------- torch ----------
-let adapt = 1, shakeT = 0, lastShake = 0, buzzT = 0, dropT = 0;
+let adapt = 1, shakeT = 0, lastShake = -Infinity, buzzT = 0, dropT = 0;
 const _fwd = new THREE.Vector3(), _dropE = new THREE.Euler();
-let torchDrifting = false, beamNarrow = false, hudHidden = false;
+let torchDrifting = false, beamNarrow = false;
 function dropTorch() {
   torchHeld = false; hand.visible = false; torchM.classList.add('gone'); dropT = 1.5; torchDrifting = false;
   hand.userData.torchModel.position.set(0.16, -0.14, 0.02); hand.userData.torchModel.rotation.set(0, 0, 0);   // lies where the light comes from
@@ -1503,7 +1642,7 @@ function dropTorch() {
 const shakeQ = new THREE.Quaternion(), shakeE = new THREE.Euler();
 function shakeTorch() {
   if (!torchHeld) { showHint('you are not holding it'); return; }
-  const now = performance.now(); if (now - lastShake < 100) return; lastShake = now;
+  const now = gameClock; if (now - lastShake < 100) return; lastShake = now;
   const tired = 1 - 0.45 * clamp((runTime - 900) / 1500, 0, 1) * (1 - 0.5 * clamp((resting ? 1 : 0), 0, 1));   // after fifteen minutes the arm gives less; resting helps a little
   player.battery = Math.min(1, player.battery + 0.025 * tired * (player.battery > 0.6 ? 0.5 : 1) * (player.hurt ? 0.7 : 1));
   if (tired < 0.8) teach('tired', 'your arm is tired. the shake gives less than it did');
@@ -1529,14 +1668,14 @@ function updateTorch(dt) {
     // cold hands: the beam shivers, and so does the hand in front of you
     const shiver = player.cold > 0.45 ? (player.cold - 0.45) * (coldT > 40 ? 3.2 : 1.6) : 0;
     if (shiver > 0) {
-      const t = performance.now() * 0.001;
+      const t = gameClock * 0.001;
       torch.rotateX((Math.sin(t * 23.0) + Math.sin(t * 31.7)) * 0.006 * shiver); torch.rotateY((Math.sin(t * 27.3) + Math.sin(t * 19.1)) * 0.006 * shiver);
       hand.position.set(0.21 + Math.sin(t * 29) * 0.004 * shiver, -0.22 + Math.sin(t * 37) * 0.004 * shiver, -0.4);
     }
   }
   // breath fog when you are cold, in the beam, in front of your face
   if (player.cold > 0.35 && !player.under) {
-    const ph = (player.bob * 0.35 + performance.now() * 0.0009) % (Math.PI * 2), puffK = Math.max(0, Math.sin(ph));
+    const ph = (player.bob * 0.35 + gameClock * 0.0009) % (Math.PI * 2), puffK = Math.max(0, Math.sin(ph));
     fog.visible = true; fog.material.opacity = 0.16 * (player.cold - 0.35) * puffK;
     fog.position.set(0, -0.06 + puffK * 0.02, -0.32 - puffK * 0.12); fog.scale.setScalar(0.12 + puffK * 0.1);
   } else fog.visible = false;
@@ -1556,7 +1695,7 @@ function updateTorch(dt) {
     if (G.fieldAt(camera.position.x + viewDir.x * t, camera.position.y + viewDir.y * t, camera.position.z + viewDir.z * t) > -0.05) { ahead = t; break; }
   }
   adapt += (clamp(0.15 + ahead / 2.4, 0.2, 1) - adapt) * Math.min(1, dt * 3);
-  const t = performance.now() * 0.001;
+  const t = gameClock * 0.001;
   let level = resting ? 0 : torchLevel(player.battery);
   // a dying torch stutters; while you shake it the contact is broken and you're in the dark
   if (player.battery < 0.3 && Math.random() < (0.3 - player.battery) * 0.3) { stutter = 0.15; if (buzzT <= 0) { sfx.play('bulb_buzz', { vol: 0.35, offset: Math.random() * 3, dur: 0.6 }); buzzT = 1.5; } }
@@ -1625,8 +1764,8 @@ function updateCrosser(dt) {
   if (!crosser.gone) {
     crosser.gone = true; for (const e of crosserEyes) e.visible = false;
     crosserMesh.rotation.y = Math.atan2(crosser.x1 - crosser.x0, crosser.z1 - crosser.z0) - Math.PI / 2;
-    for (let k = 0; k < 5; k++) setTimeout(() => sfx.play('step_rock', { x: crosser ? crosserMesh.position.x : crosser.x0, y: crosser.y, z: crosser ? crosserMesh.position.z : crosser.z0, vol: 0.5, rate: 1.5, vary: 0.25, wet: 0.7 }), k * 90);
-    setTimeout(() => sfx.play('rockfall', { x: crosser.x1, y: crosser.y, z: crosser.z1, vol: 0.28, rate: 1.3, dur: 1.0, wet: 0.8 }), 450);
+    for (let k = 0; k < 5; k++) gameDelay(() => sfx.play('step_rock', { x: crosser ? crosserMesh.position.x : crosser.x0, y: crosser.y, z: crosser ? crosserMesh.position.z : crosser.z0, vol: 0.5, rate: 1.5, vary: 0.25, wet: 0.7 }), k * 90);
+    gameDelay(() => sfx.play('rockfall', { x: crosser.x1, y: crosser.y, z: crosser.z1, vol: 0.28, rate: 1.3, dur: 1.0, wet: 0.8 }), 450);
   }
   const k = Math.min(1, (crosser.t - crosser.hold) / crosser.dur);
   crosserMesh.position.set(crosser.x0 + (crosser.x1 - crosser.x0) * k, crosser.y, crosser.z0 + (crosser.z1 - crosser.z0) * k);
@@ -1685,7 +1824,7 @@ function updateLoose(dt) {
       if (L.strain > L.patience) {
         L.state = 'warning'; L.t = 0;
         sfx.play('rattle', { x: L.x, y: L.y, z: L.z, vol: 0.9, rate: 0.85, wet: 0.7, rolloff: 0.5 });
-        setTimeout(() => sfx.play('rockfall', { x: L.x, y: L.y, z: L.z, vol: 0.5, rate: 1.2, dur: 0.9, wet: 0.7 }), 350);
+        gameDelay(() => sfx.play('rockfall', { x: L.x, y: L.y, z: L.z, vol: 0.5, rate: 1.2, dur: 0.9, wet: 0.7 }), 350);
         teach('loose', 'something moved up there. do not stand under it');
       }
     } else if (L.state === 'warning') {
@@ -1701,15 +1840,41 @@ function updateLoose(dt) {
         const near = hd < L.r + 0.55, close = hd < L.r + 2.2;
         if (near && Math.abs(player.y - L.rest) < 2.2) {
           if (L.r > 0.7 || player.hurt) { sfx.play('body_fall', { vol: 1 }); die('THE ROOF CAME DOWN', `a block the size of a car, from ${(L.y - L.rest).toFixed(0)} metres up`, 'crushed'); }
-          else { player.hurt = true; $('hurt').style.opacity = 0.8; setTimeout(() => { $('hurt').style.opacity = 0; }, 900); sfx.play('gasping', { vol: 0.8 }); showHint('it caught your leg. something is broken'); if (torchHeld && Math.random() < 0.5) dropTorch(); }
+          else { player.hurt = true; $('hurt').style.opacity = 0.8; gameDelay(() => { $('hurt').style.opacity = 0; }, 900); sfx.play('gasping', { vol: 0.8 }); showHint('it caught your leg. something is broken'); if (torchHeld && Math.random() < 0.5) dropTorch(); }
         } else if (close) { sfx.play('gasp', { vol: 0.7 }); showHint('that was close'); }
-        for (let k = 0; k < 5; k++) setTimeout(() => sfx.play('rockfall', { x: L.x + rr(-2, 2), y: L.rest, z: L.z + rr(-2, 2), vol: 0.35, rate: rr(0.9, 1.3), dur: 0.8, wet: 0.7 }), 300 + k * 260);
+        for (let k = 0; k < 5; k++) gameDelay(() => sfx.play('rockfall', { x: L.x + rr(-2, 2), y: L.rest, z: L.z + rr(-2, 2), vol: 0.35, rate: rr(0.9, 1.3), dur: 0.8, wet: 0.7 }), 300 + k * 260);
       }
     }
   }
   lastLooseX = player.x; lastLooseZ = player.z;
 }
 let lastLooseX = 0, lastLooseZ = 0;
+
+// ---------- false floors: a crust over a shaft ----------
+const falseFloors = [];
+function updateFalseFloors(dt) {
+  if (!running || !player.alive || player.out) return;
+  for (const f of falseFloors) {
+    if (f.state === 'gone' || !f.slab) continue;
+    const hd = Math.hypot(player.x - f.x, player.z - f.z), onIt = hd < f.r - 0.4 && Math.abs(player.y - f.y) < 0.9 && player.grounded;
+    if (f.state === 'whole') {
+      if (onIt) { f.state = 'cracking'; f.t = 0; sfx.play('rattle', { x: f.x, y: f.y, z: f.z, vol: 0.8, rate: 0.7, wet: 0.5 }); sfx.play('rockfall', { x: f.x, y: f.y - 3, z: f.z, vol: 0.4, rate: 1.4, dur: 0.6, wet: 0.9 }); showHint('the floor moved', true); }
+    } else if (f.state === 'cracking') {
+      f.t += dt; camera.rotation.z += (Math.random() - 0.5) * 0.01;
+      if (f.t > 0.75) {
+        f.state = 'gone'; G.breakSlab(f.slab);
+        sfx.play('rockslide', { x: f.x, y: f.y - 2, z: f.z, vol: 0.9, wet: 0.9, rolloff: 0.4 }); sfx.play('gasp', { vol: 0.8 });
+        for (let k = 0; k < 4; k++) gameDelay(() => sfx.play('rockfall', { x: f.x, y: f.bottom, z: f.z, vol: 0.45, rate: rr(0.9, 1.2), dur: 0.8, wet: 0.9 }), 500 + k * 250);
+        if (onIt || hd < f.r) { player.grounded = false; player.vy = Math.min(player.vy, -0.5); teach('falsefloor', 'that was not floor. it was a crust of mud over a hole, and it took the weight for as long as it did'); }
+        cave.broken = (cave.broken || []).concat([`${f.x.toFixed(0)},${f.z.toFixed(0)}`]); saveCave();
+      }
+    }
+  }
+}
+function restoreBrokenFloors() {
+  if (!cave.broken) return;
+  for (const f of falseFloors) if (f.state === 'whole' && f.slab && cave.broken.includes(`${f.x.toFixed(0)},${f.z.toFixed(0)}`)) { f.state = 'gone'; G.breakSlab(f.slab); }
+}
 
 // ---------- the passage that closes behind you ----------
 const collapsed = new Set(); let collapseT = 0; const unstableNear = [];
@@ -1725,9 +1890,9 @@ function updateCollapse(dt) {
       // you are through, and farther in than it is: it comes down behind you
       collapsed.add(key); cave.collapsed = (cave.collapsed || []).concat([key]); saveCave();
       sfx.play('rattle', { x: n.x, y: n.y + 0.5, z: n.z, vol: 0.8, rate: 0.8, wet: 0.7, rolloff: 0.5 });
-      setTimeout(() => { sfx.play('rockslide', { x: n.x, y: n.y + 0.5, z: n.z, vol: 1.0, wet: 0.9, rolloff: 0.3 }); sfx.play('rumble', { x: n.x, y: n.y + 0.5, z: n.z, vol: 0.9, rate: 0.8, dur: 3, wet: 0.8, rolloff: 0.3 }); G.collapseAt(n); }, 700);
-      for (let k = 0; k < 6; k++) setTimeout(() => sfx.play('rockfall', { x: n.x + rr(-1.5, 1.5), y: n.y + 0.3, z: n.z + rr(-1.5, 1.5), vol: 0.4, rate: rr(0.8, 1.2), dur: 0.8, wet: 0.7 }), 900 + k * 220);
-      setTimeout(() => { showHint('the roof came down behind you. that way is gone', true); sfx.play('gasp', { vol: 0.6 }); }, 1600);
+      gameDelay(() => { sfx.play('rockslide', { x: n.x, y: n.y + 0.5, z: n.z, vol: 1.0, wet: 0.9, rolloff: 0.3 }); sfx.play('rumble', { x: n.x, y: n.y + 0.5, z: n.z, vol: 0.9, rate: 0.8, dur: 3, wet: 0.8, rolloff: 0.3 }); G.collapseAt(n); }, 700);
+      for (let k = 0; k < 6; k++) gameDelay(() => sfx.play('rockfall', { x: n.x + rr(-1.5, 1.5), y: n.y + 0.3, z: n.z + rr(-1.5, 1.5), vol: 0.4, rate: rr(0.8, 1.2), dur: 0.8, wet: 0.7 }), 900 + k * 220);
+      gameDelay(() => { showHint('the roof came down behind you. that way is gone', true); sfx.play('gasp', { vol: 0.6 }); }, 1600);
     }
   }
 }
@@ -1784,7 +1949,7 @@ function updateFlood(dt) {
     if (runTime > floodAt) {
       floodPhase = 'rising'; floodT = 0; floodPeak = rr(0.7, 1.15);
       sfx.play('rumble', { vol: 0.7, rate: 0.6, dur: 6, wet: 0.9 });
-      setTimeout(() => showHint('listen. the water is rising', true), 2500);
+      gameDelay(() => showHint('listen. the water is rising', true), 2500);
       teach('flood', 'it rained up top. the streams and the sumps will run higher for a while — stay out of them, or be quick');
     }
     return;
@@ -1806,11 +1971,11 @@ function updateTremor(dt) {
   if (runTime < tremorAt) return;
   tremorAt = runTime + rr(600, 1200); tremorT = 4.5;
   sfx.play('rumble', { vol: 1.0, rate: 0.55, dur: 6, wet: 1.0 });
-  for (let k = 0; k < 7; k++) setTimeout(() => sfx.play('rockfall', { x: player.x + rr(-14, 14), y: player.y + rr(0, 4), z: player.z + rr(-14, 14), vol: rr(0.3, 0.6), rate: rr(0.8, 1.2), dur: 1.0, wet: 0.9, rolloff: 0.5 }), 400 + k * rr(200, 600));
-  setTimeout(() => sfx.play('gasp', { vol: 0.6 }), 700);
+  for (let k = 0; k < 7; k++) gameDelay(() => sfx.play('rockfall', { x: player.x + rr(-14, 14), y: player.y + rr(0, 4), z: player.z + rr(-14, 14), vol: rr(0.3, 0.6), rate: rr(0.8, 1.2), dur: 1.0, wet: 0.9, rolloff: 0.5 }), 400 + k * rr(200, 600));
+  gameDelay(() => sfx.play('gasp', { vol: 0.6 }), 700);
   // anything loose within earshot lets go
   for (const L of loose) if (L.state === 'hanging' && Math.hypot(L.x - player.x, L.z - player.z) < 30) { L.state = 'warning'; L.t = Math.random() * 0.6; }
-  for (const r of roosts) if (!r.spooked && Math.hypot(r.x - player.x, r.z - player.z) < 25) setTimeout(() => spookRoost(r), 600);
+  for (const r of roosts) if (!r.spooked && Math.hypot(r.x - player.x, r.z - player.z) < 25) gameDelay(() => spookRoost(r), 600);
   showHint('the rock moved. all of it', true);
   teach('tremor', 'that was the hill settling. it happens. what it shakes loose is the problem');
 }
@@ -1865,6 +2030,7 @@ function updatePlaces(dt) {
 let notebookOpen = false, nbTimer = 0;
 const nb = $('notebook'), nbc = $('nbc');
 function toggleNotebook() {
+  clearInputs();
   notebookOpen = !notebookOpen; nb.style.display = notebookOpen ? 'block' : 'none';
   if (notebookOpen) { drawNotebook(); sfx.play('scrape', { vol: 0.15, rate: 2.2, dur: 0.3 }); }
 }
@@ -2050,7 +2216,7 @@ function init() {
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
-               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, tremor: () => { tremorAt = 0; }, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; }, tight: (n) => { stuck = n; stuckTight = true; wiggles = 0; exhaleT = 0; } };
+               run: () => { running = true; overlay.classList.add('hidden'); sfx.resume(); }, pause: pauseGame, schedule: gameDelay, get controls() { return { running, toolsOpen, typing, beamNarrow, resting, restRequested, toolChoice, gameClock }; }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, tremor: () => { tremorAt = 0; }, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; }, tight: (n) => { stuck = n; stuckTight = true; wiggles = 0; exhaleT = 0; } };
 }
 init();
 // warm the shaders now, not the first time a lake or a loose block comes into view (a compile can cost a quarter second)
@@ -2076,11 +2242,15 @@ function frame(now) {
 function stepFrame(dt) {
   frameNo++;
   if (innerWidth !== lastW || innerHeight !== lastH) { lastW = innerWidth; lastH = innerHeight; resize(); }
+  pollGamepad(dt);
+  if (!running) { updateContext(); renderer.render(scene, camera); return; }
+  advanceGameTimers(dt);
+  if (!running) { updateContext(); renderer.render(scene, camera); return; }
+  updateHeldControls(dt);
   const tf = performance.now(); let tp = tf; const lap = (k) => { const n = performance.now(); if (n - tp > (stats.phase[k] || 0)) stats.phase[k] = n - tp; tp = n; };
   if (running && player.alive && !player.out) { updatePlayer(dt); runTime += dt; saveT += dt; if (saveT > 5) { saveT = 0; saveRun(); }
-    if (runTime > 40 && runTime < 41) teach('survey', 'M opens your survey — it only shows where you have been. T chalks the wall. G drops a glowstick'); }
+    if (runTime > 40 && runTime < 41) teach('survey-tools', 'Tab opens your survey. Hold Q for chalk, whistle and rest. G drops a glowstick; hold to throw'); }
   lap('player');
-  pollGamepad(dt);
   G.advanceWorms(3); lap('worms');
   G.scanChunks(dt, false, disposeChunk); lap('scan');
   processQueue(running ? 5 : 12); lap('queue');
@@ -2100,6 +2270,7 @@ function stepFrame(dt) {
   updateDraught(dt);
   updateOlms(dt);
   updateCollapse(dt);
+  updateFalseFloors(dt); if (frameNo % 30 === 0) restoreBrokenFloors();
   updateStreamSound(dt);
   waterUniforms.uTime.value += dt;
   updatePlaces(dt);
@@ -2108,7 +2279,7 @@ function stepFrame(dt) {
   updateCascades(dt); lap('systems');
   updateSound(dt); lap('sound');
   renderer.render(scene, camera); lap('render');
-  grain(); hud(dt); lap('hud');
+  grain(); hud(dt); updateContext(); lap('hud');
   stats.frameMs = performance.now() - tf;
 }
 requestAnimationFrame(frame);

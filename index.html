@@ -29,6 +29,22 @@
     font-variant-numeric: tabular-nums; user-select: none; pointer-events: none; white-space: nowrap; }
   #hud b { color: var(--bone); font-weight: 500; }
   #hint { position: fixed; left: 14px; bottom: 32px; font-size: 11px; letter-spacing: .08em; color: var(--dim); opacity: 0; transition: opacity .4s; pointer-events: none; }
+  #context { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: 65vw; text-align: center; color: var(--bone); font-size: 12px; pointer-events: none; text-shadow: 0 2px 4px #000; }
+  [hidden] { display: none !important; }
+  button { font: inherit; color: var(--bone); border: 1px solid #625749; background: #181511; padding: 10px 16px; cursor: pointer; }
+  button:hover, button:focus-visible { border-color: var(--torch); color: var(--torch); outline: 2px solid #8c7758; outline-offset: 3px; }
+  .menu-actions { display: flex; justify-content: center; gap: 14px; margin-top: 18px; }
+  #abandon-confirm { border: 1px solid var(--warn); padding: 16px; margin-top: 16px; }
+  #overlay .box { max-height: 90vh; overflow-y: auto; }
+  #tools { position: fixed; inset: 0; z-index: 3; background: rgba(0,0,0,.38); display: grid; place-content: center; }
+  #tools .wheel { position: relative; width: 340px; height: 310px; border-radius: 50%; background: radial-gradient(ellipse, #151410ed 0%, #151410c9 62%, transparent 70%); }
+  #tools h2 { text-align: center; font: 24px var(--display); font-weight: 400; margin: 0 0 16px; }
+  #tools button { position: absolute; width: 116px; height: 66px; border-radius: 8px; padding: 8px; background: #242018; }
+  #tools button small { display: block; margin-top: 5px; font-size: 10px; color: var(--dim); }
+  #tools button.selected { border-color: var(--torch); background: #4a3822; color: var(--torch); box-shadow: 0 0 20px #ffd9a02b; }
+  #tool-chalk { top: 18px; left: 112px; } #tool-whistle { top: 173px; right: 8px; } #tool-rest { top: 173px; left: 8px; }
+  #wheel-cursor { position: absolute; left: 166px; top: 151px; width: 8px; height: 8px; border-radius: 50%; background: var(--torch); pointer-events: none; }
+  #tools p { text-align: center; font-size: 11px; color: var(--bone); line-height: 1.8; margin: 8px 0; }
   .meter { position: fixed; font-size: 10.5px; letter-spacing: .18em; color: var(--dim); display: flex; align-items: center; gap: 10px; user-select: none; pointer-events: none; }
   .meter .bar { width: 96px; height: 6px; border: 1px solid #3a3530; padding: 1px; }
   .meter .bar i { display: block; height: 100%; width: 100%; background: var(--bone); transition: width .2s linear, background-color .3s; }
@@ -82,10 +98,19 @@
 <canvas id="drops" width="480" height="270" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .3s"></canvas>
 <div id="hurt"></div>
 <div id="flash"></div>
-<div id="torchm" class="meter"><span>TORCH</span><div class="bar"><i id="torchbar"></i></div><span class="tag">shake · F</span><span class="gonetag">dropped</span></div>
+<div id="torchm" class="meter"><span>TORCH</span><div class="bar"><i id="torchbar"></i></div><span class="tag">hold left mouse</span><span class="gonetag">dropped</span></div>
 <div id="breathm" class="meter"><span>BREATH</span><div class="bar"><i id="breathbar"></i></div><span class="tag">air</span></div>
 <div id="hint"></div>
 <div id="hud"></div>
+<div id="context"></div>
+<div id="tools" hidden role="group" aria-label="Tools wheel">
+  <h2>Tools</h2><div class="wheel">
+    <button id="tool-chalk" type="button">Chalk<small>leave a note</small></button>
+    <button id="tool-whistle" type="button">Whistle<small>hear the cave</small></button>
+    <button id="tool-rest" type="button">Rest<small>torch off</small></button>
+    <span id="wheel-cursor"></span>
+  </div><p id="tools-help">Move the mouse to choose · release Q to use<br>The cave keeps moving · Esc pauses</p>
+</div>
 <input id="chalk" maxlength="26" spellcheck="false" autocomplete="off" placeholder="chalk…">
 <div id="notebook"><canvas id="nbc" width="1800" height="1280"></canvas><div class="nb-title" id="nb-title">survey</div><div class="nb-foot" id="nb-foot"></div></div>
 <div id="overlay"><div class="box">
@@ -93,19 +118,30 @@
   <div class="sub" id="ov-sub">the ground gave way. the hole you fell through is too far up. somewhere, this opens.</div>
   <p id="ov-body"><b>W A S D</b> walk &nbsp;·&nbsp; <b>mouse</b> look &nbsp;·&nbsp; <b>C</b> crouch / dive<br>
      low ceilings put you on your belly &nbsp;·&nbsp; <b>space</b> hop / surface / hold to climb a chimney<br>
-     <b>shift</b> run (you will not see the hole) &nbsp;·&nbsp; <b>F</b> shake the torch (blind while you do) &nbsp;·&nbsp; <b>Q</b> spot / flood &nbsp;·&nbsp; <b>R</b> (hold) rest, torch off<br>
-     <b>T</b> chalk &nbsp;·&nbsp; <b>G</b> glowstick (three; hold to throw) &nbsp;·&nbsp; <b>E</b> rig a rope at a drop, if you found one &nbsp;·&nbsp; <b>H</b> whistle &nbsp;·&nbsp; <b>M</b> survey<br>
+     <b>shift</b> run &nbsp;·&nbsp; hold <b>left mouse</b> to charge the torch (blind while you do)<br>
+     hold <b>right mouse</b> to focus the beam; release for wide<br>
+     hold <b>Q</b> for tools: chalk, whistle, rest &nbsp;·&nbsp; <b>Tab</b> survey<br>
+     <b>G</b> drop glowstick; hold and release to throw &nbsp;·&nbsp; <b>E</b> use / rig rope<br>
      the water takes you if you run out of breath. the floor is not always there. the rock can hold you.<br>
      moving water goes somewhere. still air can be bad. the roof is not all attached.<br>
-     <b>esc</b> lets go of the mouse &nbsp;·&nbsp; headphones help</p>
+     <b>esc</b> pauses the game &nbsp;·&nbsp; headphones help<br>
+     controller: sticks move / look · A hop / climb · B crouch / dive<br>
+     hold X charge · hold LB focus · hold Y tools · RB glowstick<br>
+     LT run · D-pad up rope · View survey · Menu pause</p>
   <div class="settings" onclick="event.stopPropagation()">
     <label>LOOK <input type="range" id="s-sens" min="0.3" max="2.5" step="0.1" value="1"></label>
     <label>VOLUME <input type="range" id="s-vol" min="0" max="1" step="0.05" value="0.9"></label>
     <label><input type="checkbox" id="s-inv"> INVERT Y</label>
+    <label><input type="checkbox" id="s-hud" checked> HUD</label>
   </div>
   <div class="rec" id="ov-rec"></div>
   <div class="snd" id="ov-snd">loading sounds…</div>
-  <div class="go" id="go">CLICK TO GO IN</div>
+  <button type="button" class="go" id="go">CLICK TO GO IN</button>
+  <div class="menu-actions" id="menu-actions" hidden><button type="button" id="abandon">New cave…</button></div>
+  <div id="abandon-confirm" hidden>
+    <p>Leave this cave? Your current attempt, remains, and chalk here will be replaced by a new cave.</p>
+    <div class="menu-actions"><button type="button" id="keep-cave">Keep this cave</button><button type="button" id="leave-cave">Leave cave</button></div>
+  </div>
   <div class="warn" id="warn">needs a mouse and keyboard</div>
 </div></div>
 

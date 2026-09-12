@@ -1,0 +1,101 @@
+<!doctype html><meta charset="utf-8"><title>Karst browser smoke test</title>
+<style>body{background:#171717;color:#ddd;font:16px monospace;margin:20px}iframe{width:100%;height:65vh;border:1px solid #555}pre{white-space:pre-wrap}.pass{color:#91deac}.fail{color:#ff8b8b}</style>
+<h1>Karst browser smoke test</h1><button id="run">Run checks in this test tab</button> <button id="preview">Preview tools</button><pre id="report">Ready. Use a separate local test port; this test creates a saved attempt.</pre><iframe id="game" src="../index.html?seed=2"></iframe>
+<script type="module">
+const report = document.querySelector('#report'), frame = document.querySelector('#game');
+const wait = ms => new Promise(r => setTimeout(r, ms));
+document.querySelector('#preview').onclick = () => { const w = frame.contentWindow; w.K.run(); w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'KeyQ' })); };
+document.querySelector('#run').onclick = async () => {
+  report.textContent = ''; report.className = '';
+  const check = (ok, message) => { report.textContent += `${ok ? 'PASS' : 'FAIL'} ${message}\n`; if (!ok) throw Error(message); };
+  try {
+    const blank = new Promise(resolve => frame.addEventListener('load', resolve, { once: true }));
+    frame.src = 'about:blank'; await blank;
+    localStorage.removeItem('karst.cave');
+    const fresh = new Promise(resolve => frame.addEventListener('load', resolve, { once: true }));
+    frame.src = '../index.html?seed=2&fresh=' + Date.now(); await fresh;
+    const w = frame.contentWindow;
+    for (let i = 0; !w.K && i < 100; i++) await wait(100);
+    check(!!w.K, 'Game initialized');
+    const k = w.K, p = k.player;
+    check([...k.G.chunks.values()].some(c => c.mesh), 'Terrain meshes rendered');
+    for (let i = 0; !k.sfx.ready && i < 100; i++) await wait(100);
+    check(k.sfx.ready && Object.keys(k.sfx.buffers).length === 97, 'All 97 audio clips decoded');
+    const key = (code, type = 'keydown') => w.dispatchEvent(new w.KeyboardEvent(type, { code, bubbles: true, cancelable: true }));
+    const canvas = w.document.querySelector('#c');
+    const mouse = (type, button = 0, more = {}) => (type === 'mousedown' ? canvas : w).dispatchEvent(new w.MouseEvent(type, { button, bubbles: true, ...more }));
+    const ticks = async n => { for (let i = 0; i < n; i++) { k.tick(1 / 60); if (i % 3 === 0) await wait(0); } };
+    const wheel = (x, y) => { key('KeyQ'); mouse('mousemove', 0, { movementX: x, movementY: y }); key('KeyQ', 'keyup'); };
+    k.sfx.resume(); k.run();
+    await ticks(12);
+    const spawn = { x: p.x, y: p.y, z: p.z };
+    p.yaw = Math.PI; p.pitch = 0;
+    const x = p.x, z = p.z, before = p.battery;
+    k.keys.KeyW = true;
+    for (let i = 0; i < 180; i++) { k.tick(1 / 60); if (i % 3 === 0) await wait(0); }
+    k.keys.KeyW = false;
+    check(p.alive && Number.isFinite(p.x + p.y + p.z), 'Player remains alive with finite position');
+    check(Math.hypot(p.x - x, p.z - z) > 1, 'Walking moves the player through the cave');
+    check(p.battery < before, 'Torch consumes battery during play');
+    p.battery = 0.4;
+    mouse('mousedown'); await ticks(60); mouse('mouseup');
+    check(p.battery > 0.48, 'Holding left mouse repeatedly charges the torch');
+    const charged = p.battery; await ticks(30);
+    check(p.battery < charged, 'Releasing left mouse stops charging');
+    mouse('mousedown', 2); await ticks(1); check(k.controls.beamNarrow, 'Right mouse focuses the beam');
+    mouse('mouseup', 2); await ticks(1); check(!k.controls.beamNarrow, 'Releasing right mouse restores wide beam');
+    key('Tab'); check(w.getComputedStyle(w.document.querySelector('#notebook')).display !== 'none', 'Tab opens the survey notebook');
+    key('Tab', 'keyup'); key('Tab'); key('Tab', 'keyup');
+    key('KeyQ'); check(!w.document.querySelector('#tools').hidden, 'Q opens the tools wheel');
+    key('KeyQ', 'keyup'); check(w.document.querySelector('#tools').hidden && !k.controls.typing && !k.controls.restRequested, 'Releasing Q in the center cancels');
+    const yaw = p.yaw; key('KeyQ'); mouse('mousemove', 0, { movementX: 100, movementY: 60 });
+    check(p.yaw === yaw && k.controls.toolChoice === 1, 'Wheel selection does not turn the camera');
+    key('KeyQ', 'keyup'); check(w.document.querySelector('#tools').hidden, 'Releasing Q uses whistle and closes the wheel');
+    wheel(0, -100); check(k.controls.typing, 'Chalk selection opens the text field');
+    const typedX = p.x, typedZ = p.z; key('KeyW'); await ticks(10);
+    check(Math.hypot(p.x - typedX, p.z - typedZ) < 0.02, 'Typing does not move the player');
+    key('Enter'); check(!k.controls.typing, 'Enter closes the chalk field');
+    Object.assign(p, spawn, { vy: 0 }); k.G.focus.x = p.x; k.G.focus.y = p.y; k.G.focus.z = p.z; await ticks(15);
+    wheel(-100, 60); await ticks(2); check(k.controls.resting, 'Rest is selected on dry ground');
+    key('KeyW'); await ticks(2); key('KeyW', 'keyup'); check(!k.controls.resting, 'Movement cancels rest');
+    const sticks = p.sticks; key('KeyG'); key('KeyG', 'keyup'); check(p.sticks === sticks - 1, 'Tap G drops one glowstick');
+    key('KeyG'); await wait(400); key('KeyG', 'keyup'); check(p.sticks === sticks - 2, 'Hold and release G throws one glowstick');
+    let delayed = false; k.schedule(() => { delayed = true; }, 1000);
+    mouse('mousedown'); mouse('mousedown', 2); key('KeyQ'); key('Escape');
+    check(!k.controls.running && !k.controls.toolsOpen && !k.controls.beamNarrow, 'Esc pauses and clears held tools');
+    const frozen = { x: p.x, y: p.y, z: p.z, battery: p.battery, breath: p.breath, clock: k.controls.gameClock };
+    await ticks(120);
+    check(!delayed && frozen.clock === k.controls.gameClock && frozen.x === p.x && frozen.y === p.y && frozen.z === p.z && frozen.battery === p.battery && frozen.breath === p.breath, 'Pause freezes movement, resources, and delayed hazards');
+    const address = w.location.href; key('KeyN'); check(w.location.href === address, 'N cannot abandon the cave');
+    w.document.querySelector('#abandon').click(); check(!w.document.querySelector('#abandon-confirm').hidden, 'New cave requires an explicit menu choice');
+    w.document.querySelector('#keep-cave').click(); check(w.document.querySelector('#abandon-confirm').hidden, 'New cave can be cancelled');
+    k.run(); await ticks(65); check(delayed && !k.controls.beamNarrow, 'Resume advances pending hazards without stuck focus');
+    const afterResume = p.battery; await ticks(20); check(p.battery < afterResume, 'Charging stays released after resume');
+    const gamepadDescriptor = Object.getOwnPropertyDescriptor(w.navigator, 'getGamepads');
+    const pad = { connected: true, axes: [0, 0, 0, 0], buttons: Array.from({ length: 16 }, () => ({ pressed: false })) };
+    Object.defineProperty(w.navigator, 'getGamepads', { configurable: true, value: () => [pad] });
+    pad.buttons[2].pressed = true; const padBattery = p.battery; await ticks(20);
+    check(p.battery > padBattery, 'Controller X supports hold-to-charge'); pad.buttons[2].pressed = false;
+    pad.buttons[4].pressed = true; await ticks(1); check(k.controls.beamNarrow, 'Controller LB focuses');
+    pad.buttons[4].pressed = false; await ticks(1); check(!k.controls.beamNarrow, 'Controller LB release restores wide beam');
+    pad.buttons[3].pressed = true; await ticks(1); pad.axes[2] = 1; pad.axes[3] = 0.5; await ticks(1);
+    check(k.controls.toolChoice === 1, 'Controller right stick selects a tool');
+    pad.buttons[3].pressed = false; pad.axes[2] = pad.axes[3] = 0; await ticks(1);
+    check(!k.controls.toolsOpen && !k.controls.typing, 'Controller Y release uses the selected tool');
+    pad.buttons[8].pressed = true; await ticks(1); check(w.getComputedStyle(w.document.querySelector('#notebook')).display !== 'none', 'Controller View opens survey');
+    pad.buttons[8].pressed = false; await ticks(1); pad.buttons[8].pressed = true; await ticks(1); pad.buttons[8].pressed = false;
+    pad.buttons[9].pressed = true; await ticks(1); check(!k.controls.running, 'Controller Menu pauses');
+    pad.buttons[9].pressed = false; await ticks(1); pad.buttons[9].pressed = true; await ticks(1); check(k.controls.running, 'Controller Menu resumes'); pad.buttons[9].pressed = false;
+    if (gamepadDescriptor) Object.defineProperty(w.navigator, 'getGamepads', gamepadDescriptor); else delete w.navigator.getGamepads;
+    await ticks(1); check(!k.controls.beamNarrow, 'Controller disconnect clears held input');
+    for (let i = 0; i < 180; i++) { k.tick(1 / 60); if (i % 3 === 0) await wait(0); }
+    check(!!JSON.parse(w.localStorage.getItem('karst.cave')).run, 'Attempt autosaves');
+    report.textContent += `Position: ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}; terrain chunks: ${k.G.chunks.size}\n`;
+    frame.src = '../index.html?seed=2&resume-check=1';
+    await new Promise(resolve => frame.addEventListener('load', resolve, { once: true }));
+    for (let i = 0; !frame.contentWindow.K && i < 100; i++) await wait(100);
+    check(frame.contentWindow.document.querySelector('#go').textContent === 'CLICK TO CARRY ON', 'Saved attempt resumes after reload');
+    report.className = 'pass'; report.textContent += 'BROWSER SMOKE CHECKS PASSED';
+  } catch (e) { report.className = 'fail'; report.textContent += `ERROR: ${e.message}`; }
+};
+</script>

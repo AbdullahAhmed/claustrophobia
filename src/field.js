@@ -125,6 +125,12 @@ export function buildField(list, cx, cy, cz, into) {
           if (bs.old) { const fl = vnoise(x * 0.55 + 11, y * 0.9, z * 0.55 - 4); if (fl > 0.3) cal = Math.max(cal, smooth(0.3, 0.6, fl) * 0.85); }   // old rock: flowstone sheets over the walls
           if (bs.broken) v += 0.12 * vnoise(x * 3.1, y * 3.1, z * 3.1);                                                                  // broken rock: a rougher surface
           if (bs.core) { const c = coreDist(bs, x, y, z); if (c < v) v = c; }   // last: the crawl core is a promise, boulders and dripstone included
+          if (bs.slabs) for (let q = 0; q < bs.slabs.length; q++) {   // after the core: a crust of sediment lying across a shaft, whole until it is not
+            const sl = bs.slabs[q], hd = Math.hypot(x - sl.x, z - sl.z);
+            const sd = Math.min(sl.r - hd + 0.1 * vnoise(x * 2.7, 0, z * 2.7), 0.2 - Math.abs(y - sl.y));
+            if (sd > v) v = sd;
+          }
+
           if (bs.wl !== undefined && y < bs.wl + 0.9) wt = clamp(1 - (y - bs.wl) / 0.9, 0, 1);
           // bioluminescence: damp band above water, plus flagged passages, patchy
           const patch = smooth(0.42, 0.9, vnoise(x * 1.5 + 21, y * 1.5, z * 1.5 - 13) * 0.5 + 0.5) * smooth(0.3, 0.7, vnoise(x * 0.35, y * 0.35, z * 0.35 + 5) * 0.5 + 0.5);
