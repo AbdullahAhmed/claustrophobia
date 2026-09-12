@@ -8,7 +8,7 @@ const $ = id => document.getElementById(id);
 const { clamp, lerp, rr } = G;
 const params = new URLSearchParams(location.search);
 // Gameplay delays advance with the simulation, so pausing also freezes a pending collapse or fall.
-let gameClock = 0;
+let gameClock = 0, eHeldAt = 0;
 const gameTimers = [];
 function gameDelay(fn, milliseconds) { gameTimers.push({ fn, left: milliseconds / 1000 }); }
 function advanceGameTimers(dt) {
@@ -477,6 +477,7 @@ function updateBats(dt) {
 }
 // rope: rig a pit and go down it slowly; a rigged rope can be climbed back up
 const ropes = [];            // {x, top, bottom, z, mesh}
+let ropeCoils = 1;
 const ropeMat = new THREE.MeshStandardMaterial({ color: 0xc8b48a, roughness: 0.9 });
 let roping = null;           // {rope, dir, t}
 function nearestVoid() {
@@ -489,6 +490,18 @@ const oldRopeMat = new THREE.MeshStandardMaterial({ color: 0x6b5a48, roughness: 
 function placeOldRope(p) {
   const r = { x: p.x, z: p.z, top: p.y, bottom: p.bottom, old: true, frayed: p.frayed, mesh: new THREE.Mesh(new THREE.CylinderGeometry(p.frayed ? 0.009 : 0.013, 0.013, p.y - p.bottom + 0.3, 5), p.frayed ? frayedMat : oldRopeMat) };
   r.mesh.position.set(p.x, (p.y + p.bottom) / 2 - 0.1, p.z); scene.add(r.mesh); ropes.push(r);
+}
+// derig: hold E at the top of a rope you rigged to pull it up and coil it again
+function derigRope() {
+  for (const r of ropes) {
+    if (r.old || r.rescue) continue;
+    if (Math.hypot(r.x - player.x, r.z - player.z) < 2.2 && Math.abs(player.y - r.top) < 1.5 && !roping) {
+      scene.remove(r.mesh); ropes.splice(ropes.indexOf(r), 1); player.rope += r.coils || 1;
+      sfx.play('drag', { vol: 0.5, rate: 1.1, dur: 1.2 }); showHint(`rope pulled up and coiled · ${player.rope}`); return;
+    }
+  }
+  if (ropes.some(r => (r.old || r.rescue) && Math.hypot(r.x - player.x, r.z - player.z) < 2.2)) showHint('not yours to take');
+  else useRope();
 }
 function useRope() {
   if (!running || !player.alive || player.out || roping) return;
@@ -503,7 +516,8 @@ function useRope() {
   const need = Math.max(1, Math.ceil((v.top - v.y) / 12));                              // a coil is about twelve metres
   if (player.rope < need) { showHint(`the rope does not reach. ${need} coils for this one, and you have ${player.rope}`, true); return; }
   player.rope -= need; if (need > 1) showHint(`${need} coils tied together`);
-  const r = { x: v.x, z: v.z, top: v.top, bottom: v.y, mesh: new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, v.top - v.y + 0.3, 5), ropeMat) };
+  ropeCoils = need;
+  const r = { x: v.x, z: v.z, top: v.top, bottom: v.y, coils: ropeCoils, mesh: new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, v.top - v.y + 0.3, 5), ropeMat) };
   r.mesh.position.set(v.x, (v.top + v.y) / 2 - 0.1, v.z); scene.add(r.mesh); ropes.push(r);
   roping = { rope: r, dir: -1, t: 0 }; sfx.play('rattle', { vol: 0.5, rate: 0.6 }); showHint('rigged. going down');
 }
@@ -1052,12 +1066,13 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyQ' && !e.repeat) openTools();
   if (toolsOpen || notebookOpen) return;
   if (e.code === 'KeyG' && !e.repeat) beginGlow();
-  if (e.code === 'KeyE' && !e.repeat) { restRequested = false; useRope(); }
+  if (e.code === 'KeyE' && !e.repeat) { restRequested = false; eHeldAt = performance.now(); }
 });
 addEventListener('keyup', e => {
   keyboard[e.code] = keys[e.code] = false;
   if (e.code === 'KeyQ' && toolsOpen && wheelSource === 'keyboard') closeTools(true);
   if (e.code === 'KeyG') releaseGlow();
+  if (e.code === 'KeyE' && eHeldAt) { const held = (performance.now() - eHeldAt) / 1000; eHeldAt = 0; if (canAct() && !typing && !toolsOpen && !notebookOpen) { if (held > 0.6) derigRope(); else useRope(); } }
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('mousedown', e => {
@@ -1144,7 +1159,7 @@ function updateContext() {
     else if (roping) text = 'On the rope';
     else if (resting) text = 'Resting · move to stand up';
     else if (G.chimneyAt(player.x, player.y + 1.5, player.z)) text = padSeen ? 'Hold A to climb' : 'Hold Space to climb';
-    else if (ropes.some(r => Math.hypot(r.x - player.x, r.z - player.z) < 1.8 && Math.min(Math.abs(player.y - r.top), Math.abs(player.y - r.bottom)) < 1.8)) text = padSeen ? 'D-pad up · use rope' : 'E · use rope';
+    else if (ropes.some(r => Math.hypot(r.x - player.x, r.z - player.z) < 1.8 && Math.min(Math.abs(player.y - r.top), Math.abs(player.y - r.bottom)) < 1.8)) text = padSeen ? 'D-pad up · use rope' : 'E · use rope   hold E at the top · pull it up';
     else if (nearestVoid() && player.rope > 0) text = padSeen ? 'D-pad up · rig rope' : 'E · rig rope';
     else text = padSeen ? 'Hold X · charge   LB · focus   Y · tools   View · survey' : 'Hold left mouse · charge   right mouse · focus   Q · tools   Tab · survey';
     if (dragLook && !padSeen) text += '   middle-drag · look';
