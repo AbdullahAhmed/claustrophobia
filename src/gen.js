@@ -102,6 +102,15 @@ export const MODES = [
   { name: 'chimney', rx: [0.55, 0.7], ry: [0.7, 0.9],   len: [4, 10],  w: 0.045 },  // a narrow rift going straight up: back on one wall, feet on the other, and it costs you
 ];
 const MODE = Object.fromEntries(MODES.map(m => [m.name, m]));
+// themes: the character of a stretch of cave — which modes it favours, what it is made of
+const THEMES = {
+  dry:    { stream: 0.3, lake: 0.3, sump: 0.6, duck: 0.3, gour: 0.3, passage: 1.4, canyon: 1.5, bedding: 1.5, bones: 2.2, foul: 1.6, tint: 1 },
+  wet:    { stream: 3, lake: 2.2, sump: 1.5, duck: 2, gour: 1.5, cavern: 1.2, bones: 0.7, foul: 0.5, tint: 4 },
+  broken: { cavern: 2.2, crawl: 1.5, squeeze: 1.3, chimney: 1.6, loose: 2.5, unstable: 2.2, bones: 1.2, tint: 3 },
+  old:    { gour: 4, crystal: 3, chamber: 1.5, spel: 1.8, fossil: 3, bones: 1.0, tint: 2 },
+};
+const THEME_NAMES = Object.keys(THEMES);
+const tf = (w, k) => { const t = THEMES[w.theme]; return t && t[k] !== undefined ? t[k] : 1; };
 const NOTES = {
   dead: ['dead end', 'closes. turn back', 'no way through', 'ends', 'don\'t bother', 'pinches'],
   water: ['sump', 'water — 12 m?', 'air on the far side', 'long one. breathe first', 'cold', 'it goes under'],
@@ -121,6 +130,7 @@ class Worm {
     this.tint = node.tint !== undefined ? node.tint : 0;
     this.roost = false; this.stream = null; this.flow = null; this.lake = null; this.chimney = 0; this.exitStream = 0; this.cathedral = false; this.ramp = null;
     this.gated = false;                                          // trunks: has this line been through water or over a drop yet?
+    this.theme = node.theme || THEME_NAMES[(this.rng() * THEME_NAMES.length) | 0]; this.themeLeft = kind === 'trunk' ? 120 + this.rng() * 80 : Infinity;
     this.foul = false;                                           // side passages that end in still, bad air
   }
   pickMode(force) {
@@ -134,7 +144,7 @@ class Worm {
       // deeper is meaner: the dangerous modes get heavier with depth
       const deep = clamp(-this.y / 30, 0, 1.5);
       const th = 1 + 0.1 * Math.min(TIER, 6);                   // the caves you find after getting out are meaner
-      const ws = MODES.map(mo => mo.w * (mo.name === 'sump' ? (1 + deep) * th : mo.name === 'pit' ? (1 + 0.8 * deep) * th : mo.name === 'cavern' ? 1 + 0.6 * deep : mo.name === 'squeeze' || mo.name === 'crawl' ? th : 1));
+      const ws = MODES.map(mo => mo.w * tf(this, mo.name) * (mo.name === 'sump' ? (1 + deep) * th : mo.name === 'pit' ? (1 + 0.8 * deep) * th : mo.name === 'cavern' ? 1 + 0.6 * deep : mo.name === 'squeeze' || mo.name === 'crawl' ? th : 1));
       let r = R() * ws.reduce((a, b) => a + b, 0);
       for (let k = 0; k < MODES.length; k++) { r -= ws[k]; if (r <= 0) { m = MODES[k]; break; } }
       m = m || MODES[0];
@@ -153,7 +163,7 @@ class Worm {
     this.trx = wr(m.rx[0], m.rx[1]); this.try = wr(m.ry[0], m.ry[1]);
     this.modeLeft = wr(m.len[0], m.len[1]);
     this.algae = R() < (m.name === 'chamber' || m.name === 'cavern' ? 0.35 : 0.07) ? wr(0.5, 1) : 0;
-    if (R() < 0.3) this.tint = (R() * 5) | 0;                    // 0 plain limestone, 1 rust, 2 ochre, 3 grey-blue, 4 copper-green
+    if (R() < 0.3) this.tint = R() < 0.6 ? tf(this, 'tint') : (R() * 5) | 0;   // 0 plain limestone, 1 rust, 2 ochre, 3 grey-blue, 4 copper-green; the theme's own colour, mostly
     if (m.name === 'chimney') { this.chimney = this.modeLeft; this.algae = 0; this.rx = this.trx; this.ry = this.try; if (R() < 0.35) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: ['up. back and feet', 'chimney. 8 m?', 'rest before this one', 'it goes up'][(R() * 4) | 0] }); }
     else this.chimney = 0;
     if (m.name === 'duck') { this.pitch = 0; this.algae = 0; if (R() < 0.4) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: ['chin up', 'keep your head up. it goes', 'wet crawl. 12 m', 'breathe through your nose'][(R() * 4) | 0] }); }
@@ -278,7 +288,7 @@ class Worm {
         }
       }
       // deep dead-end pockets where the air has gone bad: nothing lives there, and neither will you
-      if (this.kind !== 'trunk' && !this.foul && this.life < 12 && (this.y < -6 || (this.mode && this.mode.name === 'crawl')) && R() < 0.06) {
+      if (this.kind !== 'trunk' && !this.foul && this.life < 12 && (this.y < -6 || (this.mode && this.mode.name === 'crawl')) && R() < 0.06 * tf(this, 'foul')) {
         this.foul = true; this.algae = 0;
         if (R() < 0.4) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: R() < 0.7 ? 'bad air' : 'can\'t breathe here' });
       }
@@ -371,6 +381,8 @@ class Worm {
     if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; if (this.stream || this.sump || this.pit || this.lake || (this.mode && this.mode.name === 'duck')) n.floods = true; }   // live water: it rises when it rains up top
     if (this.sump && !this.sump.marked) { this.sump.marked = true; n.sump = { len: this.sump.left, bell: this.sump.bellAt !== null, trap: this.sump.trap }; sumpNodes.push(n); }
     else if (core && this.mode && (this.mode.name === 'passage' || this.mode.name === 'bedding' || this.mode.name === 'chamber') && Math.abs(this.pitch) < 0.12 && R() < 0.07) n.wl = n.y + 0.07;   // a puddle in a low spot
+    if (this.kind === 'trunk') { this.themeLeft -= STEP; if (this.themeLeft <= 0) { this.themeLeft = wr(120, 200); const others = THEME_NAMES.filter(t => t !== this.theme); this.theme = others[(R() * others.length) | 0]; } }
+    n.theme = this.theme;
     const cavern = this.mode && this.mode.name === 'cavern' && !this.pit && !this.sump;
     if (cavern && R() < 0.6) {
       n.boulders = [];
@@ -381,7 +393,7 @@ class Worm {
     }
     // dripstone: hangs from roomy ceilings, grows from the floor under it
     const roomy = this.ry > 1.5 && this.rx > 1.15 && wl === undefined && core;
-    if (roomy && R() < (cavern ? 0.7 : this.ry > 2.3 ? 0.5 : 0.12)) {
+    if (roomy && R() < (cavern ? 0.7 : this.ry > 2.3 ? 0.5 : 0.12) * tf(this, 'spel')) {
       n.spel = [];
       const big = cavern ? 2.2 : this.ry > 2.3 ? 1.3 : 1;
       for (let k = 0, c = 1 + (R() * (cavern ? 4 : 2) | 0); k < c; k++) {
@@ -396,9 +408,9 @@ class Worm {
     }
     // an unstable stretch of a low trunk passage: it can come down behind you once you are through
     if (this.kind === 'trunk' && core && wl === undefined && !this.pit && !this.sump && this.age > 30 && this.mode &&
-        (this.mode.name === 'crawl' || this.mode.name === 'squeeze' || this.mode.name === 'bedding') && R() < 0.05) n.unstable = true;
+        (this.mode.name === 'crawl' || this.mode.name === 'squeeze' || this.mode.name === 'bedding') && R() < 0.05 * tf(this, 'unstable')) n.unstable = true;
     // fossils in the bedding: an ammonite, a crinoid stem, a shell, pressed into the wall at eye height
-    if (core && wl === undefined && !this.pit && !this.sump && this.mode && (this.mode.name === 'bedding' || this.mode.name === 'passage' || this.mode.name === 'canyon') && R() < 0.025)
+    if (core && wl === undefined && !this.pit && !this.sump && this.mode && (this.mode.name === 'bedding' || this.mode.name === 'passage' || this.mode.name === 'canyon') && R() < 0.025 * tf(this, 'fossil'))
       props.push({ type: 'fossil', x: n.x, y: n.y, z: n.z, kind: (R() * 3) | 0, seed: R(), size: wr(0.25, 0.7) });
     // a window: a second hole to the sky in a shallow chamber roof — daylight, roots, birds, and no way up it
     if (core && wl === undefined && !this.pit && !this.sump && this.ry > 2.2 && this.rx > 2.5 && n.y > -16 && n.y < 4 && R() < 0.03 && windows < 6) {
@@ -417,7 +429,7 @@ class Worm {
       n.tint = 4; n.window = true;
     }
     // a loose block in the roof of a cavern (or a big chamber): it comes down when something moves under it
-    if (core && wl === undefined && !this.pit && !this.sump && this.ry > 2.3 && R() < (cavern ? 0.12 : 0.04)) {
+    if (core && wl === undefined && !this.pit && !this.sump && this.ry > 2.3 && R() < (cavern ? 0.12 : 0.04) * tf(this, 'loose')) {
       const a = R() * Math.PI * 2, d = R() * this.rx * 0.5;
       const ceil = n.y + (1 + CY) * this.ry * Math.sqrt(Math.max(0.2, 1 - (d / this.rx) ** 2));
       props.push({ type: 'loose', x: n.x + Math.sin(a) * d, y: ceil, z: n.z + Math.cos(a) * d, floor: n.y, r: wr(0.45, 1.0), patience: wr(1.2, 4.0), seed: R() });
@@ -425,7 +437,7 @@ class Worm {
     addSeg(this.node, n); nodes.push(n);
     if (n.algae > 0.4 && n.i % 3 === 0) algaeNodes.push(n);
     if (n.flow && n.i % 2 === 0) streamNodes.push(n);
-    if (core && wl === undefined && this.rx < 3 && R() < 0.03) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: false, seed: R() });
+    if (core && wl === undefined && this.rx < 3 && R() < 0.03 * tf(this, 'bones')) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: false, seed: R() });
     if (this.mode && this.mode.name === 'crystal' && !this.pit && !this.sump && R() < 0.75) props.push({ type: 'crystals', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, seed: R() });
     if (this.exit && this.y > SURFACE_Y - 8 && R() < 0.6) props.push({ type: 'roots', x: n.x, y: n.y + (1 + CY) * this.ry, z: n.z, rx: this.rx, n: 4 + (R() * 6 | 0), seed: R() });
     if (this.roost && this.ry > 2.0 && !this.pit && !this.sump) { this.roost = false; props.push({ type: 'roost', x: n.x, y: n.y + (1 + CY) * this.ry - 0.4, z: n.z, floor: n.y, n: 25 + (R() * 45 | 0) }); }

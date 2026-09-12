@@ -1707,10 +1707,14 @@ function surveyNote(t, x, z) {
 const NAME_A = ['Long', 'Broken', 'Quiet', 'Black', 'High', 'Wet', 'Low', 'Cold', 'Far', 'Old', 'Grey', 'Lost'];
 const NAME_B = { window: ['Window', 'Skylight', 'Eye', 'Light'], lake: ['Lake', 'Water', 'Mere', 'Pool'], cavern: ['Hall', 'Cathedral', 'Vault', 'Hollow', 'Chamber'], chamber: ['Room', 'Chamber', 'Alcove', 'Gallery'], crystal: ['Pocket', 'Grotto', 'Vein'], gour: ['Terraces', 'Steps', 'Pools', 'Stairs'] };
 const places = [];           // {x,y,z, name, kind}
-let placeT = 0, lastNamed = -1e9;
+let placeT = 0, lastNamed = -1e9, lastTheme = null;
 function updatePlaces(dt) {
   placeT -= dt; if (placeT > 0) return; placeT = 1.0;
   const sg = G.nearestSegAt(player.x, player.y + 0.5, player.z); if (!sg || !sg.nb) return;
+  if (sg.nb.theme && sg.nb.theme !== lastTheme) {                              // the character of the rock changes
+    if (lastTheme && runTime > 30) showHint({ dry: 'drier here. dust, and old bones', wet: 'wetter here. you can hear it', broken: 'broken ground. blocks everywhere, and the roof looks no better', old: 'old rock: calcite over everything, and the walls are full of shells' }[sg.nb.theme], true);
+    lastTheme = sg.nb.theme;
+  }
   const n = sg.nb, kind = n.window ? 'window' : n.wl !== undefined && n.wl - n.y > 1.2 && n.rx > 4 ? 'lake' : n.rx > 8 ? 'cavern' : n.tint === 5 ? 'crystal' : n.gour ? 'gour' : n.rx > 3.4 && n.ry > 2.6 ? 'chamber' : null;
   if (!kind) return;
   if (kind !== 'cavern' && runTime - lastNamed < 75) return;               // naming is an event, not a label printer

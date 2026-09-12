@@ -33,7 +33,9 @@ stopped. `N` on the death screen abandons the cave for a new one.
 ## How it works
 
 `src/gen.js` — **worm graph → distance field → marching cubes.** Worm agents walk *floor lines* through space carrying a
-width/height that drifts through modes (passage, chamber, crawl, squeeze, canyon, bedding plane, sump, pit, cavern).
+width/height that drifts through modes (passage, chamber, crawl, squeeze, canyon, bedding plane, sump, pit, cavern,
+stream, lake, duck, chimney, gour, crystal). Every 120-200 m a trunk line changes *theme* — dry, wet, broken, old —
+which biases the modes it picks, its colour, and what it leaves lying about (bones, loose blocks, calcite, fossils).
 Every point's density is the distance to the nearest ellipsoidal capsule plus rock noise, with sediment fill for walkable
 floors, a guaranteed 0.68 m crawl core so intended passages are always passable, boulders unioned in for caverns, and a
 per-sample glow channel for bioluminescent algae. Chunks (8 m, 0.4 m voxels) are meshed within 32 m of the player and
