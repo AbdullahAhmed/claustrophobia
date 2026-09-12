@@ -577,14 +577,15 @@ function placeCurtain(p) {
   const m = new THREE.Mesh(g, curtainMat); m.position.set(p.x, cy - L / 2 + 0.05, p.z); m.rotation.y = R() * Math.PI; m.castShadow = true; scene.add(m);
 }
 // mist: a few soft, slow sheets just above still water
-const mistTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const r = g.createRadialGradient(64, 64, 4, 64, 64, 62); r.addColorStop(0, 'rgba(200,215,210,0.55)'); r.addColorStop(0.6, 'rgba(200,215,210,0.18)'); r.addColorStop(1, 'rgba(200,215,210,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
-const mistMat = new THREE.MeshBasicMaterial({ map: mistTex, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, fog: false });
+const mistTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const r = g.createRadialGradient(64, 64, 4, 64, 64, 62); r.addColorStop(0, 'rgba(200,215,210,0.3)'); r.addColorStop(0.5, 'rgba(200,215,210,0.1)'); r.addColorStop(1, 'rgba(200,215,210,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+const mistMat = new THREE.MeshBasicMaterial({ map: mistTex, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide, fog: false });
 const mists = [];
 function placeMist(p) {
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
   for (let k = 0; k < 3; k++) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(p.r * 1.6, p.r * 1.6), mistMat); m.rotation.x = -Math.PI / 2;
-    m.position.set(p.x + (R() - 0.5) * p.r, p.y + 0.25 + k * 0.12, p.z + (R() - 0.5) * p.r); m.rotation.z = R() * 6.28; scene.add(m);
+    const sz = Math.min(7, p.r * 0.9);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(sz, sz), mistMat); m.rotation.x = -Math.PI / 2;
+    m.position.set(p.x + (R() - 0.5) * p.r, p.y + 0.5 + k * 0.25, p.z + (R() - 0.5) * p.r); m.rotation.z = R() * 6.28; scene.add(m);
     mists.push({ mesh: m, x0: m.position.x, z0: m.position.z, ph: R() * 6.28, sp: 0.03 + R() * 0.04 });
   }
 }
