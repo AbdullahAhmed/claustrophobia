@@ -1,32 +1,34 @@
-p='src/gen.js'; s=open(p,encoding='utf-8').read()
+p='src/main.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
-rep("""export function chimneyAt(x, y, z) {                       // a rift you can climb by pressing against both walls
-  const s = nearestSegAt(x, y, z);
-  return !!(s && s.chimney);
-}""",
-"""export function chimneyAt(x, y, z) {                       // a rift you can climb by pressing against both walls
-  const s = nearestSegAt(x, y, z);
-  return !!(s && s.chimney);
-}
-export function chimneyLineAt(x, y, z) {                   // where the rift's centre line is at this height: {x,z} or null
-  const s = nearestSegAt(x, y, z);
-  if (!s || !s.chimney || Math.abs(s.fdy) < 0.3) return null;
-  const t = clamp((y - s.fy) / s.fdy, 0, 1);
-  return { x: s.fx + s.fdx * t, z: s.fz + s.fdz * t };
-}""")
-open(p,'w',encoding='utf-8').write(s)
-
-p='src/main.js'; s=open(p,encoding='utf-8').read()
-rep("""    const inChimney = G.chimneyAt(player.x, player.y + 0.8, player.z) && Math.min(G.rayToRock(player.x, player.y + 0.9, player.z, 1, 0, 0, 1.2, 0.1) + G.rayToRock(player.x, player.y + 0.9, player.z, -1, 0, 0, 1.2, 0.1), G.rayToRock(player.x, player.y + 0.9, player.z, 0, 0, 1, 1.2, 0.1) + G.rayToRock(player.x, player.y + 0.9, player.z, 0, 0, -1, 1.2, 0.1)) < 1.9;
-    if (inChimney && keys.Space && !player.hurt && player.stamina > 0.02) {
-      climbing = true; player.vy = 0.85; player.stamina = Math.max(0, player.stamina - dt / 9); player.grounded = false;""",
-"""    const chimHere = G.chimneyAt(player.x, player.y + 1.5, player.z) || G.chimneyAt(player.x, player.y + 0.8, player.z);
-    const narrow = (h) => Math.min(G.rayToRock(player.x, player.y + h, player.z, 1, 0, 0, 1.6, 0.1) + G.rayToRock(player.x, player.y + h, player.z, -1, 0, 0, 1.6, 0.1), G.rayToRock(player.x, player.y + h, player.z, 0, 0, 1, 1.6, 0.1) + G.rayToRock(player.x, player.y + h, player.z, 0, 0, -1, 1.6, 0.1)) < 2.9;
-    const inChimney = chimHere && (climbing || narrow(1.5) || narrow(2.4));
-    if (inChimney && keys.Space && !player.hurt && player.stamina > 0.02) {
-      climbing = true; player.vy = 0.85; player.stamina = Math.max(0, player.stamina - dt / 9); player.grounded = false;
-      const ln = G.chimneyLineAt(player.x, player.y + 1.2, player.z);                 // the rift leans: stay on its line
-      if (ln) { const dx = ln.x - player.x, dz = ln.z - player.z, L = Math.hypot(dx, dz); if (L > 0.02) { const k = Math.min(L, 0.7 * dt) / L; player.x += dx * k; player.z += dz * k; } }""")
+rep("""  if (torchHeld) {
+    torch.position.copy(camera.position);
+    const a = 1 - Math.pow(shakeT > 0 ? 0.05 : 0.0005, dt);
+    torch.quaternion.slerp(camera.quaternion, a);
+  }""",
+"""  if (torchHeld) {
+    torch.position.copy(camera.position);
+    const a = 1 - Math.pow(shakeT > 0 ? 0.05 : 0.0005, dt);
+    torch.quaternion.slerp(camera.quaternion, a);
+    // cold hands: the beam shivers, and so does the hand in front of you
+    const shiver = player.cold > 0.45 ? (player.cold - 0.45) * (coldT > 40 ? 3.2 : 1.6) : 0;
+    if (shiver > 0) {
+      const t = performance.now() * 0.001;
+      torch.rotateX((Math.sin(t * 23.0) + Math.sin(t * 31.7)) * 0.006 * shiver); torch.rotateY((Math.sin(t * 27.3) + Math.sin(t * 19.1)) * 0.006 * shiver);
+      hand.position.set(0.21 + Math.sin(t * 29) * 0.004 * shiver, -0.22 + Math.sin(t * 37) * 0.004 * shiver, -0.4);
+    }
+  }
+  // breath fog when you are cold, in the beam, in front of your face
+  if (player.cold > 0.35 && !player.under) {
+    const ph = (player.bob * 0.35 + performance.now() * 0.0009) % (Math.PI * 2), puffK = Math.max(0, Math.sin(ph));
+    fog.visible = true; fog.material.opacity = 0.06 * (player.cold - 0.35) * puffK;
+    fog.position.set(0, -0.06 + puffK * 0.02, -0.32 - puffK * 0.12); fog.scale.setScalar(0.12 + puffK * 0.1);
+  } else fog.visible = false;""")
+rep("""let stutter = 1;
+function updateTorch(dt) {""",
+"""let stutter = 1;
+const fog = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const r = g.createRadialGradient(32, 32, 2, 32, 32, 30); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); return t; })(), transparent: true, opacity: 0, depthWrite: false, depthTest: false, fog: false }));
+fog.renderOrder = 5; fog.visible = false; camera.add(fog);
+function updateTorch(dt) {""")
 open(p,'w',encoding='utf-8').write(s); print('ok')
