@@ -62,3 +62,5 @@ All clips are Creative Commons 0 (public domain dedication). Sources are Freesou
 - `flap1.ogg` — "Wing Flap 1.wav" by _stubb — https://freesound.org/s/389634/ — CC0 1.0
 - `flap2.ogg` — "Wing Flap 2.wav" by _stubb — https://freesound.org/s/389633/ — CC0 1.0
 - `flap3.ogg` — "Light Wing Flap" by TurboFool — https://freesound.org/s/561009/ — CC0 1.0
+- `waterfall_small.ogg` — "Ambiance_Waterfall_Small_Close_Loop_Stereo.wav" by Nox_Sound — https://freesound.org/s/698306/ — CC0 1.0
+- `waterfall_rocks.ogg` — "Waterfall under rocks.Wav" by BonnyOrbit — https://freesound.org/s/442433/ — CC0 1.0

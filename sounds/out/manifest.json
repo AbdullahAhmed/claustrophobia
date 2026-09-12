@@ -168,5 +168,11 @@
   "flap1.ogg",
   "flap2.ogg",
   "flap3.ogg"
+ ],
+ "cascade": [
+  "cascade.ogg"
+ ],
+ "cascade_big": [
+  "cascade_big.ogg"
  ]
 }

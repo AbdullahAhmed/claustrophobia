@@ -18,8 +18,14 @@ Then http://localhost:8080/ — add `?seed=123` to fix the cave layout. Mouse + 
 | Space | hop / mantle; underwater: surface |
 | F (tap repeatedly) | shake the torch to charge it — the bulb is dark while you do |
 | T | chalk a note on the rock you're looking at |
+| G | drop a glowstick (three per attempt) |
+| M | your survey notebook — a pencil trace of where you have been, chalk notes, water in blue, the dead's routes faint |
 | ` | debug survey line |
 | Esc | release the mouse |
+
+One cave per seed: you keep the same cave until you get out of it. Your dead stay where they fell (bones, and your old
+torch — worth 25 % if you reach it), last attempt's chalk is still on the walls, and an interrupted attempt resumes where it
+stopped. `N` on the death screen abandons the cave for a new one.
 
 ## How it works
 
@@ -41,8 +47,15 @@ openness, a lowpass that closes over everything underwater.
 All recordings are **CC0** from Freesound; see [`sounds/CREDITS.md`](sounds/CREDITS.md) for every clip, author and link.
 `tools/fs.py` finds and license-checks clips; `tools/prep.py` slices, trims, normalises and loops them into `sounds/out/`.
 
+## Places
+
+Passages, chambers, crawls, squeezes, canyons, bedding planes; flooded sumps with air bells; pits with plunge pools;
+boulder caverns; crystal pockets; dripstone; bioluminescent algae; cascades; bat roosts; mineral tints by region; bones,
+and the packs of the cavers who left them.
+
 ## Risks (by design)
 
 Sumps you may not have the breath for. Pits you can't see until you're falling. Crawls that pinch shut. Caverns whose
 far walls your torch never reaches. A torch that dies in about two minutes unless you keep shaking it — blind while you
-do. And sometimes, down the passage, a pair of eyes.
+do. Getting wedged in a crawl. Cold that shakes the torch out of your hand. Bats. And sometimes, down the passage, a
+pair of eyes — more often the longer this cave has known you.

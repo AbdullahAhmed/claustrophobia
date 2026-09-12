@@ -134,6 +134,7 @@ class Worm {
       const bell = under > 18 ? R() < 0.3 : under > 10 ? R() < 0.6 : false;
       this.sump = { phase: 'dive', wl: this.y + 0.35, left: under, bell: 0, bellAt: bell ? under * wr(0.4, 0.6) : null,
                     trap: this.kind !== 'trunk' && R() < 0.25 };
+      if (R() < 0.3) props.push({ type: 'cascade', x: this.x + wr(-0.6, 0.6), y: this.y + (1 + CY) * Math.max(this.ry, 1.2) - 0.2, z: this.z + wr(-0.6, 0.6), wl: this.y + 0.35, big: R() < 0.3 });
     }
     if (m.name === 'pit') {
       const drop = wr(4, 15), pool = R() < 0.3;

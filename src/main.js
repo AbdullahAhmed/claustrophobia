@@ -360,6 +360,38 @@ function placeCache(x, y, z, kind) {
   tag.position.set(x, y + 0.22, z); scene.add(tag);
   caches.push({ x, y, z, kind, taken: false, mesh, tag });
 }
+// cascades: water falling from the ceiling into a pool
+const cascades = [];         // {x,y,z, wl, drops: Float32Array phases, inst, foam, loop}
+const dropMat = new THREE.MeshBasicMaterial({ color: 0xcfe6ff, map: moteTex, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
+function placeCascade(p) {
+  const n = p.big ? 140 : 70, inst = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dropMat, n);
+  inst.frustumCulled = false; scene.add(inst);
+  const foam = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dropMat, 24); foam.frustumCulled = false; scene.add(foam);
+  const c = { ...p, n, inst, foam, ph: new Float32Array(n).map(() => Math.random()), ox: new Float32Array(n).map(() => (Math.random() - 0.5) * (p.big ? 1.6 : 0.7)), oz: new Float32Array(n).map(() => (Math.random() - 0.5) * (p.big ? 1.6 : 0.7)),
+              loop: soundsOn ? sfx.loop(p.big ? 'cascade_big' : 'cascade', { x: p.x, y: p.wl + 0.5, z: p.z, rolloff: 0.8, wet: 0.5 }) : null };
+  if (c.loop) c.loop.setVol(p.big ? 0.8 : 0.55, 1);
+  cascades.push(c);
+}
+function updateCascades(dt) {
+  const t = performance.now() * 0.001;
+  for (const c of cascades) {
+    const d = Math.hypot(c.x - camera.position.x, c.y - camera.position.y, c.z - camera.position.z);
+    c.inst.visible = c.foam.visible = d < 45; if (d >= 45) continue;
+    const h = Math.max(0.5, c.y - c.wl);
+    for (let i = 0; i < c.n; i++) {
+      c.ph[i] += dt * (1.4 + 0.35 * (i % 3)) / Math.sqrt(h / 3); if (c.ph[i] > 1) c.ph[i] -= 1;
+      const yy = c.y - c.ph[i] * h, sp = 0.6 + c.ph[i] * 0.8;
+      _p.set(c.x + c.ox[i] * (0.5 + c.ph[i]), yy, c.z + c.oz[i] * (0.5 + c.ph[i])); _s.set(0.05 + c.ph[i] * 0.06, 0.35 * sp, 1);
+      _m.compose(_p, camera.quaternion, _s); c.inst.setMatrixAt(i, _m);
+    }
+    for (let i = 0; i < 24; i++) {
+      const a = i / 24 * Math.PI * 2 + t * 0.4, r = (c.big ? 1.3 : 0.7) * (0.7 + 0.3 * Math.sin(t * 3 + i));
+      _p.set(c.x + Math.cos(a) * r, c.wl + 0.03 + 0.05 * Math.abs(Math.sin(t * 5 + i)), c.z + Math.sin(a) * r); _s.set(0.35, 0.18, 1);
+      _m.compose(_p, camera.quaternion, _s); c.foam.setMatrixAt(i, _m);
+    }
+    c.inst.instanceMatrix.needsUpdate = true; c.foam.instanceMatrix.needsUpdate = true;
+  }
+}
 let exitInfo = null, exitLoops = null;
 function placeExit(e) {
   exitInfo = e;
@@ -382,6 +414,7 @@ function processProps(dt) {
     if (p.type === 'remains') placeRemains(p); else if (p.type === 'mark') drawMark(p.text, new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(p.nx, p.ny, p.nz), true);
     else if (p.type === 'crystals') placeCrystals(p);
     else if (p.type === 'roost') placeRoost(p);
+    else if (p.type === 'cascade') placeCascade(p);
     else placeBones(p);
     G.props.splice(i, 1);
   }
@@ -1130,6 +1163,7 @@ function stepFrame(dt) {
   updateTorch(dt);
   updateEyes(dt);
   updateBats(dt);
+  updateCascades(dt);
   updateSound(dt);
   renderer.render(scene, camera);
   grain(); hud(dt);
