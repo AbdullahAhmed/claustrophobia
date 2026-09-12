@@ -627,6 +627,30 @@ function updateThrown(dt) {
     if (hit) { thrown.splice(i, 1); const gl = { x: g.x, y: g.y, z: g.z, light: g.light, mesh: g.mesh }; if (g.light) { g.light.userData.owner = gl; g.light.userData.keep = false; } glow.push(gl); }
   }
 }
+// the camp: sleeping bags, a stove, packs, a rope bag, and everything they wrote on the walls
+const bagGeo = new THREE.CapsuleGeometry(0.28, 1.3, 3, 7).rotateZ(Math.PI / 2), bagMat = new THREE.MeshStandardMaterial({ color: 0x3a3244, roughness: 0.98, flatShading: true });
+const stoveGeo = new THREE.CylinderGeometry(0.09, 0.11, 0.14, 8), stoveMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.5, metalness: 0.6 });
+function placeCamp(p) {
+  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
+  const spot = (r) => { const a = R() * Math.PI * 2, d = R() * r; const x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d; const fy = floorBelow(x, p.y + 1, z); return fy === null ? null : { x, y: fy, z }; };
+  for (let k = 0; k < 3; k++) { const q = spot(p.rx * 0.5); if (!q) continue; const m = new THREE.Mesh(bagGeo, bagMat); m.position.set(q.x, q.y + 0.2, q.z); m.rotation.y = R() * 6.28; m.scale.set(1, 0.55, 1); m.castShadow = true; scene.add(m); }
+  const st = spot(p.rx * 0.3); if (st) { const m = new THREE.Mesh(stoveGeo, stoveMat); m.position.set(st.x, st.y + 0.07, st.z); scene.add(m); }
+  // what they left, and what they knew
+  const kinds = ['kit', 'cells', 'rope', 'page', 'page', 'sticks'];
+  for (const k of kinds) { const q = spot(p.rx * 0.6); if (!q) continue; placeCache(q.x, q.y, q.z, k, k === 'page' ? (R() < 0.5 ? composeSurvey(q.x, q.y, q.z, R) : { text: ['day 11. nobody has come. we stop here tonight and decide in the morning', 'day 12. the torch is the problem. we take turns in the dark to save it', 'day 14. it rained. the way we came is under water. we are going on', 'day 9. the far side of the sump has a chamber and air. it is the only way we have not tried', 'the water rises here. do not camp low'][(R() * 5) | 0] }) : null); }
+  // chalk everywhere: names, days, arrows, the last count
+  const names = CAVER_NAMES.slice().sort(() => R() - 0.5).slice(0, 3);
+  for (const t of [names.join(' · '), `day ${8 + (R() * 8 | 0)}`, 'we came in from there ->', '<- untried', `${names[0]} went to look. ${5 + (R() * 30 | 0)} hours`, 'do not follow the water', 'the light is the clock']) G.props.push({ type: 'note', x: p.x + (R() - 0.5) * p.rx, y: p.y, z: p.z + (R() - 0.5) * p.rx, text: t });
+  placeBones({ x: p.x + (R() - 0.5) * 2, y: p.y, z: p.z + (R() - 0.5) * 2, rx: 1.2, ry: 1, big: false, seed: R() });
+  campSite = { x: p.x, y: p.y, z: p.z };
+}
+let campSite = null, campSeen = false;
+function updateCamp(dt) {
+  if (!campSite || campSeen || Math.hypot(campSite.x - player.x, campSite.y - player.y, campSite.z - player.z) > 8) return;
+  campSeen = true; showHint('a camp. sleeping bags, a stove. nobody', true); surveyNote('camp', campSite.x, campSite.z);
+  if (!places.some(pl => Math.hypot(pl.x - campSite.x, pl.z - campSite.z) < 30)) { places.push({ x: campSite.x, y: campSite.y, z: campSite.z, name: 'The Camp', kind: 'camp' }); }
+  sfx.play('creature_breath', { vol: 0.15, rate: 0.7, wet: 0.9 });
+}
 // caches: a dead caver's pack next to some bones
 const caches = [];           // {x,y,z, kind, taken, mesh}
 const packGeo = new THREE.BoxGeometry(0.28, 0.2, 0.16), packMat = new THREE.MeshStandardMaterial({ color: 0x3b3a36, roughness: 0.9, flatShading: true });
@@ -855,6 +879,7 @@ function processProps(dt) {
     else if (p.type === 'curtain') placeCurtain(p);
     else if (p.type === 'oldrope') placeOldRope(p);
     else if (p.type === 'pearls') placePearls(p);
+    else if (p.type === 'camp') { placeCamp(p); placed = 4; }
     else if (p.type === 'falsefloor') falseFloors.push({ ...p, slab: p.node.slabs && p.node.slabs[0], state: 'whole', t: 0 });
     else if (p.type === 'mist') placeMist(p);
     else placeBones(p);
@@ -2334,6 +2359,7 @@ function stepFrame(dt) {
   updateOlms(dt);
   updateCollapse(dt);
   updateFalseFloors(dt); if (frameNo % 30 === 0) restoreBrokenFloors();
+  updateCamp(dt);
   updateStreamSound(dt);
   waterUniforms.uTime.value += dt;
   updatePlaces(dt);

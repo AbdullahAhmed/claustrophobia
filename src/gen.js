@@ -35,7 +35,7 @@ export const streamNodes = [];          // flowing-water nodes, for the sound of
 export const voids = [];                       // pit bottoms: {x,y,z, top}
 export const sumpNodes = [];                   // where each sump begins, with what it is: {len, bell, trap}
 export const trunkIds = new Set();
-let windows = 0, cathedral = false;          // the one great room per cave
+let windows = 0, cathedral = false, camp = false;   // the one great room per cave; the one camp
 export let exit = null;
 let exitClaimed = false;
 export const ckey = (cx, cy, cz) => cx + ',' + cy + ',' + cz;
@@ -447,6 +447,11 @@ class Worm {
       if (R() < 0.5) props.push({ type: 'note', x: n.x, y: n.y, z: n.z, text: ['too far up', 'we tried the walls. no', 'daylight. 14 m. no', 'shout. nobody'][(R() * 4) | 0] });
       n.tint = 4; n.window = true;
     }
+    // the camp: where an earlier party stopped for good — once per cave, in a dry chamber well in
+    if (!camp && core && wl === undefined && !this.pit && !this.sump && this.rx > 2.4 && this.ry > 1.6 && this.theme !== 'wet' && Math.hypot(n.x, n.z) > 90 && R() < 0.08) {
+      camp = true;
+      props.push({ type: 'camp', x: n.x, y: n.y, z: n.z, rx: this.rx, seed: R() });
+    }
     // a loose block in the roof of a cavern (or a big chamber): it comes down when something moves under it
     if (core && wl === undefined && !this.pit && !this.sump && this.ry > 2.3 && R() < (cavern ? 0.12 : 0.04) * tf(this, 'loose')) {
       const a = R() * Math.PI * 2, d = R() * this.rx * 0.5;
@@ -647,7 +652,7 @@ export function openness(x, y, z) {
 // ---------- bootstrap ----------
 export function initGen(seed, tier = 0) {
   nodes.length = 0; segs.length = 0; cellSegs.clear(); worms.length = 0; props.length = 0; algaeNodes.length = 0; streamNodes.length = 0;
-  voids.length = 0; sumpNodes.length = 0; trunkIds.clear(); windows = 0; cathedral = false; rounds = 0; exit = null; exitClaimed = false;
+  voids.length = 0; sumpNodes.length = 0; trunkIds.clear(); windows = 0; cathedral = false; camp = false; rounds = 0; exit = null; exitClaimed = false;
   for (const ch of chunks.values()) ch.dirty = true;
   SEED = seed; TIER = tier; setSeed(seed); rand = mulberry32(seed); EXIT_AT = rr(340, 500) * (1 + 0.12 * Math.min(tier, 6));
   const start = { x: 0, y: 0, z: 0, rx: 3.4, ry: 2.6, w: -1, i: 0, core: true, algae: 0 }; nodes.push(start);

@@ -87,7 +87,8 @@ All recordings are **CC0** from Freesound; see [`sounds/CREDITS.md`](sounds/CRED
 Passages, chambers, crawls, squeezes, canyons, bedding planes, chimneys; flooded sumps with air bells; pits with plunge pools;
 boulder caverns; crystal pockets; dripstone and calcite draperies; mist over the lakes; bioluminescent algae; cascades; active streamways that run downhill in
 steps and sometimes go under; rimstone terraces — calcite dams holding clear pools, stepping down, with cave pearls in them; black lakes in big chambers that you wade into, swim across in the cold, and wade out of; windows — a second hole to the sky in a shallow chamber roof, with rain and roots and birds and no way up it; glow-worms — a few hundred blue-green lights on threads of silk, hung from a damp roof, best with the torch off; bat roosts; olms in the still pools, pale and blind, that flinch from the beam; fossils in the bedding — ammonites, crinoid stems, shells; mineral tints by region; bones, and the packs of the cavers who left them.
-Every cave has one great room, well in: a cavern with a lake through the middle of it, algae on the walls, water
+Every cave has one camp, well in: sleeping bags, a stove, the packs and pages of a party that stopped there, and
+everything they chalked on the walls. Every cave has one great room, well in: a cavern with a lake through the middle of it, algae on the walls, water
 falling from the roof, glow-worms over the far shore. Chambers you reach get names, written into the survey. Some packs hold a page from their owner's log — what they
 learned about the sump, the drop, the roof or the air nearby — copied into the margin of your survey and kept for
 every later attempt at that cave.
