@@ -22,6 +22,9 @@ window.walk = async function walk(opts = {}) {
     p.yaw = Math.atan2(-(gx - p.x), -(gz - p.z));
     p.pitch = Math.max(-1.0, Math.min(0.6, Math.atan2(aimY - (p.y + p.h - 0.1), Math.hypot(t.x - p.x, t.z - p.z))));
     K.keys.KeyW = true; K.keys.KeyS = false;
+    // a chimney: the next node is well above and close by — hold space and climb (only with the legs for it)
+    const climbNode = t.y - p.y > 1.2 && Math.hypot(t.x - p.x, t.z - p.z) < 1.6 && !p.swim;
+    K.keys.Space = climbNode && (p.stamina > 0.3 || !p.grounded);
     if (avoid > 150) { K.keys.KeyW = false; K.keys.KeyS = true; }         // first half-second: back out
     if (K.stuck > 0) { K.keys.KeyA = (f % 8) < 4; K.keys.KeyD = !K.keys.KeyA; } else { K.keys.KeyA = false; K.keys.KeyD = false; }
     if (f % 240 < 60 && f % 8 === 0) K.shakeTorch();                       // a burst of ~8 shakes every 4 s, spaced like a human
@@ -49,6 +52,6 @@ window.walk = async function walk(opts = {}) {
     if (!p.alive) { log.push(['DEAD', (f / 60).toFixed(0), document.getElementById('ov-title').textContent]); break; }
     if (p.out) { log.push(['OUT', (f / 60).toFixed(0)]); break; }
   }
-  K.keys.KeyW = false; K.keys.KeyS = false; K.keys.KeyA = false; K.keys.KeyD = false;
+  K.keys.KeyW = false; K.keys.KeyS = false; K.keys.KeyA = false; K.keys.KeyD = false; K.keys.Space = false;
   return { log, stances, walked: (p.dist - startDist).toFixed(0), far: Math.hypot(p.x, p.z).toFixed(0), maxFrameMs: maxFrame.toFixed(1), alive: p.alive, out: p.out, hurt: p.hurt, worms: K.G.worms.length, rounds: K.G.rounds, exit: !!K.exit };
 };
