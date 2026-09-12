@@ -224,7 +224,9 @@ class Worm {
       }
     } else if (this.pit) {                              // ---- a hole in the floor ----
       const P = this.pit;
-      if (P.phase === 'ledge') { this.pitch = 0; this.rx = lerp(this.rx, 1.3, 0.6); this.ry = lerp(this.ry, 1.3, 0.6); P.phase = 'drop'; P.ledge = this.node; P.ledgeYaw = this.yaw; voids.push({ x: this.x, y: P.bottom, z: this.z, top: this.y, wet: P.wl !== undefined }); }
+      if (P.phase === 'ledge') { this.pitch = 0; this.rx = lerp(this.rx, 1.3, 0.6); this.ry = lerp(this.ry, 1.3, 0.6); P.phase = 'drop'; P.ledge = this.node; P.ledgeYaw = this.yaw; voids.push({ x: this.x, y: P.bottom, z: this.z, top: this.y, wet: P.wl !== undefined });
+        if (R() < 0.22) props.push({ type: 'oldrope', x: this.x, y: this.y, z: this.z, bottom: P.bottom, frayed: R() < 0.3 });   // someone rigged this once, and left it
+      }
       else if (P.phase === 'drop') {
         this.pitch = -1.45; this.rx = 1.3; this.ry = 1.3;
         if (P.wl !== undefined && this.y - STEP < P.wl + 0.3) wl = P.wl;
