@@ -1489,7 +1489,9 @@ function updatePlayer(dt) {
   if (!wantRest) restRequested = false;
   if (wantRest && !resting) { resting = true; restT = 0; sfx.play('torch_click', { vol: 0.5, rate: 0.9 }); teach('rest', 'sitting down, torch off. the cold goes, the legs come back; the battery is spared. listen while you wait'); }
   if (!wantRest && resting) { resting = false; sfx.play('torch_click', { vol: 0.5, rate: 1.1 }); }
-  if (resting) { restT += dt; player.cold = Math.max(0, player.cold - dt / 12); player.stamina = Math.min(1, player.stamina + dt / 4); if (restT > 25 && Math.floor(restT) % 20 === 0 && Math.floor(restT) !== Math.floor(restT - dt)) showHint('still here'); }
+  const inCamp = campSite && Math.hypot(campSite.x - player.x, campSite.z - player.z) < 4 && Math.abs(campSite.y - player.y) < 2;
+  if (resting && inCamp && restT < 0.1) showHint('in a dead man’s bag. warm, at least', true);
+  if (resting) { restT += dt; player.cold = Math.max(0, player.cold - dt / (inCamp ? 4 : 12)); player.stamina = Math.min(1, player.stamina + dt / 4); if (restT > 25 && Math.floor(restT) % 20 === 0 && Math.floor(restT) !== Math.floor(restT - dt)) showHint('still here'); }
   const still = notebookOpen || toolsOpen || typing || stuck > 0 || resting;         // you stop walking to write; or the rock has you; or you are sitting
   const f = !still && (keys.KeyW || keys.ArrowUp) ? 1 : 0, b = !still && (keys.KeyS || keys.ArrowDown) ? 1 : 0;
   const l = !still && (keys.KeyA || keys.ArrowLeft) ? 1 : 0, r = !still && (keys.KeyD || keys.ArrowRight) ? 1 : 0;
