@@ -227,8 +227,8 @@ class Worm {
       const P = this.pit;
       if (P.phase === 'ledge') { this.pitch = 0; this.rx = lerp(this.rx, 1.3, 0.6); this.ry = lerp(this.ry, 1.3, 0.6); P.phase = 'drop'; P.ledge = this.node; P.ledgeYaw = this.yaw; voids.push({ x: this.x, y: P.bottom, z: this.z, top: this.y, wet: P.wl !== undefined });
         if (R() < 0.22) props.push({ type: 'oldrope', x: this.x, y: this.y, z: this.z, bottom: P.bottom, frayed: R() < 0.3 });   // someone rigged this once, and left it
-        else if (P.wl === undefined && mulberry32((SEED ^ Math.imul(this.id, 73856093) ^ Math.imul(this.n, 19349663)) >>> 0)() < 0.3) { // independent draw: existing seeds keep their layout
-          const slab = { x: this.x + Math.sin(this.yaw) * 1.2, y: this.y - 0.05, z: this.z + Math.cos(this.yaw) * 1.2, r: 2.2 };
+        else if (P.wl === undefined && this.ry >= 1.1 && mulberry32((SEED ^ Math.imul(this.id, 73856093) ^ Math.imul(this.n, 19349663)) >>> 0)() < 0.3) { // independent draw: existing seeds keep their layout; only where there is head-room over the crust
+          const slab = { x: this.x + Math.sin(this.yaw) * 0.9, y: this.y + 0.05, z: this.z + Math.cos(this.yaw) * 0.9, r: 2.2 };
           this.node.slabs = (this.node.slabs || []).concat([slab]); P.slab = slab;
           props.push({ type: 'falsefloor', x: slab.x, y: this.y, z: slab.z, r: slab.r, bottom: P.bottom, node: this.node });
         }
