@@ -500,7 +500,9 @@ function useRope() {
   const v = nearestVoid();
   if (!v) { showHint('nothing to rig here'); return; }
   if (player.rope <= 0) { showHint('you have no rope'); return; }
-  player.rope--;
+  const need = Math.max(1, Math.ceil((v.top - v.y) / 12));                              // a coil is about twelve metres
+  if (player.rope < need) { showHint(`the rope does not reach. ${need} coils for this one, and you have ${player.rope}`, true); return; }
+  player.rope -= need; if (need > 1) showHint(`${need} coils tied together`);
   const r = { x: v.x, z: v.z, top: v.top, bottom: v.y, mesh: new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, v.top - v.y + 0.3, 5), ropeMat) };
   r.mesh.position.set(v.x, (v.top + v.y) / 2 - 0.1, v.z); scene.add(r.mesh); ropes.push(r);
   roping = { rope: r, dir: -1, t: 0 }; sfx.play('rattle', { vol: 0.5, rate: 0.6 }); showHint('rigged. going down');

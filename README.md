@@ -33,7 +33,7 @@ Development tools, screenshots, `.git`, and `.claude` are not needed on the web 
 | Space | Hop; hold to climb a chimney or swim upward |
 | Left mouse (hold) | Shake and recharge the torch continuously; the beam dims while charging |
 | Right mouse (hold) | Focus the beam; release for wide. The focused beam uses more battery. |
-| E | Use or rig a nearby rope |
+| E | Use or rig a nearby rope — a coil is about twelve metres; a deeper pitch takes two, tied |
 | G | Tap to drop a glowstick; hold and release to throw |
 | Q (hold) | Tools wheel: move the mouse toward chalk, whistle, rest, or stone, then release Q. Release at the center to cancel. A tossed stone lands where you are looking: you hear the floor, or the drop — and a crust over a shaft gives way under it. |
 | Tab | Open / close the survey notebook |
