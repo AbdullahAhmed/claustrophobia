@@ -13,7 +13,10 @@ try { cave = JSON.parse(localStorage.getItem('karst.cave') || 'null'); } catch (
 const urlSeed = parseInt(params.get('seed'));
 const urlSeedIsNew = !!urlSeed && !(cave && cave.seed === urlSeed);
 const SEED = (urlSeed || (cave && !cave.escaped && cave.seed) || ((Math.random() * 1e9) | 0)) >>> 0;
-if (!cave || cave.seed !== SEED) cave = { seed: SEED, attempts: 0, deaths: [], marks: [], escaped: false };
+let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0, froze: 0, crushed: 0, foul: 0 };
+try { record = Object.assign(record, JSON.parse(localStorage.getItem('karst.record') || '{}')); } catch (e) {}
+if (!cave || cave.seed !== SEED) cave = { seed: SEED, attempts: 0, deaths: [], marks: [], escaped: false, tier: record.escapes };
+if (cave.tier === undefined) cave.tier = 0;
 if (!cave.run) cave.attempts++;
 function saveCave() { try { localStorage.setItem('karst.cave', JSON.stringify(cave)); } catch (e) {} }
 saveCave();
@@ -646,11 +649,9 @@ function start() { overlay.classList.add('hidden'); running = true; }
 if (matchMedia('(pointer: coarse)').matches) $('warn').style.display = 'block';
 
 // ---------- run record ----------
-let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0, froze: 0, crushed: 0, foul: 0 };
-try { record = Object.assign(record, JSON.parse(localStorage.getItem('karst.record') || '{}')); } catch (e) {}
 record.runs++;
 try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {}
-$('ov-rec').textContent = `cave ${SEED} · attempt ${cave.attempts}${cave.deaths.length ? ` · ${cave.deaths.length} of you lie in it` : ''} · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
+$('ov-rec').textContent = `cave ${SEED}${cave.tier ? ` (the ${['second', 'third', 'fourth', 'fifth', 'sixth', 'seventh'][Math.min(cave.tier, 6) - 1] || 'next'} cave: deeper)` : ''} · attempt ${cave.attempts}${cave.deaths.length ? ` · ${cave.deaths.length} of you lie in it` : ''} · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
 if (cave.attempts > 1) $('ov-sub').textContent = 'the same cave. it remembers.';
 function saveRecord() { record.best = Math.max(record.best, player.dist); try { localStorage.setItem('karst.record', JSON.stringify(record)); } catch (e) {} }
 let runTime = 0;
@@ -1484,7 +1485,7 @@ function hud(dt) {
 
 // ---------- bootstrap ----------
 function init() {
-  G.initGen(SEED);
+  G.initGen(SEED, cave.tier);
   for (const d of cave.deaths) G.props.push({ type: 'remains', ...d });
   for (const m of cave.marks) G.props.push({ type: 'mark', ...m });
   if (cave.places) places.push(...cave.places);

@@ -12,7 +12,7 @@ const STEP = 1.5;
 const MAX_WORMS = 90;
 
 // ---------- rng / noise ----------
-export let SEED = 1, rand = Math.random, EXIT_AT = 260;
+export let SEED = 1, rand = Math.random, EXIT_AT = 260, TIER = 0;   // TIER: how many caves this player has already got out of
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 export const rr = (a, b) => a + rand() * (b - a);
 // The cave must be the same cave every time for a seed, whatever route the player takes: every worm owns its
@@ -129,7 +129,8 @@ class Worm {
     if (!m) {
       // deeper is meaner: the dangerous modes get heavier with depth
       const deep = clamp(-this.y / 30, 0, 1.5);
-      const ws = MODES.map(mo => mo.w * (mo.name === 'sump' ? 1 + deep : mo.name === 'pit' ? 1 + 0.8 * deep : mo.name === 'cavern' ? 1 + 0.6 * deep : 1));
+      const th = 1 + 0.1 * Math.min(TIER, 6);                   // the caves you find after getting out are meaner
+      const ws = MODES.map(mo => mo.w * (mo.name === 'sump' ? (1 + deep) * th : mo.name === 'pit' ? (1 + 0.8 * deep) * th : mo.name === 'cavern' ? 1 + 0.6 * deep : mo.name === 'squeeze' || mo.name === 'crawl' ? th : 1));
       let r = R() * ws.reduce((a, b) => a + b, 0);
       for (let k = 0; k < MODES.length; k++) { r -= ws[k]; if (r <= 0) { m = MODES[k]; break; } }
       m = m || MODES[0];
@@ -155,8 +156,9 @@ class Worm {
     if (m.name === 'sump') {
       // short: never needs air. medium: usually a bell. long: bring your nerve.
       const fed = this.flow !== null;                                              // a stream sinking under: longer, and the current takes you in
-      const r = R(), under = fed ? wr(9, 22) : r < 0.45 ? wr(5, 10) : r < 0.85 ? wr(10, 18) : wr(18, 30);
-      const bell = under > 18 ? R() < 0.3 : under > 10 ? R() < 0.6 : false;
+      const hard = 1 + 0.08 * Math.min(TIER, 6);
+      const r = R(), under = (fed ? wr(9, 22) : r < 0.45 ? wr(5, 10) : r < 0.85 ? wr(10, 18) : wr(18, 30)) * hard;
+      const bell = under > 18 ? R() < 0.3 / hard : under > 10 ? R() < 0.6 / hard : false;
       this.sump = { phase: 'dive', wl: fed && this.node.wl !== undefined ? this.node.wl : this.y + 0.35, left: under, bell: 0, bellAt: bell ? under * wr(0.4, 0.6) : null,
                     trap: !fed && this.kind !== 'trunk' && R() < 0.25 };
       if (R() < 0.3) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: R() < 0.7 ? NOTES.water[(R() * NOTES.water.length) | 0] : NOTES.lie[(R() * NOTES.lie.length) | 0] });
@@ -504,8 +506,8 @@ export function openness(x, y, z) {
 }
 
 // ---------- bootstrap ----------
-export function initGen(seed) {
-  SEED = seed; setSeed(seed); rand = mulberry32(seed); EXIT_AT = rr(340, 500);
+export function initGen(seed, tier = 0) {
+  SEED = seed; TIER = tier; setSeed(seed); rand = mulberry32(seed); EXIT_AT = rr(340, 500) * (1 + 0.12 * Math.min(tier, 6));
   const start = { x: 0, y: 0, z: 0, rx: 3.4, ry: 2.6, w: -1, i: 0, core: true, algae: 0 }; nodes.push(start);
   // the hole you came through: a shaft from the chamber roof up to the surface, too smooth and too far to climb
   const top = start.y + (1 + CY) * start.ry;
