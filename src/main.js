@@ -36,7 +36,7 @@ const dread = Math.min(1, (cave.attempts - 1) * 0.18 + cave.deaths.length * 0.08
 let saveT = 0;
 function saveRun() {
   if (!player.alive || player.out) return;
-  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks, rope: player.rope, cells: player.cells, kit: player.kit, suit: player.suit,
+  cave.run = { x: player.x, y: player.y, z: player.z, yaw: player.yaw, battery: player.battery, breath: player.breath, hurt: player.hurt, sticks: player.sticks, rope: player.rope, cells: player.cells, kit: player.kit, suit: player.suit, frames: framesLeft,
                glow: glow.map(g => ({ x: g.x, y: g.y, z: g.z })), places, pages: player.pages, notes,
                dist: player.dist, maxDepth: player.maxDepth, marks: runMarks, trail: player.trail.slice(-3000), t: runTime };
   saveCave();
@@ -1171,6 +1171,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyQ' && !e.repeat) openTools();
   if (toolsOpen || notebookOpen) return;
   if (e.code === 'KeyG' && !e.repeat) beginGlow();
+  if (e.code === 'KeyP' && !e.repeat) takePhoto();
   if (e.code === 'KeyE' && !e.repeat) { restRequested = false; eHeldAt = performance.now(); }
 });
 addEventListener('keyup', e => {
@@ -1237,6 +1238,7 @@ function pollGamepad(dt) {
   if (!notebookOpen) {
     if (Math.abs(rx) > 0.18 || Math.abs(ry) > 0.18) look((Math.abs(rx) > 0.18 ? rx : 0) * 900 * dt, (Math.abs(ry) > 0.18 ? ry : 0) * 700 * dt);
     if (down(12)) { restRequested = false; useRope(); }
+    if (down(11)) takePhoto();
     if (down(5)) beginGlow(); if (up(5)) releaseGlow();
   }
   padCharge = pressed[2] && !notebookOpen; padFocus = pressed[4] && !notebookOpen; padUseHeld = pressed[12] && !notebookOpen;
@@ -1321,6 +1323,9 @@ function endScreen(title, sub, go) {
   const obit = cave.deaths.length && player.out ? `<br>${cave.deaths.length} of you did not come back.` : '';
   $('ov-body').innerHTML = `<b>${player.dist.toFixed(0)} m</b> walked &nbsp;·&nbsp; deepest <b>${player.maxDepth.toFixed(0)} m</b> &nbsp;·&nbsp; <b>${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</b><br>${extras}${obit}`;
   $('ov-rec').textContent = `cave ${SEED} · attempt ${cave.attempts} · ${cave.deaths.length} dead in it · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
+  const mine = (cave.photos || []).filter(ph => ph.a === cave.attempts);
+  $('ov-photos').innerHTML = mine.map(ph => `<img src="${ph.data}" alt="" title="${ph.place || `${(-ph.y).toFixed(0)} m down`}">`).join('');
+  $('ov-photos').hidden = !mine.length;
   $('go').innerHTML = go;
   overlay.classList.remove('hidden'); overlay.classList.add('over');
   notebookOpen = true; nb.style.display = 'block'; nb.classList.add('under'); drawNotebook();
@@ -1683,6 +1688,7 @@ function updatePlayer(dt) {
   const eyeY = player.y + player.h - 0.1;
   player.under = player.wl > eyeY;
   const stance = player.h > 1.4 ? 1 : player.h > 0.8 ? 0.55 : 0.3;
+  if (open > 14 && runTime > 90 && framesLeft === FRAMES) teach('camera', 'a big room. there is a camera in the pack, eight frames on the roll: P (right stick click). the flash shows more than the torch ever will, for an instant');
   if (stance < 1 && !player.swim) teach('low', 'low ceiling — you duck on your own. lower still and you crawl. hold C to stay down');
   if (player.swim) teach('swim', 'chest deep: you’re swimming. look down + W or C to dive. space to surface. watch your breath');
   if (!player.swim && player.h <= 0.52 && depthW > 0.18) teach('duck', 'flat out with your chin in the water. keep your head up, keep moving, and do not stop where it dips');
@@ -2361,6 +2367,50 @@ function updatePlaces(dt) {
   showHint(name.toLowerCase(), true);
 }
 
+// ---------- the camera: eight frames a trip. the flash shows the whole room for an instant, and the print goes in the survey ----------
+const FRAMES = 8;
+let framesLeft = FRAMES, photoReq = 0, flashLight = null, flashHold = 0;
+const photoCanvas = document.createElement('canvas'); photoCanvas.width = 240; photoCanvas.height = 150;
+const photoImgs = new Map();                                          // data url -> Image, for the notebook
+function takePhoto() {
+  if (!canAct() || typing || toolsOpen || notebookOpen || photoReq || flashHold > 0) return;
+  if (framesLeft <= 0) { showHint('the roll is finished'); return; }
+  if (player.under) { showHint('not under the water'); return; }
+  framesLeft--; photoReq = 2;                                          // the flash lights the next frame; the one after it is the print
+  sfx.play('torch_click', { vol: 0.9, rate: 1.7 });
+}
+function beforeRenderPhoto() {
+  if (photoReq && !flashLight) { flashLight = borrowLight(0xfff1d6, 55, 80, 1.8, camera.position.x, camera.position.y + 0.25, camera.position.z); if (flashLight) flashLight.userData.keep = true; flashHold = 0.13; }
+  if (flashLight) flashLight.position.set(camera.position.x, camera.position.y + 0.25, camera.position.z);
+  if (photoReq) hand.visible = hand.userData.torchModel.visible = false;             // the camera is in that hand, and the torch is not in the frame
+}
+function afterRenderPhoto(dt) {
+  if (photoReq) {
+    photoReq--;
+    if (!photoReq) {
+      const g = photoCanvas.getContext('2d'); g.drawImage(canvas, 0, 0, photoCanvas.width, photoCanvas.height);
+      const data = photoCanvas.toDataURL('image/jpeg', 0.72);
+      const pl = places.find(q => Math.hypot(q.x - player.x, q.z - player.z) < 30);
+      cave.photos = (cave.photos || []).concat([{ x: player.x, y: player.y, z: player.z, t: Math.round(runTime), a: cave.attempts, place: pl ? pl.name : null, data }]).slice(-12); saveCave();
+      showHint(framesLeft ? `${framesLeft} frame${framesLeft === 1 ? '' : 's'} left on the roll` : 'that was the last frame');
+      hand.visible = torchHeld; hand.userData.torchModel.visible = true;
+    }
+  }
+  if (flashHold > 0) {
+    flashHold -= dt;
+    if (flashHold <= 0) {                                              // the burst is gone; what stays is the burn on your eyes
+      returnLight(flashLight); flashLight = null;
+      const fl = $('flash'); fl.style.transition = 'none'; fl.style.opacity = 0.8; void fl.offsetWidth; fl.style.transition = 'opacity 0.7s ease-out'; fl.style.opacity = 0;
+      gameDelay(() => { fl.style.transition = ''; }, 800);
+    }
+  }
+}
+function photoImage(ph) {
+  let im = photoImgs.get(ph.data);
+  if (!im) { im = new Image(); im.src = ph.data; photoImgs.set(ph.data, im); }
+  return im.complete && im.naturalWidth ? im : null;
+}
+
 // ---------- survey notebook ----------
 let notebookOpen = false, nbTimer = 0;
 const nb = $('notebook'), nbc = $('nbc');
@@ -2381,8 +2431,9 @@ function drawNotebook() {
   for (const d of cave.deaths) for (const q of (d.trail || [])) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.z < z0) z0 = q.z; if (q.z > z1) z1 = q.z; }
   for (const pg of player.pages) for (const q of (pg.survey || [])) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; }
   const margin = player.pages.length ? 400 : 0;                                                          // pages I found go down the right-hand side
-  const S = clamp(Math.min((W - 320 - margin) / Math.max(1, x1 - x0), (H - 300) / Math.max(1, z1 - z0)), 2.5, 12);   // px per metre
-  const cx = (W - margin) / 2 - (x0 + x1) / 2 * S, cz = H / 2 - (z0 + z1) / 2 * S;
+  const photos = cave.photos || [], strip = photos.length ? 190 : 0;                                    // prints go along the bottom
+  const S = clamp(Math.min((W - 320 - margin) / Math.max(1, x1 - x0), (H - 300 - strip) / Math.max(1, z1 - z0)), 2.5, 12);   // px per metre
+  const cx = (W - margin) / 2 - (x0 + x1) / 2 * S, cz = (H - strip) / 2 - (z0 + z1) / 2 * S;
   const X = x => cx + x * S, Z = z => cz + z * S;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   // surveys of the ones who came before, faint
@@ -2444,13 +2495,30 @@ function drawNotebook() {
       py += 22; if (py > H - 120) break;
     }
   }
+  // the prints, stuck along the bottom of the page, numbered where they were taken
+  if (photos.length) {
+    const pw = 200, phh = 125, gap = 16, n = photos.length, total = n * pw + (n - 1) * gap, sx = Math.max(70, (W - margin - total) / 2), py = H - strip - 20;
+    ctx.font = '600 22px Caveat';
+    photos.forEach((ph, i) => {
+      const x = sx + i * (pw + gap), im = photoImage(ph);
+      ctx.save(); ctx.translate(x + pw / 2, py + phh / 2); ctx.rotate(((i * 7919) % 11 - 5) * 0.006);
+      ctx.fillStyle = '#f3efe6'; ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3; ctx.fillRect(-pw / 2 - 7, -phh / 2 - 7, pw + 14, phh + 34); ctx.shadowColor = 'transparent';
+      if (im) ctx.drawImage(im, -pw / 2, -phh / 2, pw, phh); else { ctx.fillStyle = '#1a1714'; ctx.fillRect(-pw / 2, -phh / 2, pw, phh); }
+      ctx.fillStyle = 'rgba(45,38,32,0.85)';
+      const cap = `${i + 1} · ${ph.place || `${(-ph.y).toFixed(0)} m down`}${ph.a !== cave.attempts ? ` · attempt ${ph.a}` : ''}`;
+      ctx.fillText(cap.length > 26 ? cap.slice(0, 25) + '…' : cap, -pw / 2, phh / 2 + 20);
+      ctx.restore();
+      ctx.fillStyle = 'rgba(45,38,32,0.8)'; ctx.beginPath(); ctx.arc(X(ph.x), Z(ph.z), 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#f3efe6'; ctx.font = '700 16px Caveat'; ctx.fillText(String(i + 1), X(ph.x) - (i >= 9 ? 7 : 4), Z(ph.z) + 6); ctx.font = '600 22px Caveat';
+    });
+  }
   // compass rose
   ctx.save(); ctx.translate(W - 120, 130); ctx.strokeStyle = 'rgba(60,52,44,0.8)'; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.arc(0, 0, 44, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, -44); ctx.lineTo(0, 44); ctx.moveTo(-44, 0); ctx.lineTo(44, 0); ctx.stroke();
   ctx.fillStyle = 'rgba(60,52,44,0.9)'; ctx.font = '600 26px Caveat'; ctx.fillText('N', -8, -52); ctx.restore();
   $('nb-title').textContent = `survey · attempt ${cave.attempts}`;
   const dist = Math.hypot(player.x, player.z);
-  $('nb-foot').textContent = `${player.dist.toFixed(0)} m walked · ${(-player.y).toFixed(0)} m deep · ${dist.toFixed(0)} m from the entrance as the bat flies · ${player.sticks} glowsticks · ${player.rope} rope${player.kit ? ' · a kit' : ''}${player.cells ? ' · lithium' : ''}${player.suit ? ' · wetsuit' : ''}`;
+  $('nb-foot').textContent = `${player.dist.toFixed(0)} m walked · ${(-player.y).toFixed(0)} m deep · ${dist.toFixed(0)} m from the entrance as the bat flies · ${player.sticks} glowsticks · ${player.rope} rope${player.kit ? ' · a kit' : ''}${player.cells ? ' · lithium' : ''}${player.suit ? ' · wetsuit' : ''} · ${framesLeft} frame${framesLeft === 1 ? '' : 's'}`;
 }
 
 // your own bubbles, when you are under
@@ -2538,7 +2606,7 @@ function init() {
     const r = cave.run;
     player.x = r.x; player.y = r.y; player.z = r.z; player.yaw = r.yaw; player.battery = r.battery; player.breath = r.breath; player.hurt = r.hurt;
     player.dist = r.dist; player.maxDepth = r.maxDepth; player.trail = r.trail || []; runMarks.push(...(r.marks || [])); runTime = r.t || 0;
-    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.places) places.push(...r.places); if (r.notes) notes.push(...r.notes); if (r.pages) for (const pg of r.pages) if (!player.pages.some(q => q.key === pg.key)) player.pages.push(pg); if (r.rope !== undefined) player.rope = r.rope; if (r.cells) player.cells = true; if (r.kit) player.kit = true; if (r.suit) player.suit = true;
+    if (r.sticks !== undefined) player.sticks = r.sticks; if (r.places) places.push(...r.places); if (r.notes) notes.push(...r.notes); if (r.pages) for (const pg of r.pages) if (!player.pages.some(q => q.key === pg.key)) player.pages.push(pg); if (r.rope !== undefined) player.rope = r.rope; if (r.cells) player.cells = true; if (r.kit) player.kit = true; if (r.suit) player.suit = true; if (r.frames !== undefined) framesLeft = r.frames;
     for (const g of (r.glow || [])) { const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(g.x, g.y, g.z); mesh.rotation.x = Math.PI / 2; scene.add(mesh); const light = borrowLight(0x5cff7a, 1.1, 9, 1.7, g.x, g.y + 0.15, g.z); const gl = { ...g, light, mesh }; if (light) light.userData.owner = gl; glow.push(gl); }
     for (const m of runMarks) G.props.push({ type: 'mark', ...m });
     G.focus.x = player.x; G.focus.y = player.y; G.focus.z = player.z;
@@ -2551,7 +2619,7 @@ function init() {
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
-               run: () => { running = true; overlay.classList.add('hidden'); sfx.resume(); }, pause: pauseGame, schedule: gameDelay, get controls() { return { running, toolsOpen, typing, beamNarrow, resting, restRequested, toolChoice, gameClock }; }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, falseFloors, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, tremor: () => { tremorAt = 0; }, steal: stealTorch, lines, layLine, sumpPath, nearestSumpEnd, ropes, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; }, tight: (n) => { stuck = n; stuckTight = true; wiggles = 0; exhaleT = 0; } };
+               run: () => { running = true; overlay.classList.add('hidden'); sfx.resume(); }, pause: pauseGame, schedule: gameDelay, get controls() { return { running, toolsOpen, typing, beamNarrow, resting, restRequested, toolChoice, gameClock }; }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, falseFloors, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, tremor: () => { tremorAt = 0; }, steal: stealTorch, takePhoto, get frames() { return framesLeft; }, lines, layLine, sumpPath, nearestSumpEnd, ropes, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; }, tight: (n) => { stuck = n; stuckTight = true; wiggles = 0; exhaleT = 0; } };
 }
 init();
 // warm the shaders now, not the first time a lake or a loose block comes into view (a compile can cost a quarter second)
@@ -2623,7 +2691,7 @@ function stepFrame(dt) {
   updateBats(dt);
   updateCascades(dt); lap('systems');
   updateSound(dt); lap('sound');
-  renderer.render(scene, camera); lap('render');
+  beforeRenderPhoto(); renderer.render(scene, camera); afterRenderPhoto(dt); lap('render');
   grain(); hud(dt); updateContext(); lap('hud');
   stats.frameMs = performance.now() - tf;
 }

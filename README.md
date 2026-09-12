@@ -35,6 +35,7 @@ Development tools, screenshots, `.git`, and `.claude` are not needed on the web 
 | Right mouse (hold) | Focus the beam; release for wide. The focused beam uses more battery. |
 | E | Use or rig a nearby rope — a coil is about twelve metres; a deeper pitch takes two, tied. Hold E at the top of a rope you rigged to pull it up and coil it again. At the edge of a sump, E ties a coil off and lays it through as a line (about fourteen metres of line per coil); in the water, hold E to haul yourself along the line toward the nearer end, faster than swimming and blind if you have to. Hold E on either bank to reel it in |
 | G | Tap to drop a glowstick; hold and release to throw |
+| P (right stick click) | Photograph. Eight frames on the roll per attempt; the flash lights the whole room for an instant — more than the torch ever shows — and the print goes into the survey, numbered where you took it. Prints stay in the cave's notebook across attempts and appear on the end screen |
 | Q (hold) | Tools wheel: move the mouse toward chalk, whistle, rest, or stone, then release Q. Release at the center to cancel. A tossed stone lands where you are looking: you hear the floor, or the drop — and a crust over a shaft gives way under it. |
 | Tab | Open / close the survey notebook |
 | chalk | type a note and press Enter; press Enter with nothing typed (or pick chalk on a controller) for an arrow with the compass direction you face |
