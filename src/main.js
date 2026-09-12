@@ -1387,6 +1387,7 @@ function updatePlayer(dt) {
   if (player.under && !wasUnder) { sfx.play('bubbles', { vol: 0.5, rate: 1.1, dur: 1.2 }); player.underT = 0; }
   if (!player.under && wasUnder) {
     sfx.play('splash_small', { x: player.x, y: wy, z: player.z, vol: 0.7 });
+    startDrops();
     if (player.underT > 5) { record.sumps = (record.sumps || 0) + 1; saveRecord(); const nb = BREATH_BASE + Math.min(6, record.sumps * 0.4); if (nb > BREATH_S + 0.01) { BREATH_S = nb; if (record.sumps % 5 === 0) showHint(`you can hold it a little longer now: ${BREATH_S.toFixed(0)} seconds`, true); } }
     if (player.underT > 2.5 && gaspT <= 0) { sfx.play(player.breath < 0.4 ? 'gasping' : 'gasp', { vol: 0.8 }); gaspT = 3; }
   }
@@ -1934,6 +1935,25 @@ function drawNotebook() {
   $('nb-foot').textContent = `${player.dist.toFixed(0)} m walked · ${(-player.y).toFixed(0)} m deep · ${dist.toFixed(0)} m from the entrance as the bat flies · ${player.sticks} glowsticks · ${player.rope} rope${player.kit ? ' · a kit' : ''}${player.cells ? ' · lithium' : ''}`;
 }
 
+// water running off your face after you surface: drops on the view that slide and fade
+const dropsCv = $('drops'), dropsCtx = dropsCv.getContext('2d'); let dropList = [], dropsT = 0;
+function startDrops() {
+  dropList = []; for (let i = 0; i < 14; i++) dropList.push({ x: Math.random() * 480, y: Math.random() * 200, r: 3 + Math.random() * 9, v: 8 + Math.random() * 40, a: 0.35 + Math.random() * 0.35 });
+  dropsT = 4.5; dropsCv.style.opacity = 1;
+}
+function updateDrops(dt) {
+  if (dropsT <= 0) return;
+  dropsT -= dt; if (dropsT <= 0) { dropsCv.style.opacity = 0; return; }
+  dropsCtx.clearRect(0, 0, 480, 270);
+  const k = Math.min(1, dropsT / 1.5);
+  for (const d of dropList) {
+    d.y += d.v * dt; d.v += 12 * dt;
+    const g = dropsCtx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r);
+    g.addColorStop(0, `rgba(150,170,175,${0.05 * d.a * k})`); g.addColorStop(0.7, `rgba(200,220,225,${0.28 * d.a * k})`); g.addColorStop(1, 'rgba(200,220,225,0)');
+    dropsCtx.fillStyle = g; dropsCtx.beginPath(); dropsCtx.ellipse(d.x, d.y, d.r * 0.8, d.r * 1.3, 0, 0, Math.PI * 2); dropsCtx.fill();
+  }
+}
+
 // ---------- overlays / hud ----------
 const grainCtx = $('grain').getContext('2d');
 const grainImg = grainCtx.createImageData(320, 180);
@@ -2036,6 +2056,7 @@ function stepFrame(dt) {
   updateFossils(dt);
   updateMists(dt);
   updateThrown(dt);
+  updateDrops(dt);
   whistleT -= dt;
   updateFollower(dt);
   updateFlood(dt);
