@@ -68,6 +68,7 @@ top: you hear it first, then every stream, sump and plunge pool rises by up to a
 currents double, and the air bells fill. The way out is
 never less than 340 m from where you fell in, and it is through the water. Crawls that pinch shut. Caverns whose
 far walls your torch never reaches. A torch that dies in about two minutes unless you keep shaking it — blind while you
-do. Getting wedged in a crawl. Cold that shakes the torch out of your hand. Bats. And sometimes, down the passage, a
+do. Getting wedged in a crawl. Flooded crawls where you go flat out with your chin in the water and the roof on your
+back — every dip in the floor puts your face under. Cold that shakes the torch out of your hand. Bats. And sometimes, down the passage, a
 pair of eyes — more often the longer this cave has known you. Sometimes the beam finds something low on the floor
 ahead, looking back.

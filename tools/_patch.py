@@ -1,17 +1,21 @@
-p='src/main.js'; s=open(p,encoding='utf-8').read()
+p='src/gen.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
-rep("""  $('ov-body').innerHTML = `<b>${player.dist.toFixed(0)} m</b> walked &nbsp;·&nbsp; deepest <b>${player.maxDepth.toFixed(0)} m</b> &nbsp;·&nbsp; <b>${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</b><br>${player.marks} chalk marks &nbsp;·&nbsp; seed ${SEED}`;""",
-    """  const extras = [player.marks ? `${player.marks} chalk marks` : '', places.length ? `${places.length} place${places.length > 1 ? 's' : ''} named` : '', player.pages.length ? `${player.pages.length} page${player.pages.length > 1 ? 's' : ''} read` : '', `seed ${SEED}`].filter(Boolean).join(' &nbsp;·&nbsp; ');
-  const obit = cave.deaths.length && player.out ? `<br>${cave.deaths.length} of you did not come back.` : '';
-  $('ov-body').innerHTML = `<b>${player.dist.toFixed(0)} m</b> walked &nbsp;·&nbsp; deepest <b>${player.maxDepth.toFixed(0)} m</b> &nbsp;·&nbsp; <b>${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</b><br>${extras}${obit}`;""")
-# title screen: the ones who came before
-rep("""$('ov-rec').textContent = `cave ${SEED}${cave.tier ? ` (the ${['second', 'third', 'fourth', 'fifth', 'sixth', 'seventh'][Math.min(cave.tier, 6) - 1] || 'next'} cave: deeper)` : ''} · attempt ${cave.attempts}${cave.deaths.length ? ` · ${cave.deaths.length} of you lie in it` : ''} · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;""",
-    """$('ov-rec').textContent = `cave ${SEED}${cave.tier ? ` (the ${['second', 'third', 'fourth', 'fifth', 'sixth', 'seventh'][Math.min(cave.tier, 6) - 1] || 'next'} cave: deeper)` : ''} · attempt ${cave.attempts}${cave.deaths.length ? ` · ${cave.deaths.length} of you lie in it` : ''} · farthest ever ${record.best.toFixed(0)} m · escaped ${record.escapes}×`;
-{
-  const CAUSE = { drowned: 'drowned', fell: 'fell', froze: 'froze', crushed: 'buried', foul: 'bad air' };
-  const last = cave.deaths.slice(-4).map(d => `✕ ${Math.hypot(d.x, d.z).toFixed(0)} m out, ${(-d.y).toFixed(0)} m down · ${CAUSE[d.cause] || d.cause}`);
-  if (last.length) { const el = document.createElement('div'); el.className = 'rec'; el.style.marginTop = '6px'; el.style.opacity = '0.75'; el.textContent = last.join('   '); $('ov-rec').after(el); }
-}""")
+rep("""  { name: 'lake',    rx: [5.0, 9.0], ry: [3.5, 6.0],   len: [24, 44], w: 0.03 },   // a black lake in a big chamber: you swim it, in the cold, under algae""",
+    """  { name: 'lake',    rx: [5.0, 9.0], ry: [3.5, 6.0],   len: [24, 44], w: 0.03 },   // a black lake in a big chamber: you swim it, in the cold, under algae
+  { name: 'duck',    rx: [1.0, 1.5], ry: [0.44, 0.5],  len: [8, 18],  w: 0.05 },   // a flooded crawl: on your belly with your chin in the water and the roof on your back""")
+rep("""    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal' || m.name === 'stream' || m.name === 'gour' || m.name === 'lake') && (this.age < 20 || this.exit)) m = MODES[0];""",
+    """    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal' || m.name === 'stream' || m.name === 'gour' || m.name === 'lake' || m.name === 'duck') && (this.age < 20 || this.exit)) m = MODES[0];""")
+rep("""    if (m.name === 'lake') { this.lake = {""",
+    """    if (m.name === 'duck') { this.pitch = 0; this.algae = 0; if (R() < 0.4) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: ['chin up', 'keep your head up. it goes', 'wet crawl. 12 m', 'breathe through your nose'][(R() * 4) | 0] }); }
+    if (m.name === 'lake') { this.lake = {""")
+rep("""      if (this.lake && !this.exit) {                              // down into the water, along under it, and up out the far side""",
+    """      if (this.mode && this.mode.name === 'duck' && !this.exit) { // flat, and flooded to just under the roof
+        this.pitch = clamp(this.pitch * 0.5, -0.03, 0.03); this.wander = clamp(this.wander, -0.1, 0.1);
+        wl = Math.round((this.y + 0.27) / 0.1) * 0.1;
+      }
+      if (this.lake && !this.exit) {                              // down into the water, along under it, and up out the far side""")
+rep("""if (this.stream || this.sump || this.pit || this.lake) n.floods = true; }""",
+    """if (this.stream || this.sump || this.pit || this.lake || (this.mode && this.mode.name === 'duck')) n.floods = true; }""")
 open(p,'w',encoding='utf-8').write(s); print('ok')

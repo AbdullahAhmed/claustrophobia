@@ -991,6 +991,7 @@ function updatePlayer(dt) {
   const stance = player.h > 1.4 ? 1 : player.h > 0.8 ? 0.55 : 0.3;
   if (stance < 1 && !player.swim) teach('low', 'low ceiling — you duck on your own. lower still and you crawl. hold C to stay down');
   if (player.swim) teach('swim', 'chest deep: you’re swimming. look down + W or C to dive. space to surface. watch your breath');
+  if (!player.swim && player.h <= 0.52 && depthW > 0.18) teach('duck', 'flat out with your chin in the water. keep your head up, keep moving, and do not stop where it dips');
   if (player.under) teach('under', 'under. the bar at the top is your breath. turn back at half if you can’t see air');
   if (player.battery < 0.3) teach('torch', 'the torch is dying. tap F to shake it — you’re blind while you do');
   if (player.hurt) teach('hurt', 'something is broken. you’re slower now, and a second fall will finish you');
