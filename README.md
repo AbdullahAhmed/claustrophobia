@@ -33,7 +33,7 @@ Development tools, screenshots, `.git`, and `.claude` are not needed on the web 
 | Space | Hop; hold to climb a chimney or swim upward |
 | Left mouse (hold) | Shake and recharge the torch continuously; the beam dims while charging |
 | Right mouse (hold) | Focus the beam; release for wide. The focused beam uses more battery. |
-| E | Use or rig a nearby rope — a coil is about twelve metres; a deeper pitch takes two, tied. Hold E at the top of a rope you rigged to pull it up and coil it again |
+| E | Use or rig a nearby rope — a coil is about twelve metres; a deeper pitch takes two, tied. Hold E at the top of a rope you rigged to pull it up and coil it again. At the edge of a sump, E ties a coil off and lays it through as a line (about fourteen metres of line per coil); in the water, hold E to haul yourself along the line toward the nearer end, faster than swimming and blind if you have to. Hold E on either bank to reel it in |
 | G | Tap to drop a glowstick; hold and release to throw |
 | Q (hold) | Tools wheel: move the mouse toward chalk, whistle, rest, or stone, then release Q. Release at the center to cancel. A tossed stone lands where you are looking: you hear the floor, or the drop — and a crust over a shaft gives way under it. |
 | Tab | Open / close the survey notebook |
@@ -55,7 +55,7 @@ Chalk text entry still needs a keyboard. Controller mappings have browser simula
 One cave per seed: you keep the same cave until you get out of it. After six of you have died in one cave, a red rope
 hangs down the hole you fell through: someone up there counted. Climbing it ends the cave — found, not out. Your dead stay where they fell (bones, and your old
 torch — worth 25 % if you reach it), last attempt's chalk is still on the walls, and an interrupted attempt resumes where it
-stopped. Choose **New cave** in the pause or death menu to abandon it.
+stopped. Ropes you rigged and lines you laid stay where they are for every later attempt at that cave. Choose **New cave** in the pause or death menu to abandon it.
 
 ## How it works
 
