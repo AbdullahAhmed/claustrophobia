@@ -1,40 +1,28 @@
-p='index.html'; s=open(p,encoding='utf-8').read()
+p='src/main.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
-rep("""<div id="water"></div>""", """<div id="water"></div>
-<canvas id="drops" width="480" height="270" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .3s"></canvas>""")
-open(p,'w',encoding='utf-8').write(s)
-
-p='src/main.js'; s=open(p,encoding='utf-8').read()
-rep("""  if (!player.under && wasUnder) {
-    sfx.play('splash_small', { x: player.x, y: wy, z: player.z, vol: 0.7 });""",
-    """  if (!player.under && wasUnder) {
-    sfx.play('splash_small', { x: player.x, y: wy, z: player.z, vol: 0.7 });
-    startDrops();""")
-rep("""// ---------- overlays / hud ----------""",
-"""// water running off your face after you surface: drops on the view that slide and fade
-const dropsCv = $('drops'), dropsCtx = dropsCv.getContext('2d'); let dropList = [], dropsT = 0;
-function startDrops() {
-  dropList = []; for (let i = 0; i < 14; i++) dropList.push({ x: Math.random() * 480, y: Math.random() * 200, r: 3 + Math.random() * 9, v: 8 + Math.random() * 40, a: 0.35 + Math.random() * 0.35 });
-  dropsT = 4.5; dropsCv.style.opacity = 1;
-}
-function updateDrops(dt) {
-  if (dropsT <= 0) return;
-  dropsT -= dt; if (dropsT <= 0) { dropsCv.style.opacity = 0; return; }
-  dropsCtx.clearRect(0, 0, 480, 270);
-  const k = Math.min(1, dropsT / 1.5);
-  for (const d of dropList) {
-    d.y += d.v * dt; d.v += 12 * dt;
-    const g = dropsCtx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r);
-    g.addColorStop(0, `rgba(150,170,175,${0.05 * d.a * k})`); g.addColorStop(0.7, `rgba(200,220,225,${0.28 * d.a * k})`); g.addColorStop(1, 'rgba(200,220,225,0)');
-    dropsCtx.fillStyle = g; dropsCtx.beginPath(); dropsCtx.ellipse(d.x, d.y, d.r * 0.8, d.r * 1.3, 0, 0, Math.PI * 2); dropsCtx.fill();
+rep("""  if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15; $('water').style.opacity = 1; }""",
+    """  if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15 + 0.22 * floodLevel + (player.flow ? 0.05 : 0); $('water').style.opacity = 1; updateBubbles(dt); }   // silt in a flood: you cannot see your hand""")
+rep("""// water running off your face after you surface: drops on the view that slide and fade""",
+"""// your own bubbles, when you are under
+const bubbleMat = new THREE.MeshBasicMaterial({ color: 0xcfe6e8, transparent: true, opacity: 0.55, fog: false });
+const bubbleGeo = new THREE.SphereGeometry(1, 6, 5);
+const bubbles = []; let bubbleSpawnT = 0;
+function updateBubbles(dt) {
+  bubbleSpawnT -= dt;
+  if (bubbleSpawnT <= 0 && bubbles.length < 40) {
+    bubbleSpawnT = 0.12 + Math.random() * 0.25;
+    camera.getWorldDirection(viewDir);
+    const m = new THREE.Mesh(bubbleGeo, bubbleMat); const r = 0.012 + Math.random() * 0.03; m.scale.setScalar(r);
+    m.position.set(camera.position.x + viewDir.x * 0.5 + (Math.random() - 0.5) * 0.3, camera.position.y - 0.15, camera.position.z + viewDir.z * 0.5 + (Math.random() - 0.5) * 0.3);
+    scene.add(m); bubbles.push({ m, v: 0.35 + Math.random() * 0.4, wob: Math.random() * 6, r });
+  }
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i]; b.wob += dt * 5; b.m.position.y += b.v * dt; b.m.position.x += Math.sin(b.wob) * 0.004; b.v += dt * 0.25;
+    const wl = G.waterLevelAt(b.m.position.x, b.m.position.y, b.m.position.z);
+    if (!Number.isFinite(wl) || b.m.position.y >= wl - 0.02 || G.fieldAt(b.m.position.x, b.m.position.y, b.m.position.z) > -0.05) { scene.remove(b.m); bubbles.splice(i, 1); }
   }
 }
-
-// ---------- overlays / hud ----------""")
-rep("""  updateThrown(dt);
-  whistleT -= dt;""", """  updateThrown(dt);
-  updateDrops(dt);
-  whistleT -= dt;""")
+// water running off your face after you surface: drops on the view that slide and fade""")
 open(p,'w',encoding='utf-8').write(s); print('ok')
