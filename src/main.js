@@ -1544,6 +1544,10 @@ function updatePlayer(dt) {
       if (ln) { const dx = ln.x - player.x, dz = ln.z - player.z, L = Math.hypot(dx, dz); if (L > 0.02) { const k = Math.min(L, 0.7 * dt) / L; player.x += dx * k; player.z += dz * k; } }
       if (player.stamina <= 0.02) { showHint('your legs went', true); sfx.play('gasp', { vol: 0.8 }); player.vy = -0.5; climbing = false; }
       climbT += dt; if (climbT > 0.5) { climbT = 0; sfx.play('scrape', { x: player.x, y: player.y + 0.5, z: player.z, vol: 0.4, rate: rr(0.8, 1.1), dur: 0.5, hrtf: false }); }
+      if (Math.random() < dt * 0.05) {                                                  // the rift is not clean: something comes down it
+        sfx.play('rockfall', { x: player.x, y: player.y + 4, z: player.z, vol: 0.6, rate: 1.3, dur: 0.6, wet: 0.7 });
+        gameDelay(() => { if (climbing) { player.stamina = Math.max(0, player.stamina - 0.22); $('hurt').style.opacity = 0.5; gameDelay(() => { $('hurt').style.opacity = 0; }, 500); sfx.play('gasp', { vol: 0.7 }); showHint('a stone came down the rift. on your head', true); } }, 350);
+      }
       teach('chimney', 'a chimney. back on one wall, feet on the other: hold space to go up. it costs you, and if you run out, you come off');
     } else {
       if (inChimney && !climbing && player.grounded) teach('chimney', 'a chimney. back on one wall, feet on the other: hold space to go up. it costs you, and if you run out, you come off');
