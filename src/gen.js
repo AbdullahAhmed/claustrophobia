@@ -402,6 +402,10 @@ class Worm {
     if (this.mode && this.mode.name === 'crystal' && !this.pit && !this.sump && R() < 0.75) props.push({ type: 'crystals', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, seed: R() });
     if (this.exit && this.y > SURFACE_Y - 8 && R() < 0.6) props.push({ type: 'roots', x: n.x, y: n.y + (1 + CY) * this.ry, z: n.z, rx: this.rx, n: 4 + (R() * 6 | 0), seed: R() });
     if (this.roost && this.ry > 2.0 && !this.pit && !this.sump) { this.roost = false; props.push({ type: 'roost', x: n.x, y: n.y + (1 + CY) * this.ry - 0.4, z: n.z, floor: n.y, n: 25 + (R() * 45 | 0) }); }
+    // glow-worms: a damp roof over still water or a big chamber, hung with a few hundred blue-green lights
+    if (core && this.ry > 1.8 && !this.pit && !this.sump && (wl !== undefined || (this.mode && (this.mode.name === 'cavern' || this.mode.name === 'chamber'))) && R() < (wl !== undefined ? 0.05 : 0.02)) {
+      props.push({ type: 'glowworms', x: n.x, y: n.y + (1 + CY) * this.ry, z: n.z, floor: n.y, rx: Math.max(2.5, this.rx * 0.9), n: 120 + (R() * 220 | 0), seed: R() });
+    }
     if (cavern && R() < 0.02) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: true, seed: R() });
     this.node = n; this.x = n.x; this.y = n.y; this.z = n.z;
     this.life -= STEP; this.age += STEP;

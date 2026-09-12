@@ -263,12 +263,12 @@ const boneGeos = {
   rib: new THREE.TorusGeometry(0.17, 0.018, 4, 9, Math.PI),
 };
 const boneInst = {}; const boneCount = {};
-for (const k in boneGeos) { boneInst[k] = new THREE.InstancedMesh(boneGeos[k], boneMat, 900); boneInst[k].count = 0; boneInst[k].castShadow = true; boneInst[k].receiveShadow = true; scene.add(boneInst[k]); boneCount[k] = 0; }
+for (const k in boneGeos) { boneInst[k] = new THREE.InstancedMesh(boneGeos[k], boneMat, 900); boneInst[k].count = 0; boneInst[k].frustumCulled = false; boneInst[k].castShadow = true; boneInst[k].receiveShadow = true; scene.add(boneInst[k]); boneCount[k] = 0; }
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Euler();
 const bonePiles = [];       // {x,y,z, r, crunched}
 // gypsum blades for crystal pockets
 const crystalMat = new THREE.MeshStandardMaterial({ color: 0xf3f5ff, roughness: 0.28, metalness: 0.0, emissive: 0x2c3444, flatShading: true });
-const crystals = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 4), crystalMat, 6000); crystals.count = 0; crystals.castShadow = true; scene.add(crystals);
+const crystals = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 4), crystalMat, 6000); crystals.count = 0; crystals.frustumCulled = false; crystals.castShadow = true; scene.add(crystals);
 const _up = new THREE.Vector3(0, 1, 0), _nrm = new THREE.Vector3();
 function placeCrystals(p) {
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
@@ -476,7 +476,7 @@ function updateRoping(dt) {
 }
 // roots through the roof near the surface
 const rootMat = new THREE.MeshStandardMaterial({ color: 0x3d2f22, roughness: 0.95, flatShading: true });
-const roots = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 0.25, 1, 5), rootMat, 1200); roots.count = 0; scene.add(roots);
+const roots = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 0.25, 1, 5), rootMat, 1200); roots.count = 0; roots.frustumCulled = false; scene.add(roots);
 function placeRoots(p) {
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
   for (let i = 0; i < p.n && roots.count < 1200; i++) {
@@ -627,6 +627,7 @@ function processProps(dt) {
     else if (p.type === 'roots') placeRoots(p);
     else if (p.type === 'note') placeNote(p);
     else if (p.type === 'loose') placeLoose(p);
+    else if (p.type === 'glowworms') placeGlowworms(p);
     else placeBones(p);
     G.props.splice(i, 1);
   }
@@ -1406,6 +1407,34 @@ function updateCrosser(dt) {
   for (const c of crosserMesh.children) if (c.userData.i !== undefined) c.rotation.z = Math.sin(crosser.t * 42 + c.userData.i * 1.6) * 0.7;
   if (k >= 1) { crosser = null; crosserMesh.visible = false; }
 }
+// ---------- glow-worms: the roof, lit ----------
+const wormMat = new THREE.MeshBasicMaterial({ color: 0x8cf0d0, fog: false });
+const wormInst = new THREE.InstancedMesh(new THREE.SphereGeometry(0.018, 5, 4), wormMat, 4000); wormInst.count = 0; wormInst.frustumCulled = false; scene.add(wormInst);
+const wormThreads = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x9fe8d4, transparent: true, opacity: 0.35 }));
+const threadPos = []; wormThreads.frustumCulled = false; scene.add(wormThreads);
+const wormSites = [];
+function placeGlowworms(p) {
+  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
+  let placed = 0;
+  for (let i = 0; i < p.n && wormInst.count < 4000; i++) {
+    const a = R() * Math.PI * 2, d = Math.sqrt(R()) * p.rx, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
+    // the roof above this spot
+    let cy = null; for (let h = 0; h < 6; h += 0.12) { const yy = p.floor + 1.2 + h; if (G.fieldAt(x, yy, z) > -0.04) { cy = yy - 0.06; break; } }
+    if (cy === null) continue;
+    const drop = 0.05 + R() * 0.35, y = cy - drop;
+    _m.compose(_p.set(x, y, z), _q.identity(), _s.set(1, 1, 1)); wormInst.setMatrixAt(wormInst.count++, _m);
+    threadPos.push(x, cy, z, x, y, z); placed++;
+  }
+  wormInst.instanceMatrix.needsUpdate = true;
+  wormThreads.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(threadPos), 3));
+  if (placed > 20) { wormSites.push({ x: p.x, y: p.y, z: p.z, n: placed, light: new THREE.PointLight(0x5fd8b8, 2.2, p.rx * 3, 1.4) }); const L = wormSites[wormSites.length - 1].light; L.position.set(p.x, p.y - 0.8, p.z); scene.add(L); }
+}
+let wormSeenT = 0;
+function updateGlowworms(dt) {
+  wormSeenT -= dt; if (wormSeenT > 0) return; wormSeenT = 1;
+  for (const w of wormSites) if (Math.hypot(w.x - player.x, w.y - player.y, w.z - player.z) < 14) { teach('glowworms', 'the roof is lit. thousands of them, each on a thread of silk. turn the torch off and look'); surveyNote('lights', w.x, w.z); if (!places.some(pl => Math.hypot(pl.x - w.x, pl.z - w.z) < 30)) { let sd = (Math.abs(w.x * 73 + w.z * 131) | 0) + SEED; const Rr = () => ((sd = (sd * 9301 + 49297) % 233280) / 233280); const nm = `${NAME_A[(Rr() * NAME_A.length) | 0]} Lights`; places.push({ x: w.x, y: w.y, z: w.z, name: nm, kind: 'lights' }); showHint(nm.toLowerCase(), true); } }
+}
+
 // ---------- loose rock: the roof is not all attached ----------
 const looseGeo = new THREE.DodecahedronGeometry(1, 0), looseMat = new THREE.MeshStandardMaterial({ color: 0x8a7d6c, roughness: 0.95, flatShading: true });
 const loose = [];
@@ -1785,6 +1814,7 @@ function stepFrame(dt) {
   updateTorch(dt);
   updateEyes(dt);
   updateLoose(dt);
+  updateGlowworms(dt);
   whistleT -= dt;
   updateFollower(dt);
   updateFlood(dt);
