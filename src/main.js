@@ -1366,8 +1366,13 @@ function updateSound(dt) {
       const r = Math.random();
       if (r < 0.5) {                                                                           // footsteps that stop when you turn
         for (let k = 0; k < 3 + (Math.random() * 3 | 0); k++) gameDelay(() => sfx.play('step_rock', { x: bx + k * viewDir.x * 0.7, y: player.y, z: bz + k * viewDir.z * 0.7, vol: 0.28, wet: 0.8, rate: 0.9 }), k * 520);
-      } else if (r < 0.8 || dread < 0.5) {                                                    // a pebble, a settling
+      } else if (r < 0.65 || dread < 0.5) {                                                   // a pebble, a settling
         sfx.play('rockfall', { x: bx, y: player.y + 1, z: bz, vol: 0.3, wet: 0.9, rate: 1.2, dur: 1.2 });
+      } else if (r < 0.8) {                                                                    // three knocks, from inside the wall
+        const a = Math.random() * Math.PI * 2, d = G.rayToRock(player.x, player.y + 1.2, player.z, Math.sin(a), 0, Math.cos(a), 6, 0.2);
+        const kx = player.x + Math.sin(a) * (d + 0.4), kz = player.z + Math.cos(a) * (d + 0.4);
+        for (let k = 0; k < 3; k++) gameDelay(() => sfx.play('step_rock', { x: kx, y: player.y + 1.2, z: kz, vol: 0.45, rate: 0.6, vary: 0.05, wet: 0.3 }), k * 620);
+        gameDelay(() => { if (player.alive) showHint('knocking. from inside the rock', true); }, 1900);
       } else {                                                                                 // breath, close
         sfx.play('creature_breath', { x: player.x - viewDir.x * 1.2, y: player.y + 1.5, z: player.z - viewDir.z * 1.2, vol: 0.35, rolloff: 1.5, dur: 3 });
         if (dread > 0.6 && Math.random() < 0.5) gustT = 1.6;                                   // and the torch dips
