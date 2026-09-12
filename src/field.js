@@ -62,7 +62,7 @@ export function gridAt(d, lx, ly, lz) {              // trilinear sample of one 
 
 const fcol = [0, 0, 0];
 // mineral tints: [plain, rust, ochre, grey-blue, copper-green] as (r,g,b) multipliers blended by strata
-const TINTS = [[1, 1, 1], [1.25, 0.72, 0.55], [1.2, 1.02, 0.6], [0.8, 0.86, 1.05], [0.7, 1.0, 0.85]];
+const TINTS = [[1, 1, 1], [1.25, 0.72, 0.55], [1.2, 1.02, 0.6], [0.8, 0.86, 1.05], [0.7, 1.0, 0.85], [1.45, 1.5, 1.6]];
 function faceColor(cx, cy, cz, cal, wt, ti) {
   const n1 = fbm(cx * 0.22, cy * 0.22, cz * 0.22) * 0.5 + 0.5;            // warm sandstone <-> cool limestone
   const n2 = hash3(Math.floor(cx * 9.1), Math.floor(cy * 9.1), Math.floor(cz * 9.1));
@@ -70,7 +70,7 @@ function faceColor(cx, cy, cz, cal, wt, ti) {
   const br = 0.8 + 0.2 * n2 - 0.1 * strata;
   let r = lerp(0.46, 0.32, n1) * br, g = lerp(0.37, 0.31, n1) * br, b = lerp(0.27, 0.33, n1) * br;
   if (ti > 0.5) {                                                          // stained bands, strongest along the strata
-    const T = TINTS[Math.min(4, Math.round(ti))], k = 0.45 + 0.55 * strata;
+    const T = TINTS[Math.min(5, Math.round(ti))], k = ti > 4.5 ? 0.85 : 0.45 + 0.55 * strata;
     r *= lerp(1, T[0], k); g *= lerp(1, T[1], k); b *= lerp(1, T[2], k);
   }
   if (cal > 0) { const cb = 0.85 + 0.15 * n2; r = lerp(r, 0.82 * cb, cal); g = lerp(g, 0.78 * cb, cal); b = lerp(b, 0.70 * cb, cal); }

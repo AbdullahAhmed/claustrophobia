@@ -217,6 +217,29 @@ const boneInst = {}; const boneCount = {};
 for (const k in boneGeos) { boneInst[k] = new THREE.InstancedMesh(boneGeos[k], boneMat, 900); boneInst[k].count = 0; boneInst[k].castShadow = true; boneInst[k].receiveShadow = true; scene.add(boneInst[k]); boneCount[k] = 0; }
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Euler();
 const bonePiles = [];       // {x,y,z, r, crunched}
+// gypsum blades for crystal pockets
+const crystalMat = new THREE.MeshStandardMaterial({ color: 0xf3f5ff, roughness: 0.28, metalness: 0.0, emissive: 0x2c3444, flatShading: true });
+const crystals = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 4), crystalMat, 6000); crystals.count = 0; crystals.castShadow = true; scene.add(crystals);
+const _up = new THREE.Vector3(0, 1, 0), _nrm = new THREE.Vector3();
+function placeCrystals(p) {
+  let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
+  const cy = p.y + p.ry * 0.7, n = 120 + (R() * 80 | 0);
+  for (let i = 0; i < n && crystals.count < 6000; i++) {
+    // a random direction from the middle of the pocket to its wall
+    const u = R() * 2 - 1, a = R() * Math.PI * 2, r = Math.sqrt(1 - u * u), dx = r * Math.cos(a), dy = u, dz = r * Math.sin(a);
+    const t = G.rayToRock(p.x, cy, p.z, dx, dy, dz, p.rx + p.ry + 2, 0.12);
+    if (t >= p.rx + p.ry + 2) continue;
+    const hx = p.x + dx * t, hy = cy + dy * t, hz = p.z + dz * t;
+    G.gradAt(hx, hy, hz); const g = G.G, gl = Math.hypot(g.x, g.y, g.z) || 1;
+    _nrm.set(-g.x / gl, -g.y / gl, -g.z / gl);
+    _q.setFromUnitVectors(_up, _nrm);
+    const rad = 0.03 + R() * 0.07, len = 0.18 + R() * 0.45;
+    _p.set(hx + _nrm.x * (len * 0.35), hy + _nrm.y * (len * 0.35), hz + _nrm.z * (len * 0.35)); _s.set(rad, len, rad);
+    _e.set(0, R() * Math.PI, 0); const spin = new THREE.Quaternion().setFromEuler(_e); _q.multiply(spin);
+    _m.compose(_p, _q, _s); crystals.setMatrixAt(crystals.count++, _m);
+  }
+  crystals.instanceMatrix.needsUpdate = true;
+}
 function addBone(kind, x, y, z, yaw, pitch, roll, scale) {
   const im = boneInst[kind]; if (im.count >= 900) return;
   _p.set(x, y, z); _e.set(pitch, yaw, roll); _q.setFromEuler(_e); _s.set(scale, scale, scale);
@@ -278,6 +301,7 @@ function processProps(dt) {
     if (d > 45) continue;
     if (!G.chunkReadyAt(p.x, p.y + 0.5, p.z)) continue;
     if (p.type === 'remains') placeRemains(p); else if (p.type === 'mark') drawMark(p.text, new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(p.nx, p.ny, p.nz), true);
+    else if (p.type === 'crystals') placeCrystals(p);
     else placeBones(p);
     G.props.splice(i, 1);
   }

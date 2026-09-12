@@ -90,6 +90,7 @@ export const MODES = [
   { name: 'sump',    rx: [1.2, 1.4], ry: [1.0, 1.1],   len: [0, 0],   w: 0.09 },
   { name: 'pit',     rx: [1.2, 1.4], ry: [1.2, 1.4],   len: [0, 0],   w: 0.04 },
   { name: 'cavern',  rx: [9, 16],    ry: [7, 12],      len: [25, 50], w: 0.03 },
+  { name: 'crystal', rx: [2.0, 3.4], ry: [1.8, 2.8],   len: [6, 12],  w: 0.025 },
 ];
 const MODE = Object.fromEntries(MODES.map(m => [m.name, m]));
 
@@ -115,7 +116,9 @@ class Worm {
       for (let k = 0; k < MODES.length; k++) { r -= ws[k]; if (r <= 0) { m = MODES[k]; break; } }
       m = m || MODES[0];
     }
-    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern') && (this.age < 20 || this.exit)) m = MODES[0];
+    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal') && (this.age < 20 || this.exit)) m = MODES[0];
+    if (this.tint === 5) this.tint = 0;                         // leaving a crystal pocket
+    if (m.name === 'crystal') this.tint = 5;                    // gypsum-white rock in a crystal pocket
     if (m.name === 'sump' && this.y < -32) m = MODES[0];
     if (m.name === 'pit' && this.y < -28) m = MODES[0];
     this.mode = m;
@@ -272,6 +275,7 @@ class Worm {
     addSeg(this.node, n); nodes.push(n);
     if (n.algae > 0.4 && n.i % 3 === 0) algaeNodes.push(n);
     if (core && wl === undefined && this.rx < 3 && R() < 0.03) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: false, seed: R() });
+    if (this.mode && this.mode.name === 'crystal' && !this.pit && !this.sump && R() < 0.75) props.push({ type: 'crystals', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, seed: R() });
     if (cavern && R() < 0.02) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: true, seed: R() });
     this.node = n; this.x = n.x; this.y = n.y; this.z = n.z;
     this.life -= STEP; this.age += STEP;
@@ -356,7 +360,7 @@ export function scanChunks(dt, force, onDispose) {
     const cx = pcx + dx, cy = pcy + dy, cz = pcz + dz, key = ckey(cx, cy, cz);
     let ch = chunks.get(key);
     if (!ch) { ch = { cx, cy, cz, key, built: false, dirty: false, solid: false, density: null, glow: null, calc: null, wet: null, mesh: null, water: null }; chunks.set(key, ch); }
-    if (!ch.built || (ch.dirty && distChunk(cx, cy, cz) > LOCK_R)) { ch.d2 = dx * dx + dy * dy + dz * dz; queue.push(ch); }
+    if (!ch.built || ch.dirty) { ch.d2 = dx * dx + dy * dy + dz * dz; queue.push(ch); }
   }
   queue.sort((a, b) => a.d2 - b.d2);
   for (const ch of chunks.values()) {
