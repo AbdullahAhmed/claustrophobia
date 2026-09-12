@@ -419,6 +419,15 @@ export function openness(x, y, z) {
 export function initGen(seed) {
   SEED = seed; setSeed(seed); rand = mulberry32(seed); EXIT_AT = rr(200, 320);
   const start = { x: 0, y: 0, z: 0, rx: 3.4, ry: 2.6, w: -1, i: 0, core: true, algae: 0 }; nodes.push(start);
+  // the hole you came through: a shaft from the chamber roof up to the surface, too smooth and too far to climb
+  const top = start.y + (1 + CY) * start.ry;
+  let prev = { x: 0.6, y: top - 1.2, z: -0.4, rx: 1.1, ry: 1.1, w: -2, i: 0, core: false, algae: 0 };
+  nodes.push(prev);
+  for (let k = 1; k <= 9; k++) {
+    const n = { x: 0.6 + Math.sin(k * 0.7) * 0.15, y: top - 1.2 + k * 1.5, z: -0.4 + Math.cos(k * 0.9) * 0.15, rx: 0.9, ry: 0.9, w: -2, i: k, core: false, algae: 0 };
+    addSeg(prev, n); nodes.push(n); prev = n;
+  }
+  props.push({ type: 'sinkhole', x: prev.x, y: prev.y + 0.6, z: prev.z, floor: start.y });
   for (let i = 0; i < 3; i++) {
     const w = new Worm(i + 1, start, i * 2.094 + rr(-0.4, 0.4), 0, 'trunk', Infinity);
     w.pickMode(MODE.passage); w.modeLeft = rr(20, 40); worms.push(w);

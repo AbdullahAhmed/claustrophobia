@@ -414,12 +414,12 @@ function placeNote(p) {
 const cascades = [];         // {x,y,z, wl, drops: Float32Array phases, inst, foam, loop}
 const dropMat = new THREE.MeshBasicMaterial({ color: 0xcfe6ff, map: moteTex, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
 function placeCascade(p) {
-  const n = p.big ? 140 : 70, inst = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dropMat, n);
+  const n = p.big ? 140 : p.quiet ? 30 : 70, inst = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dropMat, n);
   inst.frustumCulled = false; scene.add(inst);
   const foam = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dropMat, 24); foam.frustumCulled = false; scene.add(foam);
   const c = { ...p, n, inst, foam, ph: new Float32Array(n).map(() => Math.random()), ox: new Float32Array(n).map(() => (Math.random() - 0.5) * (p.big ? 1.6 : 0.7)), oz: new Float32Array(n).map(() => (Math.random() - 0.5) * (p.big ? 1.6 : 0.7)),
-              loop: soundsOn ? sfx.loop(p.big ? 'cascade_big' : 'cascade', { x: p.x, y: p.wl + 0.5, z: p.z, rolloff: 0.8, wet: 0.5 }) : null };
-  if (c.loop) c.loop.setVol(p.big ? 0.8 : 0.55, 1);
+              loop: soundsOn ? sfx.loop(p.quiet ? 'drips_cave' : p.big ? 'cascade_big' : 'cascade', { x: p.x, y: p.wl + 0.5, z: p.z, rolloff: 0.8, wet: 0.5 }) : null };
+  if (c.loop) c.loop.setVol(p.quiet ? 0.5 : p.big ? 0.8 : 0.55, 1);
   cascades.push(c);
 }
 function updateCascades(dt) {
@@ -441,6 +441,18 @@ function updateCascades(dt) {
     }
     c.inst.instanceMatrix.needsUpdate = true; c.foam.instanceMatrix.needsUpdate = true;
   }
+}
+// the sinkhole overhead at the entrance: grey daylight far above, rain coming down the shaft
+let sinkhole = null;
+function placeSinkhole(p) {
+  const sky = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color: 0x8fa0b4, fog: false }));
+  sky.position.set(p.x, p.y + 0.2, p.z); sky.rotation.x = Math.PI / 2; scene.add(sky);                    // seen from below
+  const shaft = new THREE.SpotLight(0x9fb2c8, 60, 26, 0.18, 0.9, 1.2); shaft.position.set(p.x, p.y, p.z);
+  shaft.target.position.set(p.x, p.floor, p.z); scene.add(shaft); scene.add(shaft.target);
+  const pool = new THREE.PointLight(0x8fa4bc, 1.2, 6, 1.6); pool.position.set(p.x, p.floor + 0.6, p.z); scene.add(pool);
+  sinkhole = { ...p, sky, shaft, pool, dripT: 0 };
+  // rain down the shaft, into a puddle
+  placeCascade({ x: p.x, y: p.y - 0.5, z: p.z, wl: p.floor + 0.02, big: false, quiet: true });
 }
 let exitInfo = null, exitLoops = null;
 function placeExit(e) {
@@ -465,6 +477,7 @@ function processProps(dt) {
     else if (p.type === 'crystals') placeCrystals(p);
     else if (p.type === 'roost') placeRoost(p);
     else if (p.type === 'cascade') placeCascade(p);
+    else if (p.type === 'sinkhole') placeSinkhole(p);
     else if (p.type === 'note') placeNote(p);
     else placeBones(p);
     G.props.splice(i, 1);
