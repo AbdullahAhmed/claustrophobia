@@ -78,7 +78,7 @@ rockMat.onBeforeCompile = (sh) => {
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', 'varying float vGlow; varying float vWet;\n#include <common>')
     .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = roughnessFactor * (1.0 - 0.62 * vWet);')   // wet rock and flowstone catch the beam
-    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.10, 0.75, 0.55) * vGlow * vGlow * 0.32;');
+    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += (vGlow < 0.0 ? vec3(0.42, 0.72, 1.25) : vec3(0.10, 0.75, 0.55)) * vGlow * vGlow * 0.32;');
 };
 const waterMat = new THREE.MeshStandardMaterial({ color: 0x0a2226, roughness: 0.08, metalness: 0.3, emissive: 0x03120f, vertexColors: true,
                                                   transparent: true, opacity: 0.84, side: THREE.DoubleSide, depthWrite: false });
@@ -893,7 +893,7 @@ function processProps(dt) {
   for (let i = 0; i < algaeLights.length; i++) {
     const l = algaeLights[i], n = near[i];
     if (!n) { l.intensity = 0; continue; }
-    l.position.set(n.x, n.y + 0.9, n.z); l.intensity = 0.3 * n.algae;
+    l.position.set(n.x, n.y + 0.9, n.z); l.intensity = 0.3 * n.algae; l.color.set(n.blue ? 0x6fa0ff : 0x2fd8b0);
   }
 }
 

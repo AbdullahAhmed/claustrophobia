@@ -47,7 +47,7 @@ function addSeg(a, b) {
   const s = { ax: a.x, ay: acy * sy, az: a.z, bx: b.x - a.x, by: (bcy - acy) * sy, bz: b.z - a.z,
               rx, ry, sy, y0: a.y, y1: b.y, rmin: Math.min(rx, ry),
               wl: a.wl !== undefined ? a.wl : b.wl, floods: !!(a.floods || b.floods), chimney: !!(a.chimney || b.chimney), core: a.core !== false && b.core !== false,
-              old: (b.theme || a.theme) === 'old', broken: (b.theme || a.theme) === 'broken',
+              old: (b.theme || a.theme) === 'old', broken: (b.theme || a.theme) === 'broken', blue: !!(a.blue || b.blue),
               steep: Math.abs(b.y - a.y) > 0.6 * len,          // shafts: no sediment floor
               algae: Math.max(a.algae || 0, b.algae || 0), tint: b.tint || a.tint || 0, foul: !!(a.foul && b.foul), gour: !!(a.gour && b.gour),
               boulders: (a.boulders || []).concat(b.boulders || []), slabs: (a.slabs || []).concat(b.slabs || []),
@@ -386,7 +386,8 @@ class Worm {
     const cp = Math.cos(this.pitch);
     const n = { x: this.x + Math.sin(this.yaw) * cp * STEP, y: this.y + Math.sin(this.pitch) * STEP,
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
-                algae: core ? this.algae : 0, tint: this.tint, foul: this.foul, gour: !!(this.mode && this.mode.name === 'gour' && !this.pit && !this.sump), chimney: this.chimney > 0 };
+                algae: core ? this.algae : 0, tint: this.tint, foul: this.foul, gour: !!(this.mode && this.mode.name === 'gour' && !this.pit && !this.sump), chimney: this.chimney > 0,
+                blue: !!this.lake || this.theme === 'wet' && this.tint === 3 };   // over the lakes, and in the grey-blue wet rock, the glow is blue-white, not green
     if (this.pendingSlab) { n.slabs = [this.pendingSlab]; this.pendingSlab = null; }
     if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; if (this.stream || this.sump || this.pit || this.lake || (this.mode && this.mode.name === 'duck')) n.floods = true; }   // live water: it rises when it rains up top
     if (this.sump && !this.sump.marked) { this.sump.marked = true; n.sump = { len: this.sump.left, bell: this.sump.bellAt !== null, trap: this.sump.trap }; sumpNodes.push(n); }
