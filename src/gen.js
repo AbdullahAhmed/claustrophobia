@@ -45,7 +45,7 @@ function addSeg(a, b) {
   const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) || 1e-6;
   const s = { ax: a.x, ay: acy * sy, az: a.z, bx: b.x - a.x, by: (bcy - acy) * sy, bz: b.z - a.z,
               rx, ry, sy, y0: a.y, y1: b.y, rmin: Math.min(rx, ry),
-              wl: a.wl !== undefined ? a.wl : b.wl, core: a.core !== false && b.core !== false,
+              wl: a.wl !== undefined ? a.wl : b.wl, floods: !!(a.floods || b.floods), core: a.core !== false && b.core !== false,
               steep: Math.abs(b.y - a.y) > 0.6 * len,          // shafts: no sediment floor
               algae: Math.max(a.algae || 0, b.algae || 0), tint: b.tint || a.tint || 0, foul: !!(a.foul && b.foul), gour: !!(a.gour && b.gour),
               boulders: (a.boulders || []).concat(b.boulders || []),
@@ -311,7 +311,7 @@ class Worm {
     const n = { x: this.x + Math.sin(this.yaw) * cp * STEP, y: this.y + Math.sin(this.pitch) * STEP,
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
                 algae: core ? this.algae : 0, tint: this.tint, foul: this.foul, gour: !!(this.mode && this.mode.name === 'gour' && !this.pit && !this.sump) };
-    if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; }
+    if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; if (this.stream || this.sump || this.pit) n.floods = true; }   // live water: it rises when it rains up top
     if (this.sump && !this.sump.marked) { this.sump.marked = true; n.sump = { len: this.sump.left, bell: this.sump.bellAt !== null, trap: this.sump.trap }; sumpNodes.push(n); }
     else if (core && this.mode && (this.mode.name === 'passage' || this.mode.name === 'bedding' || this.mode.name === 'chamber') && Math.abs(this.pitch) < 0.12 && R() < 0.07) n.wl = n.y + 0.07;   // a puddle in a low spot
     const cavern = this.mode && this.mode.name === 'cavern' && !this.pit && !this.sump;
@@ -477,6 +477,14 @@ export function collapseAt(n) {
   n.core = false;
   const cx = Math.floor(n.x / CHUNK), cy = Math.floor(n.y / CHUNK), cz = Math.floor(n.z / CHUNK);
   for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const ch = chunks.get(ckey(cx + dx, cy + dy, cz + dz)); if (ch) ch.dirty = true; }
+}
+// a flood pulse: every stream, sump and plunge pool rises by h (metres above its normal level); the chunks holding them rebuild
+export let flood = 0;
+export function setFlood(h) {
+  flood = h;
+  for (const s of segs) { if (!s.floods) continue; if (s.wl0 === undefined) s.wl0 = s.wl; s.wl = s.wl0 + h; }
+  for (const n of nodes) { if (!n.floods) continue; if (n.wl0 === undefined) n.wl0 = n.wl; n.wl = n.wl0 + h; }
+  for (const [key, list] of cellSegs) { const ch = chunks.get(key); if (!ch || !ch.built) continue; for (const s of list) if (s.floods) { ch.dirty = true; break; } }
 }
 export function foulAt(x, y, z) {                          // still air with no oxygen in it
   const s = nearestSegAt(x, y, z);

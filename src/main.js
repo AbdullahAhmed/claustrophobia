@@ -1058,7 +1058,7 @@ function updatePlayer(dt) {
   // the current: moving water takes you with it — a little when wading, all of it when swimming
   player.flow = depthW > 0.2 ? G.flowAt(player.x, player.y + 0.3, player.z) : null;
   if (player.flow) {
-    const f = player.flow, k = player.swim ? 1 : clamp((depthW - 0.2) / 0.5, 0.15, 0.8);
+    const f = player.flow, k = (player.swim ? 1 : clamp((depthW - 0.2) / 0.5, 0.15, 0.8)) * floodFlowMul();
     player.x += f.x * f.s * k * dt; player.z += f.z * f.s * k * dt; collide();
     if (f.s > 1.15) teach('current', 'the water is pulling. it goes somewhere — under, probably. upstream is still possible from here');
     else if (f.s > 0.4 && (player.swim || depthW > 0.3)) teach('stream', 'the water is moving. it has to go somewhere; that is not always good news');
@@ -1372,6 +1372,28 @@ function updateEyes(dt) {
   }
 }
 
+// ---------- the flood: it rained up top, and the cave's water is rising ----------
+let floodPhase = 'dry', floodT = 0, floodAt = rr(300, 540), floodPeak = 0, floodLevel = 0, floodStep = 0;
+function updateFlood(dt) {
+  if (!running || !player.alive || player.out) return;
+  if (floodPhase === 'dry') {
+    if (runTime > floodAt) {
+      floodPhase = 'rising'; floodT = 0; floodPeak = rr(0.7, 1.15);
+      sfx.play('rumble', { vol: 0.7, rate: 0.6, dur: 6, wet: 0.9 });
+      setTimeout(() => showHint('listen. the water is rising', true), 2500);
+      teach('flood', 'it rained up top. the streams and the sumps will run higher for a while — stay out of them, or be quick');
+    }
+    return;
+  }
+  floodT += dt;
+  if (floodPhase === 'rising') { floodLevel = floodPeak * Math.min(1, floodT / 90); if (floodT >= 90) { floodPhase = 'high'; floodT = 0; } }
+  else if (floodPhase === 'high') { floodLevel = floodPeak; if (floodT >= 150) { floodPhase = 'falling'; floodT = 0; } }
+  else if (floodPhase === 'falling') { floodLevel = floodPeak * Math.max(0, 1 - floodT / 240); if (floodT >= 240) { floodPhase = 'dry'; floodLevel = 0; floodAt = runTime + rr(420, 720); showHint('the water is going down', true); } }
+  const step = Math.round(floodLevel / 0.2) * 0.2;                      // the field only moves in 20 cm steps: each one is a rebuild
+  if (step !== floodStep) { floodStep = step; G.setFlood(step); }
+}
+function floodFlowMul() { return 1 + 1.6 * floodLevel; }
+
 // ---------- the sound of moving water ----------
 let streamLoop = null, rapidsLoop = null, streamT = 0;
 function updateStreamSound(dt) {
@@ -1383,7 +1405,7 @@ function updateStreamSound(dt) {
     if (n.flow.s > 1.4 && d < rd) { rd = d; rap = n; }
   }
   if (best && !streamLoop) streamLoop = sfx.loop('stream', { x: best.x, y: best.wl, z: best.z, rolloff: 0.6, wet: 0.6 });
-  if (streamLoop) { if (best) { streamLoop.setPos(best.x, best.wl, best.z); streamLoop.setVol(0.55 * Math.min(1, best.flow.s), 0.5); } else streamLoop.setVol(0, 1.0); }
+  if (streamLoop) { if (best) { streamLoop.setPos(best.x, best.wl, best.z); streamLoop.setVol(0.55 * Math.min(1, best.flow.s) * floodFlowMul(), 0.5); streamLoop.setRate(1 + 0.15 * floodLevel, 1); } else streamLoop.setVol(0, 1.0); }
   if (rap && !rapidsLoop) rapidsLoop = sfx.loop('stream_rocks', { x: rap.x, y: rap.wl, z: rap.z, rolloff: 0.9, wet: 0.7 });
   if (rapidsLoop) { if (rap) { rapidsLoop.setPos(rap.x, rap.wl, rap.z); rapidsLoop.setVol(0.9 * Math.min(1, rap.flow.s - 1.2), 0.5); } else rapidsLoop.setVol(0, 1.0); }
 }
@@ -1549,7 +1571,7 @@ function init() {
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
-               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms };
+               run: () => { running = true; overlay.classList.add('hidden'); }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; } };
 }
 init();
 
@@ -1572,6 +1594,7 @@ function stepFrame(dt) {
   updateTorch(dt);
   updateEyes(dt);
   updateLoose(dt);
+  updateFlood(dt);
   updateOlms(dt);
   updateCollapse(dt);
   updateStreamSound(dt);
