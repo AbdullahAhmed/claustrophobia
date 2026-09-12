@@ -67,7 +67,8 @@ moves under them — you get about a second's warning. Dead-end pockets where th
 once you are through — the rock is real afterwards, and stays down for that cave. And every so often it rains up
 top: you hear it first, then every stream, sump and plunge pool rises by up to a metre for a few minutes, the
 currents double, and the air bells fill. The way out is
-never less than 340 m from where you fell in, and it is through the water. Crawls that pinch shut. Caverns whose
+never less than 340 m from where you fell in, and it is through the water — sometimes literally: a main line that
+reaches far enough while it is a streamway leaves by a resurgence, the water quickening and running out into the light. Crawls that pinch shut. Caverns whose
 far walls your torch never reaches. A torch that dies in about two minutes unless you keep shaking it — blind while you
 do. Getting wedged in a crawl — and the tight ones only let you through on an empty chest: hold C to breathe out and push, a few centimetres at a time, and let go before the bar runs out. Flooded crawls where you go flat out with your chin in the water and the roof on your
 back — every dip in the floor puts your face under. Cold that shakes the torch out of your hand. Bats. And sometimes, down the passage, a

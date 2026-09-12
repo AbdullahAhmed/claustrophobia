@@ -119,7 +119,7 @@ class Worm {
     this.wander = 0; this.modeLeft = 0; this.target = null;
     this.mode = null; this.sump = null; this.pit = null; this.pinch = 0; this.exit = false; this.algae = 0;
     this.tint = node.tint !== undefined ? node.tint : 0;
-    this.roost = false; this.stream = null; this.flow = null; this.lake = null; this.chimney = 0;
+    this.roost = false; this.stream = null; this.flow = null; this.lake = null; this.chimney = 0; this.exitStream = 0;
     this.gated = false;                                          // trunks: has this line been through water or over a drop yet?
     this.foul = false;                                           // side passages that end in still, bad air
   }
@@ -235,7 +235,11 @@ class Worm {
       } else {
         this.wander = clamp(this.wander * 0.9 + gauss() * 0.08, -0.22, 0.22);
         this.yaw += this.wander + gauss() * 0.05;
-        if (this.exit) {
+        if (this.exit && this.exitStream > 0) {                                     // a resurgence: the stream runs out into daylight
+          this.exitStream -= STEP;
+          if (this.exitStream < 14) this.tint = 4;
+          if (this.exitStream <= 0) { this.carve(true, this.stream.wl); makeExit(this, true); return false; }
+        } else if (this.exit) {
           this.pitch += (0.32 - this.pitch) * 0.3;
           this.trx = 1.5; this.try = 1.3;
           if (this.y > SURFACE_Y - 6) this.tint = 4;                                 // moss creeps in near the surface
@@ -276,12 +280,12 @@ class Worm {
         this.wander = clamp(this.wander, -0.08, 0.08);
         wl = Math.ceil((this.y + 0.02) / GOUR_STEP) * GOUR_STEP + GOUR_POOL;
       }
-      if (this.stream && !this.exit) {                            // water runs downhill, gently; faster where it is about to go under
+      if (this.stream && (!this.exit || this.exitStream > 0)) {  // water runs downhill, gently; faster where it is about to go under
         const S = this.stream; S.left -= STEP;
         this.pitch = clamp(this.pitch * 0.7 + -0.045 * 0.3 + gauss() * 0.012, -0.10, -0.01);
         this.wander = clamp(this.wander, -0.1, 0.1);
         wl = Math.ceil((this.y + 0.28) / 0.25) * 0.25; S.wl = wl;
-        const rapids = S.toSump ? 1 + 1.4 * clamp(1 - S.left / 10, 0, 1) : 1;
+        const rapids = S.toSump ? 1 + 1.4 * clamp(1 - S.left / 10, 0, 1) : this.exitStream > 0 ? 1 + 1.2 * clamp(1 - this.exitStream / 16, 0, 1) : 1;
         this.flow = { x: Math.sin(this.yaw), z: Math.cos(this.yaw), s: S.s * rapids };
       }
     }
@@ -292,7 +296,11 @@ class Worm {
       return false;
     }
     if (this.kind === 'trunk' && !exitClaimed && !this.sump && !this.pit && Math.hypot(this.x, this.z) > EXIT_AT) {
-      if (this.gated) { exitClaimed = true; this.exit = true; this.target = null; this.stream = null; this.flow = null; }
+      if (this.gated) {
+        exitClaimed = true; this.exit = true; this.target = null;
+        if (this.stream) { this.exitStream = wr(24, 40); this.modeLeft = 1e9; this.stream.toSump = false; }   // the water goes out; so can you
+        else { this.stream = null; this.flow = null; }
+      }
       else if (this.pinch === 0 && !this.stream) {                // the way out is through the water: one committed sump before the climb
         this.stream = null; this.flow = null; this.pickMode(MODE.sump);
         if (this.sump) { this.sump.left = wr(11, 19); this.sump.bellAt = this.sump.left > 14 ? this.sump.left * wr(0.45, 0.6) : null; this.sump.trap = false; }
@@ -435,13 +443,14 @@ function ensureTrunks(dead) {
   }
 }
 // The way out: widen into a mouth; main.js puts daylight beyond it.
-function makeExit(w) {
+function makeExit(w, resurgence = false) {
   const cp = Math.cos(w.pitch), dx = Math.sin(w.yaw) * cp, dz = Math.cos(w.yaw) * cp;
-  const n0 = w.node;
-  const n1 = { x: n0.x + dx * 3, y: n0.y + 1.0, z: n0.z + dz * 3, rx: 3.5, ry: 2.8, w: w.id, i: ++w.n, core: true, algae: 0 };
-  const n2 = { x: n1.x + dx * 5, y: n1.y + 1.2, z: n1.z + dz * 5, rx: 6, ry: 5, w: w.id, i: ++w.n, core: true, algae: 0 };
+  const n0 = w.node, rise = resurgence ? 0.05 : 1;
+  const n1 = { x: n0.x + dx * 3, y: n0.y + 1.0 * rise, z: n0.z + dz * 3, rx: 3.5, ry: 2.8, w: w.id, i: ++w.n, core: true, algae: 0, tint: 4 };
+  const n2 = { x: n1.x + dx * 5, y: n1.y + 1.2 * rise, z: n1.z + dz * 5, rx: 6, ry: 5, w: w.id, i: ++w.n, core: true, algae: 0, tint: 4 };
+  if (resurgence && n0.wl !== undefined) { for (const q of [n1, n2]) { q.wl = n0.wl; q.floods = true; q.flow = n0.flow ? { x: n0.flow.x, z: n0.flow.z, s: 1.0 } : undefined; if (q.flow) streamNodes.push(q); } }
   addSeg(n0, n1); addSeg(n1, n2); nodes.push(n1, n2);
-  exit = { x: n2.x, y: n2.y, z: n2.z, dx, dz, n1 };
+  exit = { x: n2.x, y: n2.y, z: n2.z, dx, dz, n1, resurgence };
   props.push({ type: 'exit', ...exit });
 }
 
