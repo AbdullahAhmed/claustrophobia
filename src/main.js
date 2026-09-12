@@ -352,8 +352,10 @@ function updateSound(dt) {
     const list = G.cellSegs.get(G.ckey(Math.floor(player.x / G.CHUNK), Math.floor(player.y / G.CHUNK), Math.floor(player.z / G.CHUNK)));
     if (list && list.length) {
       const s = list[Math.floor(Math.random() * list.length)], t = Math.random();
-      const x = s.fx + s.fdx * t, z = s.fz + s.fdz * t, floor = s.y0 + (s.y1 - s.y0) * t;
-      const y = s.wl !== undefined ? s.wl + 0.05 : floor + 0.05;
+      let x = s.fx + s.fdx * t, z = s.fz + s.fdz * t; const floor = s.y0 + (s.y1 - s.y0) * t;
+      let y = s.wl !== undefined ? s.wl + 0.05 : floor + 0.05;
+      const tips = s.spel.filter(c => !c.up);
+      if (tips.length && Math.random() < 0.7) { const c = tips[Math.floor(Math.random() * tips.length)]; x = c.x; z = c.z; y = c.top - c.len; }
       sfx.play('drip', { x, y, z, vol: 0.5 + Math.random() * 0.4, vary: 0.25, wet: 0.9, rolloff: 0.8 });
     }
   }

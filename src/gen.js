@@ -64,6 +64,7 @@ function addSeg(a, b) {
               steep: Math.abs(b.y - a.y) > 0.6 * len,          // shafts: no sediment floor
               algae: Math.max(a.algae || 0, b.algae || 0),
               boulders: (a.boulders || []).concat(b.boulders || []),
+              spel: (a.spel || []).concat(b.spel || []),
               fx: a.x, fy: a.y + CORE_H, fz: a.z, fdx: b.x - a.x, fdy: b.y - a.y, fdz: b.z - a.z };
   s.inv = 1 / ((s.bx * s.bx + s.by * s.by + s.bz * s.bz) || 1e-6);
   s.finv = 1 / ((s.fdx * s.fdx + s.fdy * s.fdy + s.fdz * s.fdz) || 1e-6);
@@ -280,6 +281,20 @@ class Worm {
         n.boulders.push({ x: n.x + Math.sin(a) * d, y: n.y + r * 0.45, z: n.z + Math.cos(a) * d, r });
       }
     }
+    // dripstone: hangs from roomy ceilings, grows from the floor under it
+    const roomy = this.ry > 1.5 && wl === undefined && core;
+    if (roomy && rand() < (cavern ? 0.7 : this.ry > 2.3 ? 0.5 : 0.12)) {
+      n.spel = [];
+      const big = cavern ? 2.2 : this.ry > 2.3 ? 1.3 : 1;
+      for (let k = 0, c = 1 + (rand() * (cavern ? 4 : 2) | 0); k < c; k++) {
+        const a = rand() * Math.PI * 2, d = rand() * this.rx * 0.55, x = n.x + Math.sin(a) * d, z = n.z + Math.cos(a) * d;
+        const ceil = n.y + (1 + CY) * this.ry * Math.sqrt(Math.max(0.2, 1 - (d / this.rx) ** 2));
+        const r = rr(0.18, 0.42) * big, len = rr(0.6, 2.2) * big;
+        const column = rand() < 0.12;
+        n.spel.push({ x, z, top: ceil + 0.3, len: column ? ceil - n.y + 0.6 : Math.min(len, ceil - n.y - 0.5), r: column ? r * 1.3 : r, up: false });
+        if (!column && rand() < 0.6) n.spel.push({ x: x + rr(-0.3, 0.3), z: z + rr(-0.3, 0.3), top: n.y - 0.25, len: rr(0.3, 1.0) * big, r: rr(0.15, 0.4) * big, up: true });
+      }
+    }
     addSeg(this.node, n); nodes.push(n);
     if (n.algae > 0.4 && n.i % 3 === 0) algaeNodes.push(n);
     if (core && wl === undefined && this.rx < 3 && rand() < 0.03) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: false, seed: rand() });
@@ -347,20 +362,24 @@ export function gridAt(d, lx, ly, lz) {              // trilinear sample of one 
   return lerp(lerp(c00, c10, fy), lerp(c01, c11, fy), fz);
 }
 const fcol = [0, 0, 0];
-function faceColor(cx, cy, cz) {
+function faceColor(cx, cy, cz, cal, wt) {
   const n1 = fbm(cx * 0.22, cy * 0.22, cz * 0.22) * 0.5 + 0.5;            // warm sandstone <-> cool limestone
   const n2 = hash3(Math.floor(cx * 9.1), Math.floor(cy * 9.1), Math.floor(cz * 9.1));
   const strata = 0.5 + 0.5 * Math.sin(cy * 2.3 + n1 * 4);
   const br = 0.8 + 0.2 * n2 - 0.1 * strata;
-  fcol[0] = lerp(0.46, 0.32, n1) * br; fcol[1] = lerp(0.37, 0.31, n1) * br; fcol[2] = lerp(0.27, 0.33, n1) * br;
+  let r = lerp(0.46, 0.32, n1) * br, g = lerp(0.37, 0.31, n1) * br, b = lerp(0.27, 0.33, n1) * br;
+  if (cal > 0) { const cb = 0.85 + 0.15 * n2; r = lerp(r, 0.82 * cb, cal); g = lerp(g, 0.78 * cb, cal); b = lerp(b, 0.70 * cb, cal); }
+  if (wt > 0) { const k = 1 - 0.4 * wt; r *= k; g *= k * 1.02; b *= k * 1.08; }
+  fcol[0] = r; fcol[1] = g; fcol[2] = b;
 }
 // Fills ch.density / ch.glow and returns { rock: {pos,col,glow} | null, water: {pos} | null } (null when nothing to draw)
 export function buildChunk(ch) {
   const list = cellSegs.get(ch.key);
   ch.built = true; ch.dirty = false;
-  if (!list || list.length === 0) { ch.solid = true; ch.density = null; ch.glow = null; return null; }
+  if (!list || list.length === 0) { ch.solid = true; ch.density = null; ch.glow = null; ch.calc = null; ch.wet = null; return null; }
   const dens = ch.density || new Float32Array(M * M * M);
   const glow = ch.glow || new Float32Array(M * M * M);
+  const calc = ch.calc || new Uint8Array(M * M * M), wet = ch.wet || new Uint8Array(M * M * M);
   const ox = ch.cx * CHUNK, oy = ch.cy * CHUNK, oz = ch.cz * CHUNK;
   let anyAir = false, anyRock = false, idx = 0;
   const row = [];
@@ -371,7 +390,7 @@ export function buildChunk(ch) {
       for (let i = 0; i < M; i++, idx++) { const x = ox + i * VOXEL;
         let best = 2.0, bs = null, bt = 0;
         for (let q = 0; q < row.length; q++) { const s = row[q]; if (x < s.x0 || x > s.x1) continue; const d = segDist(s, x, y, z); if (d < best) { best = d; bs = s; bt = segT; } }
-        let v = best, g = 0;
+        let v = best, g = 0, cal = 0, wt = 0;
         if (bs && best < 1.6) {
           const amp = NOISE_AMP * clamp(bs.rmin / 1.1, 0.3, 1);
           v += amp * fbm(x * 1.1, y * 1.1, z * 1.1);
@@ -384,17 +403,26 @@ export function buildChunk(ch) {
             const b = bs.boulders[q], bd = b.r - Math.hypot(x - b.x, y - b.y, z - b.z) + 0.15 * vnoise(x * 2.3, y * 2.3, z * 2.3);
             if (bd > v) v = bd;
           }
+          for (let q = 0; q < bs.spel.length; q++) {                // dripstone cones (calcite)
+            const c = bs.spel[q], t = c.up ? (y - c.top) / c.len : (c.top - y) / c.len;   // 0 at the root, 1 at the tip
+            if (t < -0.05 || t > 1) continue;
+            const rad = c.r * (1 - t * 0.85) * (1 + 0.25 * vnoise(x * 3, y * 3, z * 3)), hd = Math.hypot(x - c.x, z - c.z);
+            const cd = rad - hd;
+            if (cd > v) v = cd;
+            if (cd > -0.35) cal = Math.max(cal, clamp((cd + 0.35) / 0.35, 0, 1));
+          }
+          if (bs.wl !== undefined && y < bs.wl + 0.9) wt = clamp(1 - (y - bs.wl) / 0.9, 0, 1);
           // bioluminescence: damp band above water, plus flagged passages, patchy
           const patch = smooth(0.42, 0.9, vnoise(x * 1.5 + 21, y * 1.5, z * 1.5 - 13) * 0.5 + 0.5) * smooth(0.3, 0.7, vnoise(x * 0.35, y * 0.35, z * 0.35 + 5) * 0.5 + 0.5);
           if (bs.algae > 0) g = bs.algae * patch;
           if (bs.wl !== undefined && y > bs.wl - 0.2 && y < bs.wl + 1.6) g = Math.max(g, 0.8 * patch * (1 - (y - bs.wl) / 1.8));
         }
-        dens[idx] = v; glow[idx] = g;
+        dens[idx] = v; glow[idx] = g; calc[idx] = cal * 255; wet[idx] = wt * 255;
         if (v < 0) anyAir = true; else anyRock = true;
       }
     }
   }
-  ch.density = dens; ch.glow = glow; ch.solid = !anyAir;
+  ch.density = dens; ch.glow = glow; ch.calc = calc; ch.wet = wet; ch.solid = !anyAir;
   if (!anyAir) return null;
   const out = { rock: null, water: null };
   if (anyRock) out.rock = marchingCubes(ch, ox, oy, oz);
@@ -440,9 +468,10 @@ function marchingCubes(ch, ox, oy, oz) {
       const a = triTable[ti] * 3, b2 = triTable[ti + 1] * 3, c = triTable[ti + 2] * 3;
       pos.push(ev[a], ev[a + 1], ev[a + 2], ev[b2], ev[b2 + 1], ev[b2 + 2], ev[c], ev[c + 1], ev[c + 2]);
       const cx = (ev[a] + ev[b2] + ev[c]) / 3, cy = (ev[a + 1] + ev[b2 + 1] + ev[c + 1]) / 3, cz = (ev[a + 2] + ev[b2 + 2] + ev[c + 2]) / 3;
-      faceColor(cx, cy, cz);
+      const lx = (cx - ox) / VOXEL, ly = (cy - oy) / VOXEL, lz = (cz - oz) / VOXEL;
+      faceColor(cx, cy, cz, gridAt(ch.calc, lx, ly, lz) / 255, gridAt(ch.wet, lx, ly, lz) / 255);
       col.push(fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2]);
-      const g = gridAt(glowG, (cx - ox) / VOXEL, (cy - oy) / VOXEL, (cz - oz) / VOXEL);
+      const g = gridAt(glowG, lx, ly, lz);
       glow.push(g, g, g);
       ti += 3;
     }
@@ -465,7 +494,7 @@ export function scanChunks(dt, force, onDispose) {
     if (dx * dx + dy * dy + dz * dz > MESH_R * MESH_R + 1) continue;
     const cx = pcx + dx, cy = pcy + dy, cz = pcz + dz, key = ckey(cx, cy, cz);
     let ch = chunks.get(key);
-    if (!ch) { ch = { cx, cy, cz, key, built: false, dirty: false, solid: false, density: null, glow: null, mesh: null, water: null }; chunks.set(key, ch); }
+    if (!ch) { ch = { cx, cy, cz, key, built: false, dirty: false, solid: false, density: null, glow: null, calc: null, wet: null, mesh: null, water: null }; chunks.set(key, ch); }
     if (!ch.built || ch.dirty) { ch.d2 = dx * dx + dy * dy + dz * dz; queue.push(ch); }
   }
   queue.sort((a, b) => a.d2 - b.d2);
