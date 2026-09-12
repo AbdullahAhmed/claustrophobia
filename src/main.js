@@ -66,7 +66,7 @@ torch.add(spot); torch.add(spot.target);
 const bounce = new THREE.PointLight(0xffc890, 0.9, 7, 1.5); scene.add(bounce);
 scene.add(new THREE.AmbientLight(0x1a1610, 0.06));
 // dust in the beam: a cloud of motes around the camera, lit only where the torch cone reaches them
-const MOTES = 300;
+const MOTES = 220;
 const motePos = new Float32Array(MOTES * 3), moteVel = new Float32Array(MOTES * 3), moteSz = new Float32Array(MOTES);
 for (let i = 0; i < MOTES; i++) { motePos[i * 3] = 1e6; moteSz[i] = 0.007 + Math.random() * 0.014; }
 const moteTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d');
@@ -108,10 +108,43 @@ let lastW = -1, lastH = -1;
 function resize() { const w = innerWidth || 1280, h = innerHeight || 800; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 
 // ---------- chunk meshes ----------
+// Builds run in workers when available (no hitches); the initial load and any fallback run synchronously.
+const workers = [], pendingBuilds = new Map();   // key -> chunk record
+let workerOk = false, nextWorker = 0, buildGen = 0;
+try {
+  const n = Math.min(3, Math.max(1, (navigator.hardwareConcurrency || 4) - 1));
+  for (let i = 0; i < n; i++) {
+    const w = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+    w.postMessage({ type: 'init', seed: SEED, edgeTable: G.edgeTable, triTable: G.triTable });
+    w.onmessage = (e) => onBuilt(e.data);
+    w.onerror = (e) => { console.warn('chunk worker failed, building on the main thread', e.message || e); workerOk = false; for (const ch of pendingBuilds.values()) { ch.building = false; ch.dirty = true; } pendingBuilds.clear(); };
+    workers.push(w);
+  }
+  workerOk = workers.length > 0;
+} catch (e) { console.warn('no workers:', e); workerOk = false; }
+function onBuilt(out) {
+  const ch = pendingBuilds.get(out.key); if (!ch) return;
+  pendingBuilds.delete(out.key); ch.building = false;
+  if (G.chunks.get(out.key) !== ch) return;                          // disposed while building
+  G.applyChunkData(ch, out);
+  if (ch.dirty) return;                                              // carved again meanwhile; the scan will re-queue it
+  disposeChunk(ch);
+  if (!out.solid) meshChunk(ch, out);
+}
 function realizeChunk(ch) {
+  if (workerOk && !ch.building) {
+    const list = G.cellSegs.get(ch.key);
+    if (!list || list.length === 0) { disposeChunk(ch); G.applyChunkData(ch, { solid: true }); return; }
+    ch.building = true; ch.dirty = false; pendingBuilds.set(ch.key, ch);
+    workers[nextWorker++ % workers.length].postMessage({ type: 'build', key: ch.key, cx: ch.cx, cy: ch.cy, cz: ch.cz, list: G.plainSegs(list), gen: ++buildGen });
+    return;
+  }
+  if (ch.building) return;
   disposeChunk(ch);
   const out = G.buildChunk(ch);
-  if (!out) return;
+  if (out) meshChunk(ch, out);
+}
+function meshChunk(ch, out) {
   if (out.rock) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(out.rock.pos, 3));
@@ -122,21 +155,23 @@ function realizeChunk(ch) {
     scene.add(mesh); ch.mesh = mesh;
   }
   if (out.water) {
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(out.water.pos, 3));
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(out.water, 3));
     g.computeVertexNormals(); g.computeBoundingSphere();
     ch.water = new THREE.Mesh(g, waterMat); waterGroup.add(ch.water);
   }
 }
+function realizeSync(ch) { disposeChunk(ch); const out = G.buildChunk(ch); if (out) meshChunk(ch, out); }
 function disposeChunk(ch) {
   if (ch.mesh) { scene.remove(ch.mesh); ch.mesh.geometry.dispose(); ch.mesh = null; }
   if (ch.water) { waterGroup.remove(ch.water); ch.water.geometry.dispose(); ch.water = null; }
 }
 const stats = { builds: 0, buildMs: 0, maxMs: 0, frameMs: 0 };
-function processQueue(ms) {
+function processQueue(ms, sync) {
   const t0 = performance.now();
   while (G.queue.length && performance.now() - t0 < ms) {
-    const ch = G.queue.shift(); if (ch.built && !ch.dirty) continue;
-    const t1 = performance.now(); realizeChunk(ch); const d = performance.now() - t1;
+    const ch = G.queue.shift(); if ((ch.built && !ch.dirty) || ch.building) continue;
+    if (!sync && workerOk && pendingBuilds.size >= workers.length * 3) { G.queue.unshift(ch); break; }   // keep the workers fed, not flooded
+    const t1 = performance.now(); if (sync) realizeSync(ch); else realizeChunk(ch); const d = performance.now() - t1;
     stats.builds++; stats.buildMs += d; if (d > stats.maxMs) stats.maxMs = d;
   }
 }
@@ -742,7 +777,7 @@ function init() {
   G.initGen(SEED);
   for (const d of cave.deaths) G.props.push({ type: 'remains', ...d });
   for (const m of cave.marks) G.props.push({ type: 'mark', ...m });
-  G.scanChunks(1, true, disposeChunk); processQueue(1e9);
+  G.scanChunks(1, true, disposeChunk); processQueue(1e9, true);
   for (let y = -3; y < 3; y += 0.1) if (G.fieldAt(0, y + 0.35, 0) < -0.3 && G.fieldAt(0, y + 1.2, 0) < -0.3) { player.y = y; break; }
   player.yaw = Math.PI;
   updatePlayer(0); updateTorch(1);
