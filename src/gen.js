@@ -47,6 +47,7 @@ function addSeg(a, b) {
   const s = { ax: a.x, ay: acy * sy, az: a.z, bx: b.x - a.x, by: (bcy - acy) * sy, bz: b.z - a.z,
               rx, ry, sy, y0: a.y, y1: b.y, rmin: Math.min(rx, ry),
               wl: a.wl !== undefined ? a.wl : b.wl, floods: !!(a.floods || b.floods), chimney: !!(a.chimney || b.chimney), core: a.core !== false && b.core !== false,
+              old: (b.theme || a.theme) === 'old', broken: (b.theme || a.theme) === 'broken',
               steep: Math.abs(b.y - a.y) > 0.6 * len,          // shafts: no sediment floor
               algae: Math.max(a.algae || 0, b.algae || 0), tint: b.tint || a.tint || 0, foul: !!(a.foul && b.foul), gour: !!(a.gour && b.gour),
               boulders: (a.boulders || []).concat(b.boulders || []),
