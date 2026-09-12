@@ -62,7 +62,8 @@ every later attempt at that cave.
 
 Sumps you may not have the breath for. Streams whose current strengthens toward the place they sink — swim with it
 or don't get in. Pits you can't see until you're falling. Loose blocks in cavern roofs that come down when something
-moves under them — you get about a second's warning. Dead-end pockets where the air has gone bad. The way out is
+moves under them — you get about a second's warning. Dead-end pockets where the air has gone bad. Low stretches of the main way that come down behind you
+once you are through — the rock is real afterwards, and stays down for that cave. The way out is
 never less than 340 m from where you fell in, and it is through the water. Crawls that pinch shut. Caverns whose
 far walls your torch never reaches. A torch that dies in about two minutes unless you keep shaking it — blind while you
 do. Getting wedged in a crawl. Cold that shakes the torch out of your hand. Bats. And sometimes, down the passage, a

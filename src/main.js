@@ -1265,6 +1265,27 @@ function updateLoose(dt) {
 }
 let lastLooseX = 0, lastLooseZ = 0;
 
+// ---------- the passage that closes behind you ----------
+const collapsed = new Set(); let collapseT = 0; const unstableNear = [];
+function updateCollapse(dt) {
+  collapseT -= dt; if (collapseT > 0) return; collapseT = 0.4;
+  if (cave.collapsed) for (const key of cave.collapsed) if (!collapsed.has(key)) { const n = G.nodes.find(q => q.unstable && `${q.x.toFixed(0)},${q.z.toFixed(0)}` === key); if (n && G.chunkReadyAt(n.x, n.y + 0.5, n.z)) { G.collapseAt(n); collapsed.add(key); } }
+  for (const n of G.nodes) {
+    if (!n.unstable) continue;
+    const key = `${n.x.toFixed(0)},${n.z.toFixed(0)}`; if (collapsed.has(key)) continue;
+    const d = Math.hypot(n.x - player.x, n.y - player.y, n.z - player.z);
+    if (d < 1.4) n.passed = true;
+    else if (n.passed && d > 3.5 && d < 9 && Math.hypot(player.x, player.z) > Math.hypot(n.x, n.z) + 1.5 && player.grounded) {
+      // you are through, and farther in than it is: it comes down behind you
+      collapsed.add(key); cave.collapsed = (cave.collapsed || []).concat([key]); saveCave();
+      sfx.play('rattle', { x: n.x, y: n.y + 0.5, z: n.z, vol: 0.8, rate: 0.8, wet: 0.7, rolloff: 0.5 });
+      setTimeout(() => { sfx.play('rockslide', { x: n.x, y: n.y + 0.5, z: n.z, vol: 1.0, wet: 0.9, rolloff: 0.3 }); sfx.play('rumble', { x: n.x, y: n.y + 0.5, z: n.z, vol: 0.9, rate: 0.8, dur: 3, wet: 0.8, rolloff: 0.3 }); G.collapseAt(n); }, 700);
+      for (let k = 0; k < 6; k++) setTimeout(() => sfx.play('rockfall', { x: n.x + rr(-1.5, 1.5), y: n.y + 0.3, z: n.z + rr(-1.5, 1.5), vol: 0.4, rate: rr(0.8, 1.2), dur: 0.8, wet: 0.7 }), 900 + k * 220);
+      setTimeout(() => { showHint('the roof came down behind you. that way is gone', true); sfx.play('gasp', { vol: 0.6 }); }, 1600);
+    }
+  }
+}
+
 // ---------- eyes ----------
 let eyes = null, eyesT = rr(90, 200);
 const eyeMat = new THREE.MeshBasicMaterial({ color: 0xd8ff9c, fog: false });
@@ -1509,6 +1530,7 @@ function stepFrame(dt) {
   updateTorch(dt);
   updateEyes(dt);
   updateLoose(dt);
+  updateCollapse(dt);
   updateStreamSound(dt);
   waterUniforms.uTime.value += dt;
   updatePlaces(dt);

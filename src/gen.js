@@ -328,6 +328,9 @@ class Worm {
         if (!column && R() < 0.6) n.spel.push({ x: x + wr(-0.3, 0.3), z: z + wr(-0.3, 0.3), top: n.y - 0.25, len: wr(0.3, 1.0) * big, r: wr(0.15, 0.4) * big, up: true });
       }
     }
+    // an unstable stretch of a low trunk passage: it can come down behind you once you are through
+    if (this.kind === 'trunk' && core && wl === undefined && !this.pit && !this.sump && this.age > 30 && this.mode &&
+        (this.mode.name === 'crawl' || this.mode.name === 'squeeze' || this.mode.name === 'bedding') && R() < 0.05) n.unstable = true;
     // a loose block in the roof of a cavern (or a big chamber): it comes down when something moves under it
     if (core && wl === undefined && !this.pit && !this.sump && this.ry > 2.3 && R() < (cavern ? 0.12 : 0.04)) {
       const a = R() * Math.PI * 2, d = R() * this.rx * 0.5;
@@ -453,6 +456,18 @@ export function chunkReadyAt(x, y, z) {
 export function waterLevelAt(x, y, z) {
   const s = nearestSegAt(x, y, z);
   return s && s.wl !== undefined ? s.wl : -Infinity;
+}
+// the roof of a low passage comes down: the segments through the node lose their crawl core and gain a block of rock
+export function collapseAt(n) {
+  const r = Math.max(n.rx, n.ry) * 1.2 + 0.4, b = { x: n.x, y: n.y + n.ry * 0.5, z: n.z, r };
+  for (const s of segs) {
+    if (!(s.nb === n || (s.nb && s.nb.w === n.w && s.nb.i === n.i + 1))) continue;
+    s.core = false; s.boulders = s.boulders.concat([b]);
+    const e = r + 1; s.x0 = Math.min(s.x0, n.x - e); s.x1 = Math.max(s.x1, n.x + e); s.y0b = Math.min(s.y0b, n.y - e); s.y1b = Math.max(s.y1b, n.y + e); s.z0 = Math.min(s.z0, n.z - e); s.z1 = Math.max(s.z1, n.z + e);
+  }
+  n.core = false;
+  const cx = Math.floor(n.x / CHUNK), cy = Math.floor(n.y / CHUNK), cz = Math.floor(n.z / CHUNK);
+  for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const ch = chunks.get(ckey(cx + dx, cy + dy, cz + dz)); if (ch) ch.dirty = true; }
 }
 export function foulAt(x, y, z) {                          // still air with no oxygen in it
   const s = nearestSegAt(x, y, z);
