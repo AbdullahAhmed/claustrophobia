@@ -228,14 +228,15 @@ function placeRemains(p) {
   const light = new THREE.PointLight(0xffa050, 0.25, 4, 1.5); light.position.set(p.x + 0.35, y + 0.12, p.z - 0.2); scene.add(light);
   remains.push({ x: p.x + 0.35, y, z: p.z - 0.2, taken: false, light, lens, cause: p.cause, battery: p.battery });
 }
-let exitInfo = null;
+let exitInfo = null, exitLoops = null;
 function placeExit(e) {
   exitInfo = e;
+  if (soundsOn) exitLoops = { wind: sfx.loop('wind', { x: e.x, y: e.y + 2, z: e.z, rolloff: 0.35, wet: 0.3 }), birds: sfx.loop('birds', { x: e.x + e.dx * 4, y: e.y + 3, z: e.z + e.dz * 4, rolloff: 0.6 }) };
   const disc = new THREE.Mesh(new THREE.CircleGeometry(5.5, 40), new THREE.MeshBasicMaterial({ color: 0xfff4dc, fog: false }));
   disc.position.set(e.x + e.dx * 4.6, e.y + 2.2, e.z + e.dz * 4.6); disc.lookAt(e.n1.x, e.n1.y + 1.5, e.n1.z);
   scene.add(disc);
-  const sun = new THREE.PointLight(0xfff1d6, 320, 70, 1.6); sun.position.set(e.x, e.y + 2.5, e.z); scene.add(sun);
-  const sky = new THREE.PointLight(0x9fc4ff, 90, 40, 1.6); sky.position.set(e.n1.x, e.n1.y + 1.8, e.n1.z); scene.add(sky);
+  const sun = new THREE.PointLight(0xfff1d6, 140, 60, 2); sun.position.set(e.x + e.dx * 3, e.y + 3, e.z + e.dz * 3); scene.add(sun);
+  const sky = new THREE.PointLight(0x9fc4ff, 30, 40, 2); sky.position.set(e.n1.x, e.n1.y + 1.8, e.n1.z); scene.add(sky);
 }
 let propTimer = 0;
 function processProps(dt) {
@@ -481,6 +482,14 @@ function updateSound(dt) {
     sfx.play(Math.random() < 0.7 ? 'rockfall' : 'rumble', { x: player.x + Math.sin(a) * d, y: player.y + rr(-4, 6), z: player.z + Math.cos(a) * d, vol: 0.5, wet: 1, rolloff: 0.5 });
   }
   if (gaspT > 0) gaspT -= dt;
+  // daylight, heard before it is seen
+  if (exitInfo) {
+    if (!exitLoops) exitLoops = { wind: sfx.loop('wind', { x: exitInfo.x, y: exitInfo.y + 2, z: exitInfo.z, rolloff: 0.35, wet: 0.3 }), birds: sfx.loop('birds', { x: exitInfo.x + exitInfo.dx * 4, y: exitInfo.y + 3, z: exitInfo.z + exitInfo.dz * 4, rolloff: 0.6 }) };
+    const d = Math.hypot(exitInfo.x - player.x, exitInfo.y - player.y, exitInfo.z - player.z);
+    const near = clamp(1 - d / 70, 0, 1);
+    if (exitLoops.wind) exitLoops.wind.setVol((1 - u) * (0.2 + 0.8 * near) * (player.out ? 1.6 : 1), 1);
+    if (exitLoops.birds) exitLoops.birds.setVol((1 - u) * (near > 0.3 ? (near - 0.3) * 1.2 : 0) * (player.out ? 1.5 : 1), 1);
+  }
   // a pit nearby: the air moves, and it sounds like it comes from below
   voidT -= dt;
   if (voidT <= 0) {

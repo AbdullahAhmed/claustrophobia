@@ -55,3 +55,5 @@ All clips are Creative Commons 0 (public domain dedication). Sources are Freesou
 - `whoosh_short.ogg` — "whoosh_short_mid.wav" by DJT4NN3R — https://freesound.org/s/449996/ — CC0 1.0
 - `body_fall1.ogg` — "BODY FALL - V HVY - DIRT" by leonelmail — https://freesound.org/s/504626/ — CC0 1.0
 - `body_fall2.ogg` — "Body fall_01.wav" by deleted_user_2104797 — https://freesound.org/s/346695/ — CC0 1.0
+- `wind_loop.ogg` — "Looping Gentle Wind Ambience on an Open Desert Plain.wav" by dhallcomposer — https://freesound.org/s/697217/ — CC0 1.0
+- `birds_forest.ogg` — "Forest Day - Bird Chirps, Insects" by RealSquink — https://freesound.org/s/788118/ — CC0 1.0

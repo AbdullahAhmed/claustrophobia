@@ -151,5 +151,11 @@
  "bone_crunch": [
   "bone_crunch1.ogg",
   "bone_crunch2.ogg"
+ ],
+ "wind": [
+  "wind.ogg"
+ ],
+ "birds": [
+  "birds.ogg"
  ]
 }
