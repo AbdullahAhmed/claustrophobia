@@ -64,3 +64,5 @@ All clips are Creative Commons 0 (public domain dedication). Sources are Freesou
 - `flap3.ogg` — "Light Wing Flap" by TurboFool — https://freesound.org/s/561009/ — CC0 1.0
 - `waterfall_small.ogg` — "Ambiance_Waterfall_Small_Close_Loop_Stereo.wav" by Nox_Sound — https://freesound.org/s/698306/ — CC0 1.0
 - `waterfall_rocks.ogg` — "Waterfall under rocks.Wav" by BonnyOrbit — https://freesound.org/s/442433/ — CC0 1.0
+- `stream_small.ogg` — "Stream, Running Water | Aviemore Scotland" by BurghRecords — https://freesound.org/s/415151/ — CC0 1.0
+- `stream_rocks.ogg` — "Forest river flows over rocks.wav" by BonnyOrbit — https://freesound.org/s/442478/ — CC0 1.0

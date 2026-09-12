@@ -31,6 +31,7 @@ export const chunks = new Map();               // chunk key -> chunk record
 export const worms = [];
 export const props = [];                       // things for main.js to place: {type, x,y,z, ...}
 export const algaeNodes = [];
+export const streamNodes = [];          // flowing-water nodes, for the sound of it
 export const voids = [];                       // pit bottoms: {x,y,z, top}
 export let exit = null;
 let exitClaimed = false;
@@ -91,6 +92,7 @@ export const MODES = [
   { name: 'pit',     rx: [1.2, 1.4], ry: [1.2, 1.4],   len: [0, 0],   w: 0.04 },
   { name: 'cavern',  rx: [9, 16],    ry: [7, 12],      len: [25, 50], w: 0.03 },
   { name: 'crystal', rx: [2.0, 3.4], ry: [1.8, 2.8],   len: [6, 12],  w: 0.025 },
+  { name: 'stream',  rx: [1.0, 1.6], ry: [1.6, 2.6],   len: [30, 80], w: 0.10 },   // an active streamway: knee-deep, flowing, going somewhere
 ];
 const MODE = Object.fromEntries(MODES.map(m => [m.name, m]));
 const NOTES = {
@@ -110,11 +112,15 @@ class Worm {
     this.wander = 0; this.modeLeft = 0; this.target = null;
     this.mode = null; this.sump = null; this.pit = null; this.pinch = 0; this.exit = false; this.algae = 0;
     this.tint = node.tint !== undefined ? node.tint : 0;
-    this.roost = false;
+    this.roost = false; this.stream = null; this.flow = null;
   }
   pickMode(force) {
     R = this.rng;
     let m = force;
+    if (!m && this.stream) {                                     // a streamway ends by going under, or opening out
+      const S = this.stream; this.stream = null;
+      if (S.toSump) m = MODE.sump; else { this.flow = null; m = R() < 0.5 ? MODE.chamber : MODE.passage; }
+    }
     if (!m) {
       // deeper is meaner: the dangerous modes get heavier with depth
       const deep = clamp(-this.y / 30, 0, 1.5);
@@ -123,7 +129,8 @@ class Worm {
       for (let k = 0; k < MODES.length; k++) { r -= ws[k]; if (r <= 0) { m = MODES[k]; break; } }
       m = m || MODES[0];
     }
-    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal') && (this.age < 20 || this.exit)) m = MODES[0];
+    if ((m.name === 'sump' || m.name === 'pit' || m.name === 'cavern' || m.name === 'crystal' || m.name === 'stream') && (this.age < 20 || this.exit)) m = MODES[0];
+    if (m.name === 'stream' && this.y < -30) m = MODES[0];
     if (this.tint === 5) this.tint = 0;                         // leaving a crystal pocket
     if ((m.name === 'chamber' || m.name === 'cavern') && R() < 0.4) this.roost = true;   // something sleeps on the ceiling
     if (m.name === 'crystal') this.tint = 5;                    // gypsum-white rock in a crystal pocket
@@ -134,12 +141,18 @@ class Worm {
     this.modeLeft = wr(m.len[0], m.len[1]);
     this.algae = R() < (m.name === 'chamber' || m.name === 'cavern' ? 0.35 : 0.07) ? wr(0.5, 1) : 0;
     if (R() < 0.3) this.tint = (R() * 5) | 0;                    // 0 plain limestone, 1 rust, 2 ochre, 3 grey-blue, 4 copper-green
+    if (m.name === 'stream') {
+      this.stream = { s: wr(0.6, 1.1), toSump: R() < 0.55, left: this.modeLeft, wl: this.y + 0.3 };
+      this.pitch = Math.min(this.pitch, -0.02);
+      if (R() < 0.35) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: this.stream.toSump ? (R() < 0.6 ? 'the stream goes under' : 'follow the water? no') : 'follow the water' });
+    }
     if (m.name === 'sump') {
       // short: never needs air. medium: usually a bell. long: bring your nerve.
-      const r = R(), under = r < 0.45 ? wr(5, 10) : r < 0.85 ? wr(10, 18) : wr(18, 30);
+      const fed = this.flow !== null;                                              // a stream sinking under: longer, and the current takes you in
+      const r = R(), under = fed ? wr(9, 22) : r < 0.45 ? wr(5, 10) : r < 0.85 ? wr(10, 18) : wr(18, 30);
       const bell = under > 18 ? R() < 0.3 : under > 10 ? R() < 0.6 : false;
-      this.sump = { phase: 'dive', wl: this.y + 0.35, left: under, bell: 0, bellAt: bell ? under * wr(0.4, 0.6) : null,
-                    trap: this.kind !== 'trunk' && R() < 0.25 };
+      this.sump = { phase: 'dive', wl: fed && this.node.wl !== undefined ? this.node.wl : this.y + 0.35, left: under, bell: 0, bellAt: bell ? under * wr(0.4, 0.6) : null,
+                    trap: !fed && this.kind !== 'trunk' && R() < 0.25 };
       if (R() < 0.3) props.push({ type: 'note', x: this.x, y: this.y, z: this.z, text: R() < 0.7 ? NOTES.water[(R() * NOTES.water.length) | 0] : NOTES.lie[(R() * NOTES.lie.length) | 0] });
       if (R() < 0.3) props.push({ type: 'cascade', x: this.x + wr(-0.6, 0.6), y: this.y + (1 + CY) * Math.max(this.ry, 1.2) - 0.2, z: this.z + wr(-0.6, 0.6), wl: this.y + 0.35, big: R() < 0.3 });
     }
@@ -156,16 +169,19 @@ class Worm {
       this.wander = clamp(this.wander * 0.9 + gauss() * 0.04, -0.12, 0.12); this.yaw += this.wander;
       if (S.phase === 'dive') {
         this.pitch = -0.5; this.rx = lerp(this.rx, 1.3, 0.5); this.ry = lerp(this.ry, 1.0, 0.5);
-        if (this.y - S.wl < -2.0) S.phase = 'under';
+        if (this.flow) this.flow = { x: Math.sin(this.yaw), z: Math.cos(this.yaw), s: 2.6 };
+        if (this.y - S.wl < -2.0) { S.phase = 'under'; if (this.flow) this.flow = { x: Math.sin(this.yaw), z: Math.cos(this.yaw), s: 1.2, fed: true }; }
       } else if (S.phase === 'under') {
         this.pitch = 0; S.left -= STEP;
+        if (this.flow) this.flow = { x: Math.sin(this.yaw), z: Math.cos(this.yaw), s: 1.2, fed: true };   // the water goes through; so can you
         if (S.bell > 0) { S.bell -= STEP; this.ry = (S.wl + 0.9 - this.y) / (1 + CY); this.rx = 1.6; }
         else if (S.bellAt !== null && S.left < S.bellAt) { S.bell = 4.5; S.bellAt = null; }
         else { this.ry = lerp(this.ry, 1.0, 0.5); this.rx = lerp(this.rx, 1.3, 0.5); }
         if (S.left <= 0) { if (S.trap) { this.sump = null; this.pinch = 3; } else S.phase = 'rise'; }
       } else {
         this.pitch = 0.45; this.ry = lerp(this.ry, 1.1, 0.5); this.rx = lerp(this.rx, 1.3, 0.5);
-        if (this.y > S.wl + 0.3) { this.sump = null; this.pickMode(MODE.passage); }
+        if (this.flow) this.flow = { x: Math.sin(this.yaw), z: Math.cos(this.yaw), s: 0.7, fed: true };
+        if (this.y > S.wl + 0.3) { this.sump = null; this.flow = null; this.pickMode(MODE.passage); }
       }
     } else if (this.pit) {                              // ---- a hole in the floor ----
       const P = this.pit;
@@ -217,6 +233,14 @@ class Worm {
       }
       // a crawl that continues past a slot you can't get through
       if (this.kind !== 'trunk' && this.mode && this.mode.name === 'crawl' && R() < 0.04) { this.ry = 0.2; this.rx = 0.5; core = false; }
+      if (this.stream && !this.exit) {                            // water runs downhill, gently; faster where it is about to go under
+        const S = this.stream; S.left -= STEP;
+        this.pitch = clamp(this.pitch * 0.7 + -0.045 * 0.3 + gauss() * 0.012, -0.10, -0.01);
+        this.wander = clamp(this.wander, -0.1, 0.1);
+        wl = Math.ceil((this.y + 0.28) / 0.25) * 0.25; S.wl = wl;
+        const rapids = S.toSump ? 1 + 1.4 * clamp(1 - S.left / 10, 0, 1) : 1;
+        this.flow = { x: Math.sin(this.yaw), z: Math.cos(this.yaw), s: S.s * rapids };
+      }
     }
     if (!this.carve(core, wl)) return false;
     if (this.exit && this.y > SURFACE_Y) { makeExit(this); return false; }
@@ -224,7 +248,7 @@ class Worm {
       if (R() < 0.55) { this.pinch = 3; return true; }
       return false;
     }
-    if (this.kind === 'trunk' && !exitClaimed && !this.sump && !this.pit && Math.hypot(this.x, this.z) > EXIT_AT) { exitClaimed = true; this.exit = true; this.target = null; }
+    if (this.kind === 'trunk' && !exitClaimed && !this.sump && !this.pit && Math.hypot(this.x, this.z) > EXIT_AT) { exitClaimed = true; this.exit = true; this.target = null; this.stream = null; this.flow = null; }
 
     if (!this.sump && !this.pit && !this.exit) {
       const inCavern = this.mode && this.mode.name === 'cavern';
@@ -262,7 +286,7 @@ class Worm {
     const n = { x: this.x + Math.sin(this.yaw) * cp * STEP, y: this.y + Math.sin(this.pitch) * STEP,
                 z: this.z + Math.cos(this.yaw) * cp * STEP, rx: this.rx, ry: this.ry, w: this.id, i: ++this.n, core,
                 algae: core ? this.algae : 0, tint: this.tint };
-    if (wl !== undefined) n.wl = wl;
+    if (wl !== undefined) { n.wl = wl; if (this.flow) n.flow = this.flow; }
     else if (core && this.mode && (this.mode.name === 'passage' || this.mode.name === 'bedding' || this.mode.name === 'chamber') && Math.abs(this.pitch) < 0.12 && R() < 0.07) n.wl = n.y + 0.07;   // a puddle in a low spot
     const cavern = this.mode && this.mode.name === 'cavern' && !this.pit && !this.sump;
     if (cavern && R() < 0.6) {
@@ -273,7 +297,7 @@ class Worm {
       }
     }
     // dripstone: hangs from roomy ceilings, grows from the floor under it
-    const roomy = this.ry > 1.5 && wl === undefined && core;
+    const roomy = this.ry > 1.5 && this.rx > 1.15 && wl === undefined && core;
     if (roomy && R() < (cavern ? 0.7 : this.ry > 2.3 ? 0.5 : 0.12)) {
       n.spel = [];
       const big = cavern ? 2.2 : this.ry > 2.3 ? 1.3 : 1;
@@ -282,12 +306,14 @@ class Worm {
         const ceil = n.y + (1 + CY) * this.ry * Math.sqrt(Math.max(0.2, 1 - (d / this.rx) ** 2));
         const r = wr(0.18, 0.42) * big, len = wr(0.6, 2.2) * big;
         const column = R() < 0.12;
-        n.spel.push({ x, z, top: ceil + 0.3, len: column ? ceil - n.y + 0.6 : Math.min(len, ceil - n.y - 0.5), r: column ? r * 1.3 : r, up: false });
+        const clear = this.rx > 2.5 ? 0.5 : 1.3;                                          // in a passage, a stalactite leaves head-room; in a chamber it can come low
+        n.spel.push({ x, z, top: ceil + 0.3, len: column && this.rx > 2.0 ? ceil - n.y + 0.6 : Math.min(len, ceil - n.y - clear), r: column ? r * 1.3 : r, up: false });
         if (!column && R() < 0.6) n.spel.push({ x: x + wr(-0.3, 0.3), z: z + wr(-0.3, 0.3), top: n.y - 0.25, len: wr(0.3, 1.0) * big, r: wr(0.15, 0.4) * big, up: true });
       }
     }
     addSeg(this.node, n); nodes.push(n);
     if (n.algae > 0.4 && n.i % 3 === 0) algaeNodes.push(n);
+    if (n.flow && n.i % 2 === 0) streamNodes.push(n);
     if (core && wl === undefined && this.rx < 3 && R() < 0.03) props.push({ type: 'bones', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, big: false, seed: R() });
     if (this.mode && this.mode.name === 'crystal' && !this.pit && !this.sump && R() < 0.75) props.push({ type: 'crystals', x: n.x, y: n.y, z: n.z, rx: this.rx, ry: this.ry, seed: R() });
     if (this.exit && this.y > SURFACE_Y - 8 && R() < 0.6) props.push({ type: 'roots', x: n.x, y: n.y + (1 + CY) * this.ry, z: n.z, rx: this.rx, n: 4 + (R() * 6 | 0), seed: R() });
@@ -389,7 +415,13 @@ export function fieldAt(x, y, z) {
   const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK), cz = Math.floor(z / CHUNK);
   const ch = chunks.get(ckey(cx, cy, cz));
   if (!ch || !ch.built || ch.solid || !ch.density) return 1.0;
-  return gridAt(ch.density, (x - cx * CHUNK) / VOXEL, (y - cy * CHUNK) / VOXEL, (z - cz * CHUNK) / VOXEL);
+  const g = gridAt(ch.density, (x - cx * CHUNK) / VOXEL, (y - cy * CHUNK) / VOXEL, (z - cz * CHUNK) / VOXEL);
+  if (g <= -0.45 || g > 0.3) return g;
+  // the crawl core is thinner than a voxel, so the grid smears it; near it, trust the line the mesh was built from
+  const list = cellSegs.get(ckey(cx, cy, cz)); if (!list) return g;
+  const s = nearestSeg(list, x, y, z);
+  if (s && s.core) { const c = coreDist(s, x, y, z); if (c < g) return c; }
+  return g;
 }
 export function chunkReadyAt(x, y, z) {
   const ch = chunks.get(ckey(Math.floor(x / CHUNK), Math.floor(y / CHUNK), Math.floor(z / CHUNK)));
@@ -398,6 +430,10 @@ export function chunkReadyAt(x, y, z) {
 export function waterLevelAt(x, y, z) {
   const s = nearestSegAt(x, y, z);
   return s && s.wl !== undefined ? s.wl : -Infinity;
+}
+export function flowAt(x, y, z) {                          // {x,z,s} of moving water here, or null
+  const s = nearestSegAt(x, y, z);
+  return s && s.wl !== undefined && s.nb && s.nb.flow ? s.nb.flow : null;
 }
 export const G = { x: 0, y: 0, z: 0 };
 export function gradAt(x, y, z) {

@@ -52,12 +52,15 @@ All recordings are **CC0** from Freesound; see [`sounds/CREDITS.md`](sounds/CRED
 ## Places
 
 Passages, chambers, crawls, squeezes, canyons, bedding planes; flooded sumps with air bells; pits with plunge pools;
-boulder caverns; crystal pockets; dripstone; bioluminescent algae; cascades; bat roosts; mineral tints by region; bones,
-and the packs of the cavers who left them.
+boulder caverns; crystal pockets; dripstone; bioluminescent algae; cascades; active streamways that run downhill in
+steps and sometimes go under; bat roosts; mineral tints by region; bones, and the packs of the cavers who left them.
+Chambers you reach get names, written into the survey.
 
 ## Risks (by design)
 
-Sumps you may not have the breath for. Pits you can't see until you're falling. Crawls that pinch shut. Caverns whose
+Sumps you may not have the breath for. Streams whose current strengthens toward the place they sink — swim with it
+or don't get in. Pits you can't see until you're falling. Crawls that pinch shut. Caverns whose
 far walls your torch never reaches. A torch that dies in about two minutes unless you keep shaking it — blind while you
 do. Getting wedged in a crawl. Cold that shakes the torch out of your hand. Bats. And sometimes, down the passage, a
-pair of eyes — more often the longer this cave has known you.
+pair of eyes — more often the longer this cave has known you. Sometimes the beam finds something low on the floor
+ahead, looking back.

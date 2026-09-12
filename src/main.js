@@ -66,6 +66,27 @@ rockMat.onBeforeCompile = (sh) => {
 };
 const waterMat = new THREE.MeshStandardMaterial({ color: 0x0a2226, roughness: 0.08, metalness: 0.3, emissive: 0x03120f,
                                                   transparent: true, opacity: 0.84, side: THREE.DoubleSide, depthWrite: false });
+const waterUniforms = { uTime: { value: 0 } };
+waterMat.onBeforeCompile = (sh) => {
+  sh.uniforms.uTime = waterUniforms.uTime;
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', 'attribute vec3 aFlow; varying vec3 vFlow; varying vec3 vWp;\n#include <common>')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFlow = aFlow; vWp = (modelMatrix * vec4(position, 1.0)).xyz;');
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', 'uniform float uTime; varying vec3 vFlow; varying vec3 vWp;\n#include <common>')
+    .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+      float sp = length(vFlow.xz);
+      vec2 dir = sp > 0.01 ? vFlow.xz / sp : vec2(0.7, 0.7);
+      float along = dot(vWp.xz, dir);
+      float across = dot(vWp.xz, vec2(-dir.y, dir.x));
+      float amp = 0.035 + 0.11 * min(sp, 2.5);
+      float w1 = sin(along * 5.0 - uTime * (0.8 + 3.0 * sp) + across * 1.3);
+      float w2 = sin(along * 11.0 - uTime * (1.3 + 5.0 * sp) + sin(across * 2.1 + uTime * 0.7) * 1.5);
+      float w3 = sin(across * 6.0 + uTime * 0.9 + along * 0.4);
+      normal = normalize(normal + vec3(dir.x * (w1 * 0.7 + w2 * 0.3) * amp, 0.0, dir.y * (w1 * 0.7 + w2 * 0.3) * amp) + vec3(-dir.y, 0.0, dir.x) * w3 * amp * 0.5);`)
+    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      { float spf = length(vFlow.xz); if (spf > 1.0) { float f = smoothstep(0.5, 0.95, sin(dot(vWp.xz, normalize(vFlow.xz)) * 3.0 - uTime * (2.0 + spf * 2.0) + sin(vWp.x * 4.0 + vWp.z * 3.0) * 2.0)); totalEmissiveRadiance += vec3(0.14, 0.16, 0.15) * f * min(1.0, (spf - 1.0) * 1.2); } }`);
+};
 const waterGroup = new THREE.Group(); scene.add(waterGroup);
 
 const torch = new THREE.Object3D(); scene.add(torch);
@@ -188,6 +209,12 @@ function meshChunk(ch, out) {
   }
   if (out.water) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(out.water, 3));
+    const fl = new Float32Array(out.water.length), W = out.water;
+    for (let i = 0; i < W.length; i += 18) {                        // one lookup per quad
+      const f = G.flowAt(W[i] + 0.2, W[i + 1], W[i + 2] + 0.2);
+      if (f) for (let k = 0; k < 18; k += 3) { fl[i + k] = f.x * f.s; fl[i + k + 2] = f.z * f.s; }
+    }
+    g.setAttribute('aFlow', new THREE.BufferAttribute(fl, 3));
     g.computeVertexNormals(); g.computeBoundingSphere();
     ch.water = new THREE.Mesh(g, waterMat); waterGroup.add(ch.water);
   }
@@ -939,8 +966,16 @@ function updatePlayer(dt) {
       }
       // still blocked, and there is air low down ahead: it's a lip, not a wall — get lower and try again
       if (!done) {
-        const ax = px0 + wx * 0.6, az = pz0 + wz * 0.6;
-        const lowAir = G.fieldAt(ax, py0 + 0.3, az) < -0.2 && G.fieldAt(ax, py0 + 0.55, az) < -0.2;
+        const ax = px0 + wx * 0.6, az = pz0 + wz * 0.6, lx = -wz, lz = wx;
+        // is there air low ahead? look a little to either side too — the crawl core is only 0.34 m wide
+        let lowF = 1; for (const o of [0, -0.18, 0.18]) lowF = Math.min(lowF, G.fieldAt(ax + lx * o, py0 + 0.3, az + lz * o), G.fieldAt(ax + lx * o, py0 + 0.5, az + lz * o));
+        const lowAir = lowF < -0.16;
+        // on your belly and jammed: feel for the line — shift toward the more open side
+        if (player.h <= 0.6) {
+          const fl = G.fieldAt(px0 + wx * 0.3 - lx * 0.15, py0 + 0.28, pz0 + wz * 0.3 - lz * 0.15), fr = G.fieldAt(px0 + wx * 0.3 + lx * 0.15, py0 + 0.28, pz0 + wz * 0.3 + lz * 0.15);
+          const side = fr < fl - 0.02 ? 1 : fl < fr - 0.02 ? -1 : 0;
+          if (side) { player.x += lx * side * 0.35 * dt; player.z += lz * side * 0.35 * dt; collide(); }
+        }
         blockedT += dt;
         if (lowAir && blockedT < 2.5) { duckT = 0.6; if (duckHold <= 0) { duckLevel = Math.min(duckLevel + 1, 2); duckHold = 0.35; } }
         else if (blockedT >= 2.5) { duckLevel = 0; duckT = 0; }                   // ducking didn't help: it's a wall
@@ -949,6 +984,15 @@ function updatePlayer(dt) {
     duckHold -= dt;
   }
   if (player.y < -400) { player.x = 0; player.y = 0; player.z = 0; player.vy = 0; }
+
+  // the current: moving water takes you with it — a little when wading, all of it when swimming
+  player.flow = depthW > 0.2 ? G.flowAt(player.x, player.y + 0.3, player.z) : null;
+  if (player.flow) {
+    const f = player.flow, k = player.swim ? 1 : clamp((depthW - 0.2) / 0.5, 0.15, 0.8);
+    player.x += f.x * f.s * k * dt; player.z += f.z * f.s * k * dt; collide();
+    if (f.s > 1.15) teach('current', 'the water is pulling. it goes somewhere — under, probably. upstream is still possible from here');
+    else if (f.s > 0.4 && (player.swim || depthW > 0.3)) teach('stream', 'the water is moving. it has to go somewhere; that is not always good news');
+  }
 
   // water transitions
   const wy = Number.isFinite(player.wl) ? player.wl : player.y + 0.3;
@@ -1183,6 +1227,22 @@ function updateEyes(dt) {
   }
 }
 
+// ---------- the sound of moving water ----------
+let streamLoop = null, rapidsLoop = null, streamT = 0;
+function updateStreamSound(dt) {
+  streamT -= dt; if (streamT > 0) return; streamT = 0.4;
+  let best = null, bd = 1e9, rap = null, rd = 1e9;
+  for (const n of G.streamNodes) {
+    const d = Math.hypot(n.x - player.x, n.y - player.y, n.z - player.z); if (d > 40) continue;
+    if (d < bd) { bd = d; best = n; }
+    if (n.flow.s > 1.4 && d < rd) { rd = d; rap = n; }
+  }
+  if (best && !streamLoop) streamLoop = sfx.loop('stream', { x: best.x, y: best.wl, z: best.z, rolloff: 0.6, wet: 0.6 });
+  if (streamLoop) { if (best) { streamLoop.setPos(best.x, best.wl, best.z); streamLoop.setVol(0.55 * Math.min(1, best.flow.s), 0.5); } else streamLoop.setVol(0, 1.0); }
+  if (rap && !rapidsLoop) rapidsLoop = sfx.loop('stream_rocks', { x: rap.x, y: rap.wl, z: rap.z, rolloff: 0.9, wet: 0.7 });
+  if (rapidsLoop) { if (rap) { rapidsLoop.setPos(rap.x, rap.wl, rap.z); rapidsLoop.setVol(0.9 * Math.min(1, rap.flow.s - 1.2), 0.5); } else rapidsLoop.setVol(0, 1.0); }
+}
+
 // ---------- place names: cavers name what they find ----------
 const NAME_A = ['Long', 'Broken', 'Quiet', 'Black', 'High', 'Wet', 'Low', 'Cold', 'Far', 'Old', 'Grey', 'Lost'];
 const NAME_B = { cavern: ['Hall', 'Cathedral', 'Vault', 'Hollow', 'Chamber'], chamber: ['Room', 'Chamber', 'Alcove', 'Gallery'], crystal: ['Pocket', 'Grotto', 'Vein'] };
@@ -1349,6 +1409,8 @@ function stepFrame(dt) {
   processProps(dt);
   updateTorch(dt);
   updateEyes(dt);
+  updateStreamSound(dt);
+  waterUniforms.uTime.value += dt;
   updatePlaces(dt);
   updateCrosser(dt);
   updateBats(dt);

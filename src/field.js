@@ -3,7 +3,7 @@
 export const VOXEL = 0.4, N = 20, M = N + 1, CHUNK = VOXEL * N;   // 8 m chunks of 0.4 m voxels
 export const CY = 0.62;                                           // capsule centre sits this * ry above the floor line
 export const NOISE_AMP = 0.28;
-export const CORE_R = 0.34, CORE_H = 0.32;                        // guaranteed crawl tube along every unpinched passage
+export const CORE_R = 0.42, CORE_H = 0.34;                        // guaranteed crawl tube along every unpinched passage (wider than a voxel: the grid has to be able to hold it)
 
 let SEED = 1;
 export function setSeed(s) { SEED = s >>> 0; }
@@ -96,7 +96,7 @@ export function buildField(list, cx, cy, cz, into) {
         for (let q = 0; q < row.length; q++) { const s = row[q]; if (x < s.x0 || x > s.x1) continue; const d = segDist(s, x, y, z); if (d < best) { best = d; bs = s; bt = segT; } }
         let v = best, g = 0, cal = 0, wt = 0;
         if (bs && best < 1.6) {
-          const amp = NOISE_AMP * clamp(bs.rmin / 1.1, 0.3, 1);
+          const amp = NOISE_AMP * clamp((bs.rmin - 0.35) / 0.9, 0.25, 1);   // narrow passages get less noise: they have no width to spare
           v += amp * fbm(x * 1.1, y * 1.1, z * 1.1);
           if (!bs.steep) {
             const floorY = lerp(bs.y0, bs.y1, bt) + (0.08 + 0.03 * bs.ry) * vnoise(x * 0.9 + 3, y * 0.9, z * 0.9 + 7);
