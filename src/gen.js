@@ -109,6 +109,7 @@ const THEMES = {
   wet:    { stream: 3, lake: 2.2, sump: 1.5, duck: 2, gour: 1.5, cavern: 1.2, bones: 0.7, foul: 0.5, tint: 4 },
   broken: { cavern: 2.2, crawl: 1.5, squeeze: 1.3, chimney: 1.6, loose: 2.5, unstable: 2.2, bones: 1.2, tint: 3 },
   old:    { gour: 4, crystal: 3, chamber: 1.5, spel: 1.8, fossil: 3, bones: 1.0, tint: 2 },
+  maze:   { fork: 2.0, loop: 3, crawl: 1.6, squeeze: 1.4, passage: 1.3, chamber: 0.5, cavern: 0.2, stream: 0.4, lake: 0.2, gour: 0.3, bones: 1.6, tint: 2 },   // a knot of small passages that rejoin: the place to get lost
 };
 const THEME_NAMES = Object.keys(THEMES);
 const tf = (w, k) => { const t = THEMES[w.theme]; return t && t[k] !== undefined ? t[k] : 1; };
@@ -357,7 +358,7 @@ class Worm {
       const inCavern = this.mode && this.mode.name === 'cavern';
       // fork: side passage or a short alcove
       if (this.age > 6 && worms.length < MAX_WORMS &&
-          R() < (this.kind === 'trunk' ? 0.05 : 0.02) * (inCavern ? 3 : 1)) {
+          R() < (this.kind === 'trunk' ? 0.05 : 0.02) * (inCavern ? 3 : 1) * tf(this, 'fork')) {
         const alcove = R() < 0.3;
         const c = new Worm((Math.imul(this.id, 1000003) + this.n * 7 + 1) | 0, this.node, this.yaw + (R() < 0.5 ? -1 : 1) * wr(0.7, 1.5), this.pitch * 0.5, 'side',
                            alcove ? wr(3, 8) : wr(15, 80));
@@ -367,7 +368,7 @@ class Worm {
         worms.push(c);
       }
       // occasionally steer into an older passage to make a loop
-      if (!this.target && this.kind !== 'trunk' && R() < 0.03) {
+      if (!this.target && this.kind !== 'trunk' && R() < 0.03 * tf(this, 'loop')) {
         let best = null, bd = 18;
         const cx = Math.floor(this.x / CHUNK), cy = Math.floor(this.y / CHUNK), cz = Math.floor(this.z / CHUNK);
         for (let dz = -2; dz <= 2; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) {

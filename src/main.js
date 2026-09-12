@@ -278,7 +278,7 @@ function disposeChunk(ch) {
   if (ch.mesh) { scene.remove(ch.mesh); ch.mesh.geometry.dispose(); ch.mesh = null; }
   if (ch.water) { waterGroup.remove(ch.water); ch.water.geometry.dispose(); ch.water = null; }
 }
-const stats = { builds: 0, buildMs: 0, maxMs: 0, frameMs: 0, phase: {} };
+const stats = { builds: 0, buildMs: 0, maxMs: 0, frameMs: 0, phase: {}, propMs: {} };
 function processQueue(ms, sync) {
   const t0 = performance.now();
   while (G.queue.length && performance.now() - t0 < ms) {
@@ -807,7 +807,7 @@ function placeFossil(p) {
     const ch = G.chunks.get(G.ckey(cx + dx, cy + dy, cz + dz)); if (!ch || !ch.mesh) continue;
     if (ch.mesh.geometry.boundingSphere.distanceToPoint(best) > p.size) continue;
     ch.mesh.updateMatrixWorld();
-    const geo = new DecalGeometry(ch.mesh, best, decalHelper.rotation, size);
+    const geo = new DecalGeometry(localMesh(ch.mesh, best, p.size), best, decalHelper.rotation, size);
     if (geo.attributes.position && geo.attributes.position.count > 0) { scene.add(new THREE.Mesh(geo, mat)); placed = true; }
   }
   if (placed) fossils.push({ x: best.x, y: best.y, z: best.z, kind: p.kind });
@@ -876,6 +876,7 @@ function placeSinkhole(p) {
   if (p.window && soundsOn) { const b = sfx.loop('birds', { x: p.x, y: p.y + 1, z: p.z, rolloff: 1.2 }); b.setVol(daylight().name === 'night' ? 0.08 : 0.5, 2); }
 }
 let exitInfo = null, exitLoops = null, exitDaylight = 'day';
+const exitGrassMat = new THREE.MeshStandardMaterial({ color: 0x4f6a2e, roughness: 1, side: THREE.DoubleSide }), exitTreeMat = new THREE.MeshBasicMaterial({ color: 0x06090a, fog: false });
 function placeExit(e) {
   exitInfo = e;
   if (soundsOn) exitLoops = { wind: sfx.loop('wind', { x: e.x, y: e.y + 2, z: e.z, rolloff: 0.35, wet: 0.3 }), birds: sfx.loop('birds', { x: e.x + e.dx * 4, y: e.y + 3, z: e.z + e.dz * 4, rolloff: 0.6 }) };
@@ -887,14 +888,14 @@ function placeExit(e) {
   const sky = borrowLight(0x9fc4ff, 30 * Math.max(0.2, dl.k), 40, 2, e.n1.x, e.n1.y + 1.8, e.n1.z); if (sky) sky.userData.keep = true;
   exitDaylight = dl.name;
   // trees against the light: dark shapes past the mouth, and grass at the lip
-  const treeMat = new THREE.MeshBasicMaterial({ color: 0x06090a, fog: false });
+  const treeMat = exitTreeMat;
   for (let k = 0; k < 6; k++) {
     const side = (k % 2 ? 1 : -1) * (1.0 + Math.random() * 3.2), along = 3.4 + Math.random() * 1.0, h = 3 + Math.random() * 4;   // just inside the disc, so they stand against the light
     const t = new THREE.Mesh(new THREE.ConeGeometry(0.5 + Math.random() * 0.8, h, 5), treeMat);
     t.position.set(e.x + e.dx * along - e.dz * side, e.y + 2.2 + h / 2 - 1.5, e.z + e.dz * along + e.dx * side); scene.add(t);
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 2.5, 5), treeMat); trunk.position.set(t.position.x, t.position.y - h / 2 - 1.0, t.position.z); scene.add(trunk);
   }
-  const grassMat = new THREE.MeshStandardMaterial({ color: 0x4f6a2e, roughness: 1, side: THREE.DoubleSide });
+  const grassMat = exitGrassMat;
   for (let k = 0; k < 40; k++) { const g = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.25 + Math.random() * 0.3), grassMat); const along = 2.5 + Math.random() * 3, side = (Math.random() - 0.5) * 5; const gx = e.x + e.dx * along - e.dz * side, gz = e.z + e.dz * along + e.dx * side; const fy = floorBelow(gx, e.y + 2, gz); if (fy === null) continue; g.position.set(gx, fy + 0.15, gz); g.rotation.y = Math.random() * 3.14; g.rotation.z = (Math.random() - 0.5) * 0.4; scene.add(g); }
 }
 let propTimer = 0;
@@ -908,6 +909,7 @@ function processProps(dt) {
     if (d > 45) continue;
     if (!G.chunkReadyAt(p.x, p.y + 0.5, p.z)) continue;
     placed++;
+    const tp0 = performance.now();
     if (p.type === 'remains') placeRemains(p); else if (p.type === 'mark') { drawMark(p.text, new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(p.nx, p.ny, p.nz), true); placed = 4; }
     else if (p.type === 'crystals') placeCrystals(p);
     else if (p.type === 'roost') placeRoost(p);
@@ -925,6 +927,7 @@ function processProps(dt) {
     else if (p.type === 'falsefloor') falseFloors.push({ ...p, slab: p.node.slabs && p.node.slabs[0], state: 'whole', t: 0 });
     else if (p.type === 'mist') placeMist(p);
     else placeBones(p);
+    const tpd = performance.now() - tp0; if (tpd > (stats.propMs[p.type] || 0)) stats.propMs[p.type] = tpd;
     G.props.splice(i, 1);
   }
   // algae lights follow the nearest dense patches
@@ -1254,6 +1257,19 @@ function sameCave() { location.href = location.pathname + '?seed=' + SEED; }
 
 // ---------- chalk ----------
 const decalHelper = new THREE.Object3D();
+// DecalGeometry clips every triangle of the mesh it is given; a chunk has tens of thousands. Hand it only the ones near the hit.
+const _lm = new THREE.Mesh(new THREE.BufferGeometry(), undefined);
+function localMesh(mesh, hit, radius) {
+  const pos = mesh.geometry.attributes.position.array, r2 = (radius * 1.6 + 0.4) ** 2, out = [];
+  for (let i = 0; i < pos.length; i += 9) {
+    const dx = pos[i] - hit.x, dy = pos[i + 1] - hit.y, dz = pos[i + 2] - hit.z;
+    if (dx * dx + dy * dy + dz * dz < r2) for (let k = 0; k < 9; k++) out.push(pos[i + k]);
+  }
+  _lm.geometry.dispose(); _lm.geometry = new THREE.BufferGeometry();
+  _lm.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(out), 3)); _lm.geometry.computeVertexNormals();
+  _lm.position.copy(mesh.position); _lm.quaternion.copy(mesh.quaternion); _lm.scale.copy(mesh.scale); _lm.updateMatrixWorld();
+  return _lm;
+}
 const hint = $('hint'); let hintT = 0;
 function showHint(t, long) { hint.textContent = t; hint.style.opacity = 1; hintT = long ? 5 : 2.5; }
 // things you are told once, ever
@@ -1306,7 +1322,7 @@ function drawMark(text, hit, normal, old) {
     if (!ch || !ch.mesh) continue;
     if (ch.mesh.geometry.boundingSphere.distanceToPoint(hit) > w) continue;
     ch.mesh.updateMatrixWorld();
-    const geo = new DecalGeometry(ch.mesh, hit, decalHelper.rotation, size);
+    const geo = new DecalGeometry(localMesh(ch.mesh, hit, Math.max(w, hgt)), hit, decalHelper.rotation, size);
     if (geo.attributes.position && geo.attributes.position.count > 0) { scene.add(new THREE.Mesh(geo, mat)); placed = true; }
   }
   if (!placed) {
@@ -2187,7 +2203,7 @@ function updatePlaces(dt) {
   placeT -= dt; if (placeT > 0) return; placeT = 1.0;
   const sg = G.nearestSegAt(player.x, player.y + 0.5, player.z); if (!sg || !sg.nb) return;
   if (sg.nb.theme && sg.nb.theme !== lastTheme) {                              // the character of the rock changes
-    if (lastTheme && runTime > 30) showHint({ dry: 'drier here. dust, and old bones', wet: 'wetter here. you can hear it', broken: 'broken ground. blocks everywhere, and the roof looks no better', old: 'old rock: calcite over everything, and the walls are full of shells' }[sg.nb.theme], true);
+    if (lastTheme && runTime > 30) showHint({ dry: 'drier here. dust, and old bones', wet: 'wetter here. you can hear it', broken: 'broken ground. blocks everywhere, and the roof looks no better', old: 'old rock: calcite over everything, and the walls are full of shells', maze: 'it splits, and splits again. keep the survey open, and the chalk out' }[sg.nb.theme], true);
     lastTheme = sg.nb.theme;
   }
   const n = sg.nb, kind = n.window ? 'window' : n.wl !== undefined && n.wl - n.y > 1.2 && n.rx > 4 ? 'lake' : n.rx > 8 ? 'cavern' : n.tint === 5 ? 'crystal' : n.gour ? 'gour' : n.rx > 3.4 && n.ry > 2.6 ? 'chamber' : null;
@@ -2400,7 +2416,12 @@ init();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1]), 3));
   g.setAttribute('aFlow', new THREE.BufferAttribute(new Float32Array(9), 3)); g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(12).fill(1), 4));
   g.computeVertexNormals();
-  const warm = [new THREE.Mesh(g, waterMat), new THREE.Mesh(looseGeo, looseMat), new THREE.Mesh(olmGeo, olmMat), new THREE.Mesh(pageGeo, pageMat), new THREE.Mesh(packGeo, packMat), new THREE.Mesh(torchGeo, torchMat), new THREE.Mesh(stickGeo, stickMat)];
+  const warm = [new THREE.Mesh(g, waterMat), new THREE.Mesh(looseGeo, looseMat), new THREE.Mesh(olmGeo, olmMat), new THREE.Mesh(pageGeo, pageMat), new THREE.Mesh(packGeo, packMat), new THREE.Mesh(torchGeo, torchMat), new THREE.Mesh(stickGeo, stickMat),
+                new THREE.Mesh(g, curtainMat), new THREE.Mesh(g, mistMat), new THREE.Mesh(g, exitGrassMat), new THREE.Mesh(g, exitTreeMat), new THREE.Mesh(bagGeo, bagMat), new THREE.Mesh(stoveGeo, stoveMat), new THREE.Mesh(stoneGeo, stoneMat), new THREE.Mesh(g, wormMat), new THREE.Mesh(g, bubbleMat),
+                new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)), wormThreads.material),
+                new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: fossilTexture(0, 0.5), transparent: true, depthWrite: false, polygonOffset: true }))];
+  // instanced programs too: pearls and glow-worms render with count 0 until they are used
+  pearlInst.count = 0; wormInst.count = 0;
   for (const m of warm) { m.position.set(0, -900, 0); scene.add(m); }
   crosserMesh.visible = true; crosserMesh.position.set(0, -900, 0);
   try { renderer.compile(scene, camera); } catch (e) {}
