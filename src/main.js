@@ -619,7 +619,7 @@ function updatePlayer(dt) {
     } else if (player.airT > 0) {
       const hEq = preVy * preVy / (2 * GRAV);
       const soft = depthW > 1.4;
-      if (hEq > 7 && !soft) { sfx.play('body_fall', { vol: 1 }); die('THE FLOOR WASN\'T THERE', `a ${hEq.toFixed(0)} metre drop in the dark`, 'fell'); }
+      if (hEq > 7 && !soft) { sfx.play('body_fall', { vol: 1 }); die('THE FLOOR WASN\'T THERE', `a drop of ${hEq.toFixed(0)} metres, in the dark`, 'fell'); }
       else if (hEq > 3.5 && !soft) {
         sfx.play('body_fall', { vol: 0.9 }); sfx.play('gasping', { vol: 0.7 });
         if (player.hurt) die('THE SECOND FALL', 'something gave way, then you did', 'fell');
