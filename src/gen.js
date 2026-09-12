@@ -113,6 +113,7 @@ class Worm {
     this.mode = null; this.sump = null; this.pit = null; this.pinch = 0; this.exit = false; this.algae = 0;
     this.tint = node.tint !== undefined ? node.tint : 0;
     this.roost = false; this.stream = null; this.flow = null;
+    this.gated = false;                                          // trunks: has this line been through water or over a drop yet?
   }
   pickMode(force) {
     R = this.rng;
@@ -181,7 +182,7 @@ class Worm {
       } else {
         this.pitch = 0.45; this.ry = lerp(this.ry, 1.1, 0.5); this.rx = lerp(this.rx, 1.3, 0.5);
         if (this.flow) this.flow = { x: Math.sin(this.yaw), z: Math.cos(this.yaw), s: 0.7, fed: true };
-        if (this.y > S.wl + 0.3) { this.sump = null; this.flow = null; this.pickMode(MODE.passage); }
+        if (this.y > S.wl + 0.3) { this.sump = null; this.flow = null; this.gated = true; this.pickMode(MODE.passage); }
       }
     } else if (this.pit) {                              // ---- a hole in the floor ----
       const P = this.pit;
@@ -194,7 +195,7 @@ class Worm {
           this.pitch = P.wl !== undefined ? 0.45 : 0.15;
           if (P.wl !== undefined) this.sump = { phase: 'rise', wl: P.wl, left: 0, bell: 0, bellAt: null, trap: false };
           if (P.cavern) this.pickMode(MODE.cavern); else this.pickMode(MODE.passage);
-          this.pit = null;
+          this.pit = null; this.gated = true;
         }
       }
     } else if (this.pinch > 0) {                        // ---- side passage pinching shut ----
@@ -227,8 +228,8 @@ class Worm {
           if (this.mode && this.mode.name === 'cavern') this.pitch *= 0.5;
         }
         if (this.kind === 'trunk') {
-          const away = Math.atan2(this.x, this.z);              // trunks head away from the entrance
-          this.yaw += angDiff(away, this.yaw) * 0.06;
+          const away = Math.atan2(this.x, this.z);              // trunks head away from the entrance, loosely
+          this.yaw += angDiff(away, this.yaw) * 0.035;
         }
       }
       // a crawl that continues past a slot you can't get through
@@ -248,7 +249,14 @@ class Worm {
       if (R() < 0.55) { this.pinch = 3; return true; }
       return false;
     }
-    if (this.kind === 'trunk' && !exitClaimed && !this.sump && !this.pit && Math.hypot(this.x, this.z) > EXIT_AT) { exitClaimed = true; this.exit = true; this.target = null; this.stream = null; this.flow = null; }
+    if (this.kind === 'trunk' && !exitClaimed && !this.sump && !this.pit && Math.hypot(this.x, this.z) > EXIT_AT) {
+      if (this.gated) { exitClaimed = true; this.exit = true; this.target = null; this.stream = null; this.flow = null; }
+      else if (this.pinch === 0 && !this.stream) {                // the way out is through the water: one committed sump before the climb
+        this.stream = null; this.flow = null; this.pickMode(MODE.sump);
+        if (this.sump) { this.sump.left = wr(11, 19); this.sump.bellAt = this.sump.left > 14 ? this.sump.left * wr(0.45, 0.6) : null; this.sump.trap = false; }
+        else this.gated = true;                                    // too deep for a sump here: the depth was the price
+      }
+    }
 
     if (!this.sump && !this.pit && !this.exit) {
       const inCavern = this.mode && this.mode.name === 'cavern';
@@ -456,7 +464,7 @@ export function openness(x, y, z) {
 
 // ---------- bootstrap ----------
 export function initGen(seed) {
-  SEED = seed; setSeed(seed); rand = mulberry32(seed); EXIT_AT = rr(200, 320);
+  SEED = seed; setSeed(seed); rand = mulberry32(seed); EXIT_AT = rr(340, 500);
   const start = { x: 0, y: 0, z: 0, rx: 3.4, ry: 2.6, w: -1, i: 0, core: true, algae: 0 }; nodes.push(start);
   // the hole you came through: a shaft from the chamber roof up to the surface, too smooth and too far to climb
   const top = start.y + (1 + CY) * start.ry;
