@@ -36,6 +36,9 @@
   .meter.low .tag { color: var(--warn); animation: pulse 1.1s ease-in-out infinite; }
   .meter .tag { display: none; }
   .meter.low .tag { display: inline; }
+  .meter.gone .bar i { background: #5a4e44; }
+  .meter.gone .gonetag { display: inline; color: var(--warn); }
+  .meter .gonetag { display: none; }
   #torchm { right: 16px; top: 14px; }
   #breathm { left: 50%; top: 14px; transform: translateX(-50%); opacity: 0; transition: opacity .3s; }
   #breathm .bar i { background: var(--water); }
@@ -71,7 +74,7 @@
 <div id="water"></div>
 <div id="hurt"></div>
 <div id="flash"></div>
-<div id="torchm" class="meter"><span>TORCH</span><div class="bar"><i id="torchbar"></i></div><span class="tag">shake · F</span></div>
+<div id="torchm" class="meter"><span>TORCH</span><div class="bar"><i id="torchbar"></i></div><span class="tag">shake · F</span><span class="gonetag">dropped</span></div>
 <div id="breathm" class="meter"><span>BREATH</span><div class="bar"><i id="breathbar"></i></div><span class="tag">air</span></div>
 <div id="hint"></div>
 <div id="hud"></div>

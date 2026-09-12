@@ -64,6 +64,27 @@ spot.shadow.camera.near = 0.15; spot.shadow.camera.far = 32; spot.shadow.bias = 
 spot.position.set(0.16, -0.14, 0); spot.target.position.set(0.05, -0.16, -8);
 torch.add(spot); torch.add(spot.target);
 const bounce = new THREE.PointLight(0xffc890, 0.9, 7, 1.5); scene.add(bounce);
+// the hand that holds it: low-poly glove and torch, parented to the lagging rig so it sways and whips when you shake
+const hand = new THREE.Group();
+{
+  const glove = new THREE.MeshStandardMaterial({ color: 0x24201b, roughness: 0.95, flatShading: true });
+  const metal = new THREE.MeshStandardMaterial({ color: 0x2b2a2e, roughness: 0.5, metalness: 0.4, flatShading: true });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.026, 0.19, 8), metal); body.rotation.x = Math.PI / 2; body.position.z = 0.02;
+  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.027, 0.055, 8), metal); head.rotation.x = Math.PI / 2; head.position.z = -0.1;
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.028, 10), new THREE.MeshStandardMaterial({ color: 0xffe0a0, emissive: 0xffc070, emissiveIntensity: 2, roughness: 0.3 }));
+  lens.position.z = -0.128;
+  const fist = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.11), glove); fist.position.set(0, -0.012, 0.03); fist.rotation.z = 0.15;
+  const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.03, 0.06), glove); thumb.position.set(-0.04, 0.02, 0.0); thumb.rotation.z = -0.5;
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.045, 0.4, 7), glove); arm.position.set(0.05, -0.16, 0.22); arm.rotation.set(1.05, 0, -0.35);
+  const torchModel = new THREE.Group(); torchModel.add(body, head, lens);
+  hand.add(fist, thumb, arm);
+  hand.position.set(0.21, -0.22, -0.4); hand.rotation.set(0.08, -0.12, 0.05);
+  torchModel.position.copy(hand.position); torchModel.rotation.copy(hand.rotation);
+  hand.userData.lens = lens; hand.userData.torchModel = torchModel;
+  torch.add(hand, torchModel);
+}
+let torchHeld = true;
+const droppedTorch = { pos: new THREE.Vector3() };
 scene.add(new THREE.AmbientLight(0x1a1610, 0.06));
 // dust in the beam: a cloud of motes around the camera, lit only where the torch cone reaches them
 const MOTES = 220;
@@ -591,7 +612,10 @@ function updatePlayer(dt) {
       else if (hEq > 3.5 && !soft) {
         sfx.play('body_fall', { vol: 0.9 }); sfx.play('gasping', { vol: 0.7 });
         if (player.hurt) die('THE SECOND FALL', 'something gave way, then you did', 'fell');
-        else { player.hurt = true; $('hurt').style.opacity = 0.7; setTimeout(() => { $('hurt').style.opacity = 0; }, 900); showHint('something is broken'); }
+        else {
+          player.hurt = true; $('hurt').style.opacity = 0.7; setTimeout(() => { $('hurt').style.opacity = 0; }, 900);
+          if (torchHeld && Math.random() < 0.45) dropTorch(); else showHint('something is broken');
+        }
       } else if (hEq > 1.2) sfx.play(soft ? 'splash' : 'body_fall', { vol: soft ? 0.8 : 0.4 });
       player.airT = 0; player.whooshed = false;
     }
@@ -644,6 +668,12 @@ function updatePlayer(dt) {
     const pt = { x: +player.x.toFixed(1), y: +player.y.toFixed(1), z: +player.z.toFixed(1), k: player.under ? 2 : player.swim || depthW > 0.25 ? 1 : player.h < 0.8 ? 3 : 0 };
     player.trail.push(pt); player.lastTrail = pt;
   }
+  dropT -= dt;
+  if (!torchHeld && dropT <= 0 && Math.hypot(torch.position.x - player.x, torch.position.z - player.z) < 0.8 && Math.abs(torch.position.y - player.y) < 1.4) {
+    torchHeld = true; hand.visible = true; torchM.classList.remove('gone');
+    hand.userData.torchModel.position.copy(hand.position); hand.userData.torchModel.rotation.copy(hand.rotation);
+    sfx.play('torch_click', { vol: 0.7 }); showHint('got it');
+  }
   for (const r of remains) {
     if (!r.taken && Math.hypot(r.x - player.x, r.z - player.z) < 1.0 && Math.abs(r.y - player.y) < 1.5) {
       r.taken = true; scene.remove(r.light); scene.remove(r.lens);
@@ -670,9 +700,26 @@ function updatePlayer(dt) {
 }
 
 // ---------- torch ----------
-let adapt = 1, shakeT = 0, lastShake = 0, buzzT = 0;
+let adapt = 1, shakeT = 0, lastShake = 0, buzzT = 0, dropT = 0;
+const _fwd = new THREE.Vector3(), _dropE = new THREE.Euler();
+function dropTorch() {
+  torchHeld = false; hand.visible = false; torchM.classList.add('gone'); dropT = 1.5;
+  hand.userData.torchModel.position.set(0.16, -0.14, 0.02); hand.userData.torchModel.rotation.set(0, 0, 0);   // lies where the light comes from
+  camera.getWorldDirection(_fwd);
+  const a = Math.random() * Math.PI * 2, d = 1.3 + Math.random() * 1.4;
+  let x = player.x + _fwd.x * 0.6 + Math.sin(a) * d, z = player.z + _fwd.z * 0.6 + Math.cos(a) * d;
+  for (let k = 0; k < 6 && G.fieldAt(x, player.y + 0.3, z) > -0.2; k++) { const a2 = Math.random() * Math.PI * 2, d2 = 0.8 + Math.random() * 1.2; x = player.x + Math.sin(a2) * d2; z = player.z + Math.cos(a2) * d2; }
+  if (G.fieldAt(x, player.y + 0.3, z) > -0.2) { x = player.x; z = player.z; }                // don't throw it into the rock
+  const fy = floorBelow(x, player.y + 0.5, z);
+  torch.position.set(x, (fy === null ? player.y : fy) + 0.22, z);            // the light and the model sit 0.14 below the rig
+  _dropE.set(rr(-0.25, 0.05), Math.random() * Math.PI * 2, rr(-0.3, 0.3)); torch.quaternion.setFromEuler(_dropE);
+  shakeT = 0;
+  sfx.play('torch_click', { x, y: torch.position.y, z, vol: 0.8 }); sfx.play('rattle', { x, y: torch.position.y, z, vol: 0.6, rate: 0.8 });
+  showHint('the torch is not in your hand');
+}
 const shakeQ = new THREE.Quaternion(), shakeE = new THREE.Euler();
 function shakeTorch() {
+  if (!torchHeld) { showHint('you are not holding it'); return; }
   const now = performance.now(); if (now - lastShake < 100) return; lastShake = now;
   player.battery = Math.min(1, player.battery + 0.012 * (player.battery > 0.6 ? 0.5 : 1));
   shakeT = 0.22;
@@ -688,10 +735,12 @@ function torchLevel(b) {
 let stutter = 1;
 function updateTorch(dt) {
   if (running && player.alive && !player.out) player.battery = Math.max(0, player.battery - dt / BATTERY_S);
-  torch.position.copy(camera.position);
-  const a = 1 - Math.pow(shakeT > 0 ? 0.05 : 0.0005, dt);
+  if (torchHeld) {
+    torch.position.copy(camera.position);
+    const a = 1 - Math.pow(shakeT > 0 ? 0.05 : 0.0005, dt);
+    torch.quaternion.slerp(camera.quaternion, a);
+  }
   shakeT -= dt;
-  torch.quaternion.slerp(camera.quaternion, a);
   bounce.position.copy(camera.position);
   camera.getWorldDirection(viewDir);
   let ahead = 3;
@@ -705,8 +754,10 @@ function updateTorch(dt) {
   if (player.battery < 0.3 && Math.random() < (0.3 - player.battery) * 0.3) { stutter = 0.15; if (buzzT <= 0) { sfx.play('bulb_buzz', { vol: 0.35, offset: Math.random() * 3, dur: 0.6 }); buzzT = 1.5; } }
   stutter += (1 - stutter) * Math.min(1, dt * 12); buzzT -= dt;
   level *= stutter * (shakeT > 0 ? 0.12 : 1) * (player.under ? 0.7 : 1);
-  spot.intensity = 12 * adapt * level * (0.96 + 0.04 * Math.sin(t * 13.7) * Math.sin(t * 3.1));
-  bounce.intensity = 0.9 * adapt * level;
+  spot.intensity = 12 * (torchHeld ? adapt : 1) * level * (0.96 + 0.04 * Math.sin(t * 13.7) * Math.sin(t * 3.1));
+  bounce.intensity = torchHeld ? 0.9 * adapt * level : 0;
+  bounce.position.copy(torchHeld ? camera.position : torch.position);
+  hand.userData.lens.material.emissiveIntensity = 2.5 * level;
   updateMotes(dt, level * (0.5 + 0.5 * adapt));
   if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15; $('water').style.opacity = 1; }
   else { scene.fog.color.copy(FOG_AIR); scene.fog.density = 0.048; $('water').style.opacity = 0; }
@@ -861,7 +912,7 @@ function init() {
   player.yaw = Math.PI;
   updatePlayer(0); updateTorch(1);
   window.K = { player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
-               get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos,
+               get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => renderer.render(scene, camera), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; },
                run: () => { running = true; overlay.classList.add('hidden'); } };
 }
 init();
