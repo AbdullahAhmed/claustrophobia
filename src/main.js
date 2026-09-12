@@ -62,10 +62,11 @@ scene.add(camera);
 const rockMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.94, metalness: 0.0, flatShading: true, vertexColors: true });
 rockMat.onBeforeCompile = (sh) => {
   sh.vertexShader = sh.vertexShader
-    .replace('#include <common>', 'attribute float glow; varying float vGlow;\n#include <common>')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = glow;');
+    .replace('#include <common>', 'attribute float glow; attribute float wet; varying float vGlow; varying float vWet;\n#include <common>')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = glow; vWet = wet;');
   sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', 'varying float vGlow;\n#include <common>')
+    .replace('#include <common>', 'varying float vGlow; varying float vWet;\n#include <common>')
+    .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = roughnessFactor * (1.0 - 0.62 * vWet);')   // wet rock and flowstone catch the beam
     .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.10, 0.75, 0.55) * vGlow * vGlow * 0.32;');
 };
 const waterMat = new THREE.MeshStandardMaterial({ color: 0x0a2226, roughness: 0.08, metalness: 0.3, emissive: 0x03120f, vertexColors: true,
@@ -223,6 +224,7 @@ function meshChunk(ch, out) {
     geo.setAttribute('position', new THREE.BufferAttribute(out.rock.pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(out.rock.col, 3));
     geo.setAttribute('glow', new THREE.BufferAttribute(out.rock.glow, 1));
+    if (out.rock.wet) geo.setAttribute('wet', new THREE.BufferAttribute(out.rock.wet, 1));
     geo.computeVertexNormals(); geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, rockMat); mesh.castShadow = true; mesh.receiveShadow = true;
     scene.add(mesh); ch.mesh = mesh;

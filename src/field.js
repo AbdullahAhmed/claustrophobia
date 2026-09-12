@@ -163,7 +163,7 @@ const CORNER = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]]
 const ev = new Float32Array(36), fv = new Float32Array(8);
 // Marching cubes over a chunk's grids; flat-shaded non-indexed triangles with per-face colour and glow.
 export function marchingCubes(grids, cx, cy, cz, edgeTable, triTable) {
-  const dens = grids.density, glowG = grids.glow, pos = [], col = [], glow = [];
+  const dens = grids.density, glowG = grids.glow, pos = [], col = [], glow = [], wet = [];
   const ox = cx * CHUNK, oy = cy * CHUNK, oz = cz * CHUNK;
   for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const b = i + M * (j + M * k);
@@ -185,15 +185,17 @@ export function marchingCubes(grids, cx, cy, cz, edgeTable, triTable) {
       pos.push(ev[a], ev[a + 1], ev[a + 2], ev[b2], ev[b2 + 1], ev[b2 + 2], ev[c], ev[c + 1], ev[c + 2]);
       const fx = (ev[a] + ev[b2] + ev[c]) / 3, fy = (ev[a + 1] + ev[b2 + 1] + ev[c + 1]) / 3, fz = (ev[a + 2] + ev[b2 + 2] + ev[c + 2]) / 3;
       const lx = (fx - ox) / VOXEL, ly = (fy - oy) / VOXEL, lz = (fz - oz) / VOXEL;
-      faceColor(fx, fy, fz, gridAt(grids.calc, lx, ly, lz) / 255, gridAt(grids.wet, lx, ly, lz) / 255, gridAt(grids.tint, lx, ly, lz) / 50);
+      const wt = gridAt(grids.wet, lx, ly, lz) / 255, cal = gridAt(grids.calc, lx, ly, lz) / 255;
+      faceColor(fx, fy, fz, cal, wt, gridAt(grids.tint, lx, ly, lz) / 50);
       col.push(fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2]);
+      const sh = Math.min(1, wt + cal * 0.6); wet.push(sh, sh, sh);                 // sheen: wet rock and calcite are glossier
       const g = gridAt(glowG, lx, ly, lz);
       glow.push(g, g, g);
       ti += 3;
     }
   }
   if (!pos.length) return null;
-  return { pos: new Float32Array(pos), col: new Float32Array(col), glow: new Float32Array(glow) };
+  return { pos: new Float32Array(pos), col: new Float32Array(col), glow: new Float32Array(glow), wet: new Float32Array(wet) };
 }
 
 // Everything a chunk needs, from a segment list. `into` may hold grids to reuse.

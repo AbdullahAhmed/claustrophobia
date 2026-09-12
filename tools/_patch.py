@@ -1,28 +1,39 @@
-p='src/main.js'; s=open(p,encoding='utf-8').read()
+p='src/field.js'; s=open(p,encoding='utf-8').read()
 def rep(old,new,cnt=1):
     global s
     assert s.count(old)==cnt, (s.count(old), old[:70]); s=s.replace(old,new)
-rep("""  if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15; $('water').style.opacity = 1; }""",
-    """  if (player.under) { scene.fog.color.copy(FOG_WATER); scene.fog.density = 0.15 + 0.22 * floodLevel + (player.flow ? 0.05 : 0); $('water').style.opacity = 1; updateBubbles(dt); }   // silt in a flood: you cannot see your hand""")
-rep("""// water running off your face after you surface: drops on the view that slide and fade""",
-"""// your own bubbles, when you are under
-const bubbleMat = new THREE.MeshBasicMaterial({ color: 0xcfe6e8, transparent: true, opacity: 0.55, fog: false });
-const bubbleGeo = new THREE.SphereGeometry(1, 6, 5);
-const bubbles = []; let bubbleSpawnT = 0;
-function updateBubbles(dt) {
-  bubbleSpawnT -= dt;
-  if (bubbleSpawnT <= 0 && bubbles.length < 40) {
-    bubbleSpawnT = 0.12 + Math.random() * 0.25;
-    camera.getWorldDirection(viewDir);
-    const m = new THREE.Mesh(bubbleGeo, bubbleMat); const r = 0.012 + Math.random() * 0.03; m.scale.setScalar(r);
-    m.position.set(camera.position.x + viewDir.x * 0.5 + (Math.random() - 0.5) * 0.3, camera.position.y - 0.15, camera.position.z + viewDir.z * 0.5 + (Math.random() - 0.5) * 0.3);
-    scene.add(m); bubbles.push({ m, v: 0.35 + Math.random() * 0.4, wob: Math.random() * 6, r });
-  }
-  for (let i = bubbles.length - 1; i >= 0; i--) {
-    const b = bubbles[i]; b.wob += dt * 5; b.m.position.y += b.v * dt; b.m.position.x += Math.sin(b.wob) * 0.004; b.v += dt * 0.25;
-    const wl = G.waterLevelAt(b.m.position.x, b.m.position.y, b.m.position.z);
-    if (!Number.isFinite(wl) || b.m.position.y >= wl - 0.02 || G.fieldAt(b.m.position.x, b.m.position.y, b.m.position.z) > -0.05) { scene.remove(b.m); bubbles.splice(i, 1); }
-  }
-}
-// water running off your face after you surface: drops on the view that slide and fade""")
+rep("""  const dens = grids.density, glowG = grids.glow, pos = [], col = [], glow = [];""",
+    """  const dens = grids.density, glowG = grids.glow, pos = [], col = [], glow = [], wet = [];""")
+rep("""      faceColor(fx, fy, fz, gridAt(grids.calc, lx, ly, lz) / 255, gridAt(grids.wet, lx, ly, lz) / 255, gridAt(grids.tint, lx, ly, lz) / 50);
+      col.push(fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2]);""",
+    """      const wt = gridAt(grids.wet, lx, ly, lz) / 255, cal = gridAt(grids.calc, lx, ly, lz) / 255;
+      faceColor(fx, fy, fz, cal, wt, gridAt(grids.tint, lx, ly, lz) / 50);
+      col.push(fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2], fcol[0], fcol[1], fcol[2]);
+      const sh = Math.min(1, wt + cal * 0.6); wet.push(sh, sh, sh);                 // sheen: wet rock and calcite are glossier""")
+rep("""  return { pos: new Float32Array(pos), col: new Float32Array(col), glow: new Float32Array(glow) };""",
+    """  return { pos: new Float32Array(pos), col: new Float32Array(col), glow: new Float32Array(glow), wet: new Float32Array(wet) };""")
+open(p,'w',encoding='utf-8').write(s)
+
+p='src/worker.js'; s=open(p,encoding='utf-8').read()
+rep("""    if (out.rock) transfer.push(out.rock.pos.buffer, out.rock.col.buffer, out.rock.glow.buffer);""",
+    """    if (out.rock) transfer.push(out.rock.pos.buffer, out.rock.col.buffer, out.rock.glow.buffer, out.rock.wet.buffer);""")
+open(p,'w',encoding='utf-8').write(s)
+
+p='src/main.js'; s=open(p,encoding='utf-8').read()
+rep("""    geo.setAttribute('glow', new THREE.BufferAttribute(out.rock.glow, 1));""",
+    """    geo.setAttribute('glow', new THREE.BufferAttribute(out.rock.glow, 1));
+    if (out.rock.wet) geo.setAttribute('wet', new THREE.BufferAttribute(out.rock.wet, 1));""")
+rep("""  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', 'attribute float glow; varying float vGlow;\\n#include <common>')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\\nvGlow = glow;');
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', 'varying float vGlow;\\n#include <common>')
+    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\\ntotalEmissiveRadiance += vec3(0.10, 0.75, 0.55) * vGlow * vGlow * 0.32;');""",
+"""  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', 'attribute float glow; attribute float wet; varying float vGlow; varying float vWet;\\n#include <common>')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\\nvGlow = glow; vWet = wet;');
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', 'varying float vGlow; varying float vWet;\\n#include <common>')
+    .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\\nroughnessFactor = roughnessFactor * (1.0 - 0.62 * vWet);')   // wet rock and flowstone catch the beam
+    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\\ntotalEmissiveRadiance += vec3(0.10, 0.75, 0.55) * vGlow * vGlow * 0.32;');""")
 open(p,'w',encoding='utf-8').write(s); print('ok')
