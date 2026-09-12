@@ -610,13 +610,15 @@ function placeExit(e) {
 }
 let propTimer = 0;
 function processProps(dt) {
-  propTimer -= dt; if (propTimer > 0) return; propTimer = 0.5;
-  for (let i = G.props.length - 1; i >= 0; i--) {
+  propTimer -= dt; if (propTimer > 0) return; propTimer = 0.25;
+  let placed = 0;                                                        // a few per call: placing is raycasts and geometry, spread it out
+  for (let i = G.props.length - 1; i >= 0 && placed < 4; i--) {
     const p = G.props[i];
     if (p.type === 'exit') { placeExit(p); G.props.splice(i, 1); continue; }
     const d = Math.hypot(p.x - player.x, p.y - player.y, p.z - player.z);
     if (d > 45) continue;
     if (!G.chunkReadyAt(p.x, p.y + 0.5, p.z)) continue;
+    placed++;
     if (p.type === 'remains') placeRemains(p); else if (p.type === 'mark') drawMark(p.text, new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(p.nx, p.ny, p.nz), true);
     else if (p.type === 'crystals') placeCrystals(p);
     else if (p.type === 'roost') placeRoost(p);
