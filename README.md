@@ -22,6 +22,7 @@ Then http://localhost:8080/ — add `?seed=123` to fix the cave layout. Mouse + 
 | G | drop a glowstick (three per attempt) |
 | H | whistle — the echo tells you how big the space is, even with the torch dead; bats mind it |
 | M | your survey notebook — a pencil trace of where you have been, chalk notes, water in blue, the dead's routes faint |
+| controller | sticks move and look · A hop / climb · B crouch · X shake · Y whistle · LB beam · RB glowstick · LT run · start survey · back rope |
 | ` | debug survey line |
 | Esc | release the mouse |
 

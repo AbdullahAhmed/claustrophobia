@@ -733,7 +733,7 @@ addEventListener('keydown', e => {
     else if (e.code === 'Escape') closeChalk();
     return;
   }
-  keys[e.code] = true;
+  keys[e.code] = true; keys['_kb' + e.code.replace('Key', '').replace('Left', '')] = true;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'Backquote') showDebug = !showDebug;
   if (e.code === 'KeyN' && (!player.alive || !running)) { newCave(); return; }
@@ -746,7 +746,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyQ' && !e.repeat && torchHeld) { beamNarrow = !beamNarrow; sfx.play('torch_click', { vol: 0.5, rate: beamNarrow ? 1.3 : 1.0 }); showHint(beamNarrow ? 'spot: further, and nothing to either side' : 'flood: wide, and not far'); }
   if (e.code === 'KeyE' && !e.repeat) useRope();
 });
-addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('keyup', e => { keys[e.code] = false; keys['_kb' + e.code.replace('Key', '').replace('Left', '')] = false; });
 function openChalk() { typing = true; for (const k in keys) keys[k] = false; chalkIn.value = ''; chalkIn.style.display = 'block'; chalkIn.focus(); }
 function closeChalk() { typing = false; chalkIn.style.display = 'none'; chalkIn.blur(); canvas.focus(); }
 let settings = { sens: 1, vol: 0.9, inv: false };
@@ -759,6 +759,23 @@ function applySettings() {
 $('s-sens').addEventListener('input', e => { settings.sens = +e.target.value; applySettings(); });
 $('s-vol').addEventListener('input', e => { settings.vol = +e.target.value; applySettings(); });
 $('s-inv').addEventListener('change', e => { settings.inv = e.target.checked; applySettings(); });
+// a gamepad, if there is one: sticks move and look, A hop/climb, B crouch, X shake, Y whistle, LB beam, RB glowstick, LT run, start survey, back rope
+const padPrev = {}; let padSeen = false;
+function pollGamepad(dt) {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : []; let gp = null; for (const g of pads) if (g && g.connected) { gp = g; break; }
+  if (!gp) return;
+  if (!padSeen) { padSeen = true; showHint('controller: sticks move and look · A hop · B crouch · X shake · Y whistle · LB beam · RB glowstick · LT run · start survey', true); }
+  const dz = (v) => Math.abs(v) < 0.18 ? 0 : v;
+  const lx = dz(gp.axes[0] || 0), ly = dz(gp.axes[1] || 0), rx = dz(gp.axes[2] || 0), ry = dz(gp.axes[3] || 0);
+  keys.KeyW = ly < -0.3 || keys._kbW; keys.KeyS = ly > 0.3 || keys._kbS; keys.KeyA = lx < -0.3 || keys._kbA; keys.KeyD = lx > 0.3 || keys._kbD;
+  if (rx || ry) look(rx * 900 * dt, ry * 700 * dt);
+  const b = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  keys.Space = b(0) || keys._kbSpace; keys.KeyC = b(1) || keys._kbC; keys.ShiftLeft = b(6) || keys._kbShift;
+  const edge = (i) => { const now = b(i), was = !!padPrev[i]; padPrev[i] = now; return now && !was; };
+  if (!running) { if (edge(0) || edge(9)) overlay.click(); return; }
+  if (edge(2)) shakeTorch(); if (edge(3)) whistle(); if (edge(5)) dropGlowstick(); if (edge(9)) toggleNotebook(); if (edge(8)) useRope();
+  if (edge(4) && torchHeld) { beamNarrow = !beamNarrow; sfx.play('torch_click', { vol: 0.5, rate: beamNarrow ? 1.3 : 1.0 }); showHint(beamNarrow ? 'spot: further, and nothing to either side' : 'flood: wide, and not far'); }
+}
 function look(dx, dy) { player.yaw -= dx * 0.0022 * settings.sens; player.pitch = clamp(player.pitch - dy * 0.0022 * settings.sens * (settings.inv ? -1 : 1), -1.5, 1.5); }
 addEventListener('mousemove', e => { if (document.pointerLockElement === canvas || (dragLook && dragging)) look(e.movementX, e.movementY); });
 canvas.addEventListener('mousedown', () => { dragging = true; }); addEventListener('mouseup', () => { dragging = false; });
@@ -1881,6 +1898,7 @@ function stepFrame(dt) {
   if (running && player.alive && !player.out) { updatePlayer(dt); runTime += dt; saveT += dt; if (saveT > 5) { saveT = 0; saveRun(); }
     if (runTime > 40 && runTime < 41) teach('survey', 'M opens your survey — it only shows where you have been. T chalks the wall. G drops a glowstick'); }
   lap('player');
+  pollGamepad(dt);
   G.advanceWorms(3); lap('worms');
   G.scanChunks(dt, false, disposeChunk); lap('scan');
   processQueue(running ? 5 : 12); lap('queue');
