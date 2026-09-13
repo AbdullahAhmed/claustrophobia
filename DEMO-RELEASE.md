@@ -1,4 +1,8 @@
-# Claustrophobia browser demo release candidate
+# Claustrophobia browser demo release history
+
+Current live release: **v0.3**, `demo-0.3.0-1266a34b5b`, published and verified on 12 September 2026 (America/Edmonton). See [the v0.3 integration and publication review](INTEGRATION-REVIEW.md). The v0.2 record below is retained as historical evidence and rollback context.
+
+## Previous release: v0.2
 
 Published and verified on 12 September 2026 at https://claustro.alphasquaredgames.com/.
 

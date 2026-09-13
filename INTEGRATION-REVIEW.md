@@ -30,6 +30,6 @@ The source snapshot and hashes are held locally in `C:/Users/afahm/Documents/Cha
 
 ## Release and acceptance
 
-The existing v0.2 public release is unchanged by this integration. The v0.3 package is staged for review; this document is not a claim that it has been published.
+Published v0.3 to https://claustro.alphasquaredgames.com/ on 12 September 2026 (America/Edmonton), at 2026-09-13 01:19 UTC. All 144 versioned assets passed public HTTPS SHA-256 verification before replacing the entry point. Both `/` and `/index.html` then matched the packaged entry SHA-256 `986c5926dbe429a6b88772cd47444c54c8aa41c55fbf8df624688a19325c3911`. The public game loaded, started and paused in the Codex in-app browser, showing `0.3.0-demo`, with no captured warning/error logs. The previous v0.2 assets remain on the host; its entry point was saved locally as `previous-live-index.html` beside the v0.3 package for rollback. Machine-readable evidence is stored there as `public-assets-verification.json` and `public-entry-verification.json`. Runtime commit: `05cb3c8`, pushed on the integration branch.
 
 Checks use controlled fixtures and browser-simulated controller input. They do not certify a complete escape playthrough, survival balance, physical controller feel, every browser or a universal frame-rate target. Procedural growth remains supported, but total CPU memory is not constant for unlimited exploration. Final visual/control acceptance remains a player playtest of this exact build.
