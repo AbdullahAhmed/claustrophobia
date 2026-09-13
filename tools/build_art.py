@@ -141,6 +141,32 @@ group('crystal')
 for x,z,h,r in [(0,0,1,1),(.8,.3,.60,.7),(-.6,.45,.72,.65),(.35,-.75,.42,.8)]:
     rod('quartz',(x,-.5,z),(x,h-.65,z),r,pale,6,r*.92)
     rod('fractured tip',(x,h-.65,z),(x,h-.5,z),r*.92,pale,6,.12 if h>.5 else r*.75)
+# New campsite equipment follows the same worn, matte material palette.
+group('sleepingbag')
+ell('quilt',(0,.12,0),(.30,.12,.83),cloth,12,7)
+ell('hood',(0,.15,-.72),(.30,.15,.25),cloth,10,5)
+ell('hood opening',(0,.23,-.74),(.21,.035,.15),dark,10,4)
+for z in [-.5,-.25,0,.25,.5]:rod('quilt seam',(-.27,.14,z),(.27,.14,z),.003,rubber,4)
+rod('zipper',(.24,.15,-.50),(.24,.15,.67),.006,edge,5)
+box('zip pull',(.24,.16,-.48),(.025,.006,.045),edge,.002)
+group('stove')
+rod('fuel tank',(0,.02,0),(0,.13,0),.10,metal,10)
+rod('burner',(0,.13,0),(0,.17,0),.055,edge,10)
+rod('burner recess',(0,.171,0),(0,.174,0),.039,dark,10)
+for a in [0,math.tau/3,math.tau*2/3]:
+ x,z=math.cos(a),math.sin(a)
+ rod('pot support',(x*.04,.15,z*.04),(x*.13,.19,z*.13),.009,edge,5)
+ rod('leg',(x*.07,.055,z*.07),(x*.145,.007,z*.145),.009,metal,5)
+box('valve',(.112,.075,0),(.035,.022,.035),rubber,.003)
+group('suit')
+neoprene=mat('worn neoprene',(.045,.055,.058),.97)
+panel=mat('faded suit panels',(.11,.16,.18),.9)
+box('folded torso',(0,.06,0),(.34,.10,.36),neoprene,.035)
+for sign in [-1,1]:
+ box('folded sleeve',(sign*.19,.085,.035),(.10,.085,.24),neoprene,.025)
+ box('folded leg',(sign*.087,.12,.065),(.15,.07,.24),panel,.018)
+rod('zipper',(0,.17,-.095),(0,.17,.15),.004,edge,4)
+box('size label',(0,.176,-.10),(.035,.003,.024),pale)
 for o in bpy.data.objects:
     if o.type=='MESH':
         for p in o.data.polygons:p.use_smooth=False

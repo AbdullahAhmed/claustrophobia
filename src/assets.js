@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export const ASSET_NAMES=['torch','glove','skull','longbone','rib','pack','battery','cells','kit','sticks','rope','anchor','bat','olm','crosser','crystal'];
+export const ASSET_NAMES=['torch','glove','skull','longbone','rib','pack','battery','cells','kit','sticks','rope','anchor','bat','olm','crosser','crystal','sleepingbag','stove','suit'];
 export class Assets {
   constructor(){this.models=new Map();this.geometries=new Map();}
   async load(progress=()=>{}){

@@ -38,7 +38,7 @@ throughput.onclick=()=>{const k=api(),gl=k.renderer.getContext(),times=[];k.play
 document.querySelector('#run').onclick=async()=>{
  report.textContent='';let count=0;const check=(ok,label)=>{report.textContent+=(ok?'PASS ':'FAIL ')+label+'\n';if(!ok)throw Error(label);count++;};
  try{
-  const k=api();check(!!k,'initialized');check(k.assets.models.size===16,'16 original model assets loaded');
+  const k=api();check(!!k,'initialized');check(k.assets.models.size===19,'19 original model assets loaded');
   for(const name of ['torch','glove','skull','crosser'])check(k.assets.geometry(name).attributes.position.count>36,name+' has authored geometry');
   const caveBefore=JSON.stringify(k.G.nodes.map(n=>[n.x,n.y,n.z,n.rx,n.ry]));
   for(const q of ['low','standard','high'])for(const tape of ['off','subtle','full']){Object.assign(k.settings,{quality:q,tape});k.applySettings();k.render();check(k.renderer.getContext().getError()===0,q+'/'+tape+' renders without GL error');}

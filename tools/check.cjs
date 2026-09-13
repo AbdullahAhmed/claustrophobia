@@ -2,10 +2,10 @@
 // Uses empty marching-cubes tables: these checks exercise generation and density, not mesh triangulation.
 const fs = require('fs'), vm = require('vm'), cp = require('child_process'), assert = require('assert');
 process.chdir(require('path').join(__dirname, '..'));
-async function load(committed) {
-  const read = p => committed ? cp.execFileSync('git', ['show', '7d015f0:' + p], { encoding: 'utf8' }) : fs.readFileSync(p, 'utf8');
+async function load(committed, legacy = false) {
+  const read = p => committed ? cp.execFileSync('git', ['show', (legacy ? '4430de6:' : 'bd55f1d:') + p], { encoding: 'utf8' }) : fs.readFileSync(p, 'utf8');
   const field = new vm.SourceTextModule(read('src/field.js'));
-  const gen = new vm.SourceTextModule(read('src/gen.js'));
+  const gen = new vm.SourceTextModule(read(!committed && legacy ? 'src/gen-legacy.js' : 'src/gen.js'));
   const tables = new vm.SyntheticModule(['edgeTable', 'triTable'], function () { this.setExport('edgeTable', []); this.setExport('triTable', []); });
   await gen.link(s => s === './field.js' ? field : tables); await gen.evaluate();
   return { G: gen.namespace, F: field.namespace };
@@ -13,12 +13,15 @@ async function load(committed) {
 (async () => {
   for (const file of fs.readdirSync('src').filter(f => f.endsWith('.js'))) new vm.SourceTextModule(fs.readFileSync('src/' + file, 'utf8'));
   const local = await load(false), committed = await load(true);
+  const legacyLocal=await load(false,true),legacyBase=await load(true,true);
   let floors = 0, solidSamples = 0;
   for (let seed = 1; seed <= 30; seed++) {
     const { G, F } = local;
     G.initGen(seed); committed.G.initGen(seed);
     const shape = g => g.nodes.map(n => [n.w, n.i, n.x, n.y, n.z, n.rx, n.ry, n.wl, n.core]);
-    assert.deepStrictEqual(shape(G), shape(committed.G), 'Committed cave layout changed for seed ' + seed);
+    assert.deepStrictEqual(shape(G), shape(committed.G), 'New cave layout changed from Claude baseline for seed ' + seed);
+    legacyLocal.G.initGen(seed);legacyBase.G.initGen(seed);
+    assert.deepStrictEqual(shape(legacyLocal.G),shape(legacyBase.G),'Published legacy cave changed for seed '+seed);
     const floor = G.props.find(p => p.type === 'falsefloor');
     if (!floor) continue;
     floors++; G.chunks.clear();
@@ -63,5 +66,5 @@ async function load(committed) {
   const manifest = JSON.parse(fs.readFileSync('sounds/out/manifest.json', 'utf8'));
   const sounds = [...new Set(Object.values(manifest).flat())];
   assert(sounds.every(f => fs.existsSync('sounds/out/' + f)));
-  console.log(JSON.stringify({ syntaxModules: fs.readdirSync('src').filter(f => f.endsWith('.js')).length, compatibleSeeds: 30, proceduralGrowth:{initialNodes,afterExploration:growing.nodes.length},highCeiling:'pass',floodInterpolation:'pass',floorCases: floors, solidSamples, slabRemoval: 'pass', workerResults: 'pass', audioFiles: sounds.length }, null, 2));
+  console.log(JSON.stringify({ syntaxModules: fs.readdirSync('src').filter(f => f.endsWith('.js')).length, compatibleSeeds: 30, legacySeeds: 30, proceduralGrowth:{initialNodes,afterExploration:growing.nodes.length},highCeiling:'pass',floodInterpolation:'pass',floorCases: floors, solidSamples, slabRemoval: 'pass', workerResults: 'pass', audioFiles: sounds.length }, null, 2));
 })().catch(e => { console.error(e); process.exitCode = 1; });

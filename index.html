@@ -46,7 +46,7 @@
   #tools button { position: absolute; width: 116px; height: 66px; border-radius: 8px; padding: 8px; background: #242018; }
   #tools button small { display: block; margin-top: 5px; font-size: 10px; color: var(--dim); }
   #tools button.selected { border-color: var(--torch); background: #4a3822; color: var(--torch); box-shadow: 0 0 20px #ffd9a02b; }
-  #tool-chalk { top: 18px; left: 112px; } #tool-whistle { top: 173px; right: 8px; } #tool-rest { top: 173px; left: 8px; }
+  #tool-chalk { top: 18px; left: 112px; } #tool-whistle { top: 122px; right: 8px; } #tool-rest { top: 122px; left: 8px; } #tool-stone { top: 232px; left: 112px; }
   #wheel-cursor { position: absolute; left: 166px; top: 151px; width: 8px; height: 8px; border-radius: 50%; background: var(--torch); pointer-events: none; }
   #tools p { text-align: center; font-size: 11px; color: var(--bone); line-height: 1.8; margin: 8px 0; }
   .meter { position: fixed; font-size: 10.5px; letter-spacing: .18em; color: var(--dim); display: flex; align-items: center; gap: 10px; user-select: none; pointer-events: none; }
@@ -85,6 +85,9 @@
   .box p b { color: var(--bone); font-weight: 500; }
   .box .go { margin-top: 26px; font-size: 11.5px; letter-spacing: .28em; color: var(--torch); animation: pulse 2.4s ease-in-out infinite; }
   .box .rec { margin-top: 18px; font-size: 11px; letter-spacing: .1em; color: var(--dim); }
+  #ov-photos { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 16px; }
+  #ov-photos img { width: 128px; height: 80px; border: 4px solid #efeae0; border-bottom-width: 14px; box-shadow: 0 3px 10px rgba(0,0,0,.5); transform: rotate(-1.2deg); }
+  #ov-photos img:nth-child(even) { transform: rotate(1.4deg); }
   .box .snd { margin-top: 8px; font-size: 10.5px; letter-spacing: .1em; color: var(--dim); }
   .box .warn { margin-top: 18px; font-size: 11px; color: var(--warn); display: none; }
   .settings { margin-top: 22px; display: flex; gap: 22px; justify-content: center; font-size: 10.5px; letter-spacing: .12em; color: var(--dim); }
@@ -123,6 +126,7 @@ details{margin-top:18px}summary{cursor:pointer;font-size:12px;letter-spacing:.08
     <button id="tool-chalk" type="button">Chalk<small>leave a note</small></button>
     <button id="tool-whistle" type="button">Whistle<small>hear the cave</small></button>
     <button id="tool-rest" type="button">Rest<small>torch off</small></button>
+    <button id="tool-stone" type="button">Stone<small>test the floor</small></button>
     <span id="wheel-cursor"></span>
   </div><p id="tools-help">Move the mouse to choose · release Q to use<br>The cave keeps moving · Esc pauses</p>
 </div>
@@ -137,14 +141,14 @@ details{margin-top:18px}summary{cursor:pointer;font-size:12px;letter-spacing:.08
      low ceilings put you on your belly &nbsp;·&nbsp; <b>space</b> hop / surface / hold to climb a chimney<br>
      <b>shift</b> run &nbsp;·&nbsp; hold <b>left mouse</b> to charge the torch (blind while you do)<br>
      hold <b>right mouse</b> to focus the beam; release for wide<br>
-     hold <b>Q</b> for tools: chalk, whistle, rest &nbsp;·&nbsp; <b>Tab</b> survey<br>
-     <b>G</b> drop glowstick; hold and release to throw &nbsp;·&nbsp; <b>E</b> use / rig rope<br>
+     hold <b>Q</b> for tools: chalk, whistle, rest, stone &nbsp;·&nbsp; <b>Tab</b> survey<br>
+     <b>G</b> drop glowstick; hold and release to throw &nbsp;·&nbsp; <b>E</b> use / rig rope; hold to retrieve or haul &nbsp;·&nbsp; <b>P</b> photograph (flash)<br>
      the water takes you if you run out of breath. the floor is not always there. the rock can hold you.<br>
      moving water goes somewhere. still air can be bad. the roof is not all attached.<br>
      <b>esc</b> pauses the game &nbsp;·&nbsp; headphones help<br>
      controller: sticks move / look · A hop / climb · B crouch / dive<br>
      hold X charge · hold LB focus · hold Y tools · RB glowstick<br>
-     LT run · D-pad up rope · View survey · Menu pause</p></details>
+     LT run · D-pad up rope (hold to retrieve / haul) · right-stick click photo<br>View survey · Menu pause</p></details>
   <div class="settings" onclick="event.stopPropagation()">
     <label>LOOK <input type="range" id="s-sens" min="0.3" max="2.5" step="0.1" value="1"></label>
     <label>VOLUME <input type="range" id="s-vol" min="0" max="1" step="0.05" value="0.9"></label>
@@ -161,6 +165,7 @@ details{margin-top:18px}summary{cursor:pointer;font-size:12px;letter-spacing:.08
   </div>
   <div class="rec" id="ov-rec"></div>
   <p id="loading" role="status">Preparing the cave…</p><p id="load-error" role="alert" hidden></p><div id="build">Free browser demo</div><a href="credits.html" target="_blank" rel="noopener" onclick="event.stopPropagation()">Credits</a>
+  <div id="ov-photos" hidden></div>
   <div class="snd" id="ov-snd">loading sounds…</div>
   <button type="button" class="go" id="go" disabled>CLICK TO GO IN</button>
   <div class="menu-actions" id="menu-actions" hidden><button type="button" id="abandon">New cave…</button></div>

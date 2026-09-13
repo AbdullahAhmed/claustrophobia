@@ -1,0 +1,87 @@
+<!doctype html><meta charset="utf-8"><title>Claustrophobia integration checks</title>
+<style>body{background:#171816;color:#ded8c9;font:14px monospace}button{padding:10px}iframe{width:1280px;height:720px;border:0}pre{white-space:pre-wrap}#photos img{width:240px}</style>
+<h1>Integrated gameplay and visual checks</h1>
+<p>Use a disposable local origin. This harness replaces the saved attempt on its own origin.</p>
+<button id="run">Run integration checks</button><button id="capture">Capture equipment and cave</button><button id="camp">Inspect camp</button>
+<pre id="report">Ready</pre><iframe id="game" src="../index.html?seed=2"></iframe><div id="photos"></div>
+<script>
+const frame=document.querySelector('#game'), report=document.querySelector('#report'), wait=ms=>new Promise(r=>setTimeout(r,ms));
+const saved=()=>JSON.parse(localStorage.getItem('karst.cave'));
+async function load(fixture){
+  const blank=new Promise(r=>frame.addEventListener('load',r,{once:true}));frame.src='about:blank';await blank;
+  if(fixture!==undefined){if(fixture===null)localStorage.removeItem('karst.cave');else localStorage.setItem('karst.cave',JSON.stringify(fixture));}
+  const ready=new Promise(r=>frame.addEventListener('load',r,{once:true}));frame.src='../index.html?seed=2&qa='+Date.now();await ready;
+  for(let i=0;i<150&&!frame.contentWindow.K;i++)await wait(100);
+  if(!frame.contentWindow.K)throw Error(frame.contentDocument.querySelector('#load-error')?.textContent||'Game did not initialize');
+  for(let i=0;i<150&&!frame.contentWindow.K.sfx.ready;i++)await wait(100);
+  return frame.contentWindow.K;
+}
+function key(code,type='keydown'){const w=frame.contentWindow;w.dispatchEvent(new w.KeyboardEvent(type,{code,bubbles:true,cancelable:true}));}
+function ticks(k,n,dt=1/60){k.run();for(let i=0;i<n;i++)k.tick(dt);}
+document.querySelector('#capture').onclick=()=>{const k=frame.contentWindow.K;k.render();const im=new Image();im.src=frame.contentDocument.querySelector('#c').toDataURL();document.querySelector('#photos').append(im);};
+document.querySelector('#camp').onclick=()=>{
+ const k=frame.contentWindow.K;Object.assign(k.settings,{quality:'standard',tape:'subtle',brightness:1.15,reduced:false});k.applySettings();
+ k.placeCamp({x:0,y:0,z:0,rx:2.8,seed:.47});k.placeStraws({x:0,z:0,floor:0,r:1.1,n:70,seed:.3});
+ Object.assign(k.player,{x:0,y:0,z:2,alive:false});k.camera.position.set(0,1.4,2);k.camera.lookAt(0,.2,-1.3);ticks(k,12);document.querySelector('#capture').onclick();
+};
+document.querySelector('#run').onclick=async()=>{
+ report.textContent='';document.querySelector('#photos').replaceChildren();let count=0;
+ const check=(ok,label)=>{report.textContent+=(ok?'PASS ':'FAIL ')+label+'\n';if(!ok)throw Error(label);count++;};
+ try{
+  let k=await load(null);k.settings.reduced=false;k.applySettings();check(k.generatorVersion===3,'New saves select the integrated generator');
+  check(k.assets.models.size===19,'All 19 original equipment and creature models load');
+  for(const name of ['sleepingbag','stove','suit'])check(k.assets.geometry(name).attributes.position.count>100,name+' has authored geometry');
+  for(const tape of ['off','subtle','full']){k.settings.tape=tape;k.applySettings();k.run();const before=k.frames;key('KeyP');key('KeyP','keyup');ticks(k,12);check(k.frames===before-1&&k.photos.length===8-k.frames,'P takes one photograph with '+tape+' presentation');check(k.renderer.getContext().getError()===0,tape+' photo has no WebGL error');}
+  check(k.torch.children.filter(o=>o.type==='Group').every(o=>o.visible),'Equipment visibility restores after photographs');
+  let im=new Image();im.src=k.photos[0].data;await im.decode();check(im.naturalWidth===240&&im.naturalHeight===150,'Photograph contains a decodable image');document.querySelector('#photos').append(im);
+  k.settings.reduced=true;k.applySettings();const before=k.frames;k.takePhoto();ticks(k,1);
+  check(k.frames===before-1&&k.photos.length===8-k.frames,'Reduced motion captures the illuminated photo in one frame');
+  check(+frame.contentDocument.querySelector('#flash').style.opacity===0,'Reduced motion leaves no white afterimage');
+  k.player.under=true;const underFrames=k.frames;k.takePhoto();check(k.frames===underFrames,'Underwater shutter does not consume film');k.player.under=false;
+  key('KeyQ');const wheelFrames=k.frames;k.takePhoto();check(k.frames===wheelFrames,'Tools wheel blocks accidental photographs');key('KeyQ','keyup');
+  key('KeyQ');frame.contentWindow.dispatchEvent(new frame.contentWindow.MouseEvent('mousemove',{movementX:0,movementY:110}));key('KeyQ','keyup');check(k.stones.length===1,'Stone is available through the existing Q wheel');
+  k.pause();const pausedFrames=k.frames;k.takePhoto();check(k.frames===pausedFrames,'Paused shutter does not consume film');k.run();
+  while(k.frames>0){k.takePhoto();ticks(k,1);}k.takePhoto();check(k.frames===0&&k.photos.length===8,'Film stops at eight frames');
+  k.player.cold=.63;k.saveRun();check(saved().run.frames===0&&saved().run.cold===.63,'Film and cold are persisted immediately');
+  k=await load();check(k.frames===0&&k.photos.length===8&&Math.abs(k.player.cold-.63)<.001,'Photos, spent film and cold survive reload');
+
+  k=await load(null);k.run();const p=k.player;
+  k.G.voids.unshift({x:p.x,z:p.z,top:p.y,y:p.y-25});p.rope=2;k.useRope();check(p.rope===2&&!k.roping,'A 25 metre pitch refuses two short coils');
+  p.rope=3;k.useRope();check(p.rope===0&&k.roping&&saved().ropes[0].coils===3,'Long pitch consumes the correct three coils');
+  check(k.ropes[0].mesh.children.length>0,'Rigged rope includes the detailed anchor hardware');
+  k.saveRun();k=await load();check(k.ropes.length===1&&k.ropes[0].coils===3&&k.ropes[0].mesh.children.length>0,'Saved rope and hardware reconstruct');
+  Object.assign(k.player,{x:k.ropes[0].x,y:k.ropes[0].top,z:k.ropes[0].z});k.run();
+  const w=frame.contentWindow,pad={connected:true,axes:[0,0,0,0],buttons:Array.from({length:16},()=>({pressed:false})),vibrationActuator:{playEffect:()=>Promise.reject(Error('unsupported'))}};
+  Object.defineProperty(w.navigator,'getGamepads',{configurable:true,value:()=>[pad]});
+  pad.buttons[12].pressed=true;ticks(k,1);check(!k.roping,'D-pad hold does not prematurely descend');
+  ticks(k,45);pad.buttons[12].pressed=false;ticks(k,1);check(k.ropes.length===0&&k.player.rope===3&&saved().ropes.length===0,'Holding and releasing D-pad up retrieves the rope');
+  delete w.navigator.getGamepads;
+
+  k=await load(null);k.run();
+  const dry=k.G.nodes.find(n=>n.rx>2.5&&n.ry>2&&n.wl===undefined)||k.G.nodes[0];
+  k.placeStraws({x:dry.x,z:dry.z,floor:dry.y,r:.5,n:45,seed:.4});k.strawInst.update({x:dry.x,y:dry.y,z:dry.z});
+  check(k.strawInst.count>0&&k.strawInst.mesh.count>0,'Soda straws attach to the actual cave roof');
+  k.strawInst.update({x:10000,y:10000,z:10000});check(k.strawInst.mesh.count===0,'Distant soda straws leave the GPU batch');k.strawInst.update({x:dry.x,y:dry.y,z:dry.z});check(k.strawInst.mesh.count>0,'Returning restores soda straws');
+  k.placeCamp({x:dry.x,y:dry.y,z:dry.z,rx:dry.rx,seed:.37});check(k.campDecor.length>=3&&k.caches.some(c=>c.kind==='suit'),'Camp uses authored equipment and includes a wetsuit');
+  k.render();check(k.renderer.getContext().getError()===0,'Integrated camp and formations render without GL error');
+  const probe=k.assets.model('stove');let triangle;probe.traverse(o=>{if(o.isMesh&&!triangle)triangle=o;});
+  triangle=triangle.clone();triangle.geometry=triangle.geometry.clone();triangle.geometry.setIndex(null);
+  const A=triangle.geometry.attributes.position.constructor;triangle.geometry.setAttribute('position',new A(new Float32Array([20,0,0,0,0,0,0,1,0]),3));triangle.updateMatrixWorld();
+  check(k.localMesh(triangle,new k.camera.position.constructor(0,0,0),.5).geometry.attributes.position.count===3,'Decal culling retains triangles crossing the target region');triangle.geometry.dispose();
+  // Sump fixture follows the entrance floor. This tests direction/input, independent of random sump placement.
+  const V=k.camera.position.constructor,n0={w:90909,i:1,linePath:{pts:[new V(-2,.3,0),new V(0,.3,0),new V(2,.3,0)],len:4}};
+  const line=k.layLine(n0,1,false);check(line&&saved().lines.some(e=>e.w===90909),'A guide line persists its cave identity');
+  Object.assign(k.player,{x:-.6,y:0,z:0,swim:true});k.camera.rotation.set(0,-Math.PI/2,0);key('KeyE');const x=k.player.x;k.updateHaul(.1);check(k.player.x>x,'Looking along a line can haul toward the farther bank');
+  key('Escape');const stopped=k.player.x;k.updateHaul(.2);check(k.player.x===stopped,'Pausing clears held rope hauling');
+  k.run();Object.assign(k.player,{x:.6,y:0,z:0,swim:true});k.camera.rotation.set(0,Math.PI/2,0);key('KeyE');const back=k.player.x;k.updateHaul(.1);check(k.player.x<back,'Regrabbing toward the other bank reverses hauling');key('KeyE','keyup');
+  k=await load(null);k.run();
+  for(const n of k.G.nodes.filter(n=>n.w>0&&n.wl===undefined&&n.i>3).slice(0,60)){Object.assign(k.player,{x:n.x,y:n.y,z:n.z});k.steal();if(k.carried)break;}
+  check(!!k.carried,'Torch theft finds a traversable dry route');const theftStart={...k.carried.start};k.player.x+=4;k.updateCarried(.01);
+  check(Math.abs(k.torch.position.x-theftStart.x)<1,'Carried torch does not follow a moving player');
+  k.updateCarried(k.carried.dur+1);check(!k.carried&&!k.torchHeld&&Number.isFinite(k.torch.position.y),'The stolen torch is put down for retrieval');
+  const legacy={seed:2,attempts:2,deaths:[],marks:[{x:0,y:0,z:0,text:'old save'}],escaped:false,tier:0};
+  k=await load(legacy);check(k.generatorVersion===2,'Unversioned published saves keep the legacy generator');check(saved().marks[0].text==='old save','Legacy cave marks survive migration');
+  k=await load(null);report.textContent+='\n'+count+' INTEGRATION CHECKS PASSED';k.run();k.pause();
+ }catch(e){report.textContent+='\nERROR '+e.stack;}
+};
+</script>

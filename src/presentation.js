@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export const BUILD = '0.2.0-demo';
+export const BUILD = '0.3.0-demo';
 export const visualDefaults = { quality: 'standard', tape: 'subtle', motion: 1, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, brightness: 1 };
 export function normalizeVisuals(s) {
   for (const [key, fallback] of Object.entries(visualDefaults)) if (s[key] === undefined) s[key] = fallback;

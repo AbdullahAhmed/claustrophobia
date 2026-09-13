@@ -8,7 +8,8 @@ for folder,pattern in [('src','*.js'),('vendor/three','*'),('assets/fonts','*'),
     runtime.extend(p for p in (root/folder).rglob(pattern) if p.is_file())
 runtime=sorted(set(runtime));digest=hashlib.sha256()
 for p in [root/'index.html']+runtime:digest.update(p.read_bytes())
-release='demo-0.2.0-'+digest.hexdigest()[:10];dest=out/release;web=dest/'site';prefix='releases/'+release
+version=re.search(r"BUILD = '([^']+)'",(root/'src/presentation.js').read_text()).group(1).removesuffix('-demo')
+release='demo-'+version+'-'+digest.hexdigest()[:10];dest=out/release;web=dest/'site';prefix='releases/'+release
 for p in runtime:
     target=web/prefix/p.relative_to(root);target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,target)
 entry=(root/'index.html').read_text(encoding='utf-8').replace('<html lang="en">',f'<html lang="en">\n<base href="./{prefix}/">')
@@ -21,7 +22,7 @@ for name,selection in [('runtime-first.zip',[p for p in files if p.name!='index.
         for p in selection:z.write(p,p.relative_to(web))
 shutil.copyfile(web/'index.html',dest/'index.html')
 # Validate pinned module imports and audio/model presence before any publication.
-assert len(list((web/prefix/'assets/models').glob('*.glb')))==16
+assert len(list((web/prefix/'assets/models').glob('*.glb')))==19
 assert len(list((web/prefix/'sounds/out').glob('*.ogg')))==97
 assert 'cdn.jsdelivr' not in entry and 'fonts.googleapis' not in entry
 assert all(not any(part in ['.git','.claude','tools'] for part in Path(name).parts) for name in manifest)

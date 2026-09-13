@@ -16,14 +16,14 @@ For development without stale browser caching, run `python tools/serve.py 8793` 
 http://127.0.0.1:8793/. Opening `index.html` directly from File Explorer will not load the ES modules.
 
 Regression checks: `node --experimental-vm-modules --no-warnings tools/check.cjs` checks source syntax,
-30 cave seeds against commit `7d015f0`, intact slab collision, slab removal, stale worker results, and audio files.
+30 new cave seeds against Claude commit `bd55f1d` and 30 legacy cave seeds against published commit `4430de6`, intact slab collision, slab removal, stale worker results, and audio files.
 For browser smoke checks, run `python tools/serve.py 8794`, open http://127.0.0.1:8794/tools/smoke.html,
 and click **Run checks in this test tab**. Use this separate test port: the checks create a saved attempt there.
 The browser checks cover rendering, sound decoding, walking, torch charging, the survey, autosave, and resume.
 
 The cave continues to generate as the player explores. The 30 numbered seeds above are regression samples, not a level catalogue. A separate regression verifies growth beyond the initially generated region.
 
-The demo uses original low-poly Blender assets, world-space mineral detail, clipped water edges, depth coloration, splash rings, debris/dust, streamed decorations and configurable VHS presentation. Tape is **Subtle** by default; Graphics defaults to **Standard**. Reduced motion and brightness controls are in the pause menu. Existing `karst.*` save keys remain compatible.
+The demo uses original low-poly Blender assets, world-space mineral detail, clipped water edges, depth coloration, splash rings, debris/dust, streamed decorations and configurable VHS presentation. Tape is **Subtle** by default; Graphics defaults to **Standard**. Reduced motion and brightness controls are in the pause menu. Existing `karst.*` save keys remain compatible. Unversioned saves retain the v0.2 generator and original cave geometry; new caves use the v0.3 generator with maze passages and a campsite. Both generate continuously as the player explores.
 
 Runtime dependencies are local: Three.js **0.160.0**, fonts, models and sound. Static hosting needs `index.html`, `credits.html`, `src/`, `vendor/three/`, `assets/fonts/`, `assets/models/*.glb`, `sounds/out/` and `sounds/CREDITS.md`. No CDN requests are needed. The Blender source, development tools, screenshots, `.git` and `.claude` stay off the web server.
 
@@ -39,10 +39,12 @@ Runtime dependencies are local: Three.js **0.160.0**, fonts, models and sound. S
 | Space | Hop; hold to climb a chimney or swim upward |
 | Left mouse (hold) | Shake and recharge the torch continuously; the beam dims while charging |
 | Right mouse (hold) | Focus the beam; release for wide. The focused beam uses more battery. |
-| E | Use or rig a nearby rope |
+| E | Use or rig a nearby rope — a coil is about twelve metres; deeper pitches require enough coils tied together, rounded up to cover the full drop. Hold E at the top of a rope you rigged to pull it up and coil it again. At the edge of a sump, E ties a coil off and lays it through as a line (twelve metres of usable line per coil); in the water, hold E to haul yourself along the line toward the bank you face when you grab it; release to change direction, faster than swimming and blind if you have to. Hold E on either bank to reel it in |
 | G | Tap to drop a glowstick; hold and release to throw |
-| Q (hold) | Tools wheel: move the mouse toward chalk, whistle, or rest, then release Q. Release at the center to cancel. |
+| P (right stick click) | Photograph. Eight frames on the roll per attempt; the flash lights the whole room for an instant — more than the torch ever shows — and the print goes into the survey, numbered where you took it. Prints stay in the cave's notebook across attempts and appear on the end screen |
+| Q (hold) | Tools wheel: move the mouse toward chalk, whistle, rest, or stone, then release Q. Release at the center to cancel. A tossed stone lands where you are looking: you hear the floor, or the drop — and a crust over a shaft gives way under it. |
 | Tab | Open / close the survey notebook |
+| chalk | type a note and press Enter; press Enter with nothing typed (or pick chalk on a controller) for an arrow with the compass direction you face |
 | Esc | Pause movement, resources, hazards, delayed events, and audio; open settings and the new-cave option |
 | Alternating A / D | Work free from ordinary wedging |
 | Backtick | Developer debug display |
@@ -54,18 +56,19 @@ When pointer lock is unavailable, use the middle mouse button to drag-look.
 
 Controller: left/right sticks move/look; A hops/climbs/swims upward; B crouches/dives/exhales;
 hold X to charge, hold LB to focus, hold Y and aim the right stick for the tools wheel;
-RB drops/throws a glowstick, LT runs, D-pad up uses a rope, View opens the survey, and Menu pauses/resumes.
+RB drops/throws a glowstick, LT runs, tap D-pad up to use a rope, hold and release it to retrieve one, hold it underwater to haul; right-stick click takes a photograph; View opens the survey, and Menu pauses/resumes.
 Chalk text entry still needs a keyboard. Controller mappings have browser simulation coverage; physical controller feel needs a playtest.
 
-One cave per seed: you keep the same cave until you get out of it. Your dead stay where they fell (bones, and your old
+One cave per seed: you keep the same cave until you get out of it. After six of you have died in one cave, a red rope
+hangs down the hole you fell through: someone up there counted. Climbing it ends the cave — found, not out. Your dead stay where they fell (bones, and your old
 torch — worth 25 % if you reach it), last attempt's chalk is still on the walls, and an interrupted attempt resumes where it
-stopped. Choose **New cave** in the pause or death menu to abandon it.
+stopped. Ropes you rigged and lines you laid stay where they are for every later attempt at that cave. Choose **New cave** in the pause or death menu to abandon it.
 
 ## How it works
 
 `src/gen.js` — **worm graph → distance field → marching cubes.** Worm agents walk *floor lines* through space carrying a
 width/height that drifts through modes (passage, chamber, crawl, squeeze, canyon, bedding plane, sump, pit, cavern,
-stream, lake, duck, chimney, gour, crystal). Every 120-200 m a trunk line changes *theme* — dry, wet, broken, old —
+stream, lake, duck, chimney, gour, crystal). Every 120-200 m a trunk line changes *theme* — dry, wet, broken, old, maze —
 which biases the modes it picks, its colour, and what it leaves lying about (bones, loose blocks, calcite, fossils).
 Every point's density is the distance to the nearest ellipsoidal capsule plus rock noise, with sediment fill for walkable
 floors, a guaranteed 0.68 m crawl core so intended passages are always passable, boulders unioned in for caverns, and a
@@ -92,15 +95,18 @@ All recordings are **CC0** from Freesound; see [`sounds/CREDITS.md`](sounds/CRED
 
 Passages, chambers, crawls, squeezes, canyons, bedding planes, chimneys; flooded sumps with air bells; pits with plunge pools;
 boulder caverns; crystal pockets; dripstone and calcite draperies; mist over the lakes; bioluminescent algae; cascades; active streamways that run downhill in
-steps and sometimes go under; rimstone terraces — calcite dams holding clear pools, stepping down, with cave pearls in them; black lakes in big chambers that you wade into, swim across in the cold, and wade out of; windows — a second hole to the sky in a shallow chamber roof, with rain and roots and birds and no way up it; glow-worms — a few hundred blue-green lights on threads of silk, hung from a damp roof, best with the torch off; bat roosts; olms in the still pools, pale and blind, that flinch from the beam; fossils in the bedding — ammonites, crinoid stems, shells; mineral tints by region; bones, and the packs of the cavers who left them.
-Every cave has one great room, well in: a cavern with a lake through the middle of it, algae on the walls, water
-falling from the roof, glow-worms over the far shore. Chambers you reach get names, written into the survey. Some packs hold a page from their owner's log — what they
+steps and sometimes go under; rimstone terraces — calcite dams holding clear pools, stepping down, with cave pearls in them; black lakes in big chambers that you wade into, swim across in the cold, and wade out of; windows — a second hole to the sky in a shallow chamber roof, with rain and roots and birds and no way up it; glow-worms — a few hundred blue-green lights on threads of silk, hung from a damp roof, best with the torch off; bat roosts; olms in the still pools, pale and blind, that flinch from the beam; fossils in the bedding — ammonites, crinoid stems, shells; mineral tints by region; bones, and the packs of the cavers who left them — spare cells, glowsticks, rope, a first-aid kit, a wetsuit if you
+are lucky, and their pages.
+Every cave has one camp, well in: sleeping bags, a stove, the packs and pages of a party that stopped there, and
+everything they chalked on the walls. Every cave has one great room, well in: a cavern with a lake through the middle of it, algae on the walls, water
+falling from the roof, glow-worms over the far shore. The surface keeps real time: the light down the shafts and at the mouth is whatever it is outside right now — grey
+day, orange dusk, or stars, with hardly a bird. Chambers you reach get names, written into the survey. Some packs hold a page from their owner's log — what they
 learned about the sump, the drop, the roof or the air nearby — copied into the margin of your survey and kept for
 every later attempt at that cave.
 
 ## Risks (by design)
 
-Sumps you may not have the breath for. Streams whose current strengthens toward the place they sink — swim with it
+Sumps you may not have the breath for — and in the deeper caves, an air bell whose air has nothing in it. Streams whose current strengthens toward the place they sink — swim with it
 or don't get in. Pits you can't see until you're falling — and some you can't see at all: a crust of sediment lies across the top,
 looks like floor, and takes your weight for about a second. About half the dry pits have a traverse from the ledge that winds down to
 the same place, if you find it (the chalk sometimes says which side). Some pitches still have a rope somebody rigged and
@@ -115,4 +121,9 @@ far walls your torch never reaches. A torch that dies in about two minutes unles
 do. Getting wedged in a crawl — and the tight ones only let you through on an empty chest: hold C to breathe out and push, a few centimetres at a time, and let go before the bar runs out. Flooded crawls where you go flat out with your chin in the water and the roof on your
 back — every dip in the floor puts your face under. Cold that shakes the torch out of your hand. Bats. And sometimes, down the passage, a
 pair of eyes — more often the longer this cave has known you. Sometimes the beam finds something low on the floor
-ahead, looking back.
+ahead, looking back. And if you sit resting in the dark long enough, in a cave that knows you, something picks up
+the torch and carries it a way down the passage before setting it down again.
+
+## Integrated demo v0.3
+
+Claude gameplay through `bd55f1d`, plus the captured soda-straw change, is integrated with the visual-demo renderer, controls and regional VFX. Nineteen original models now include sleeping bags, a stove and a folded wetsuit. Photos respect reduced motion, rope length is consistent, hauling follows the bank you face, and cold and film remain spent after reload. Use `tools/integration-check.html` on a disposable local origin for the new behavior and save-migration checks. See `INTEGRATION-REVIEW.md` for review findings and validation.
