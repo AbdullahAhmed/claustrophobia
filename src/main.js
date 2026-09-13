@@ -5,6 +5,8 @@ import { Sfx } from './audio.js';
 import { assets } from './assets.js';
 import { Presentation, BUILD, visualDefaults, normalizeVisuals } from './presentation.js';
 import { VFX, StreamedInstances } from './vfx.js';
+import { nearestRouteIndex, fallOutcome } from './expedition.js';
+import { surfaceProbe } from './surfaces.js';
 import { RegionGeometry } from './regions.js';
 await assets.load((n,total)=>{document.getElementById('loading').textContent=`Preparing equipment ${n}/${total}…`;});
 
@@ -29,11 +31,12 @@ const urlSeedIsNew = !!urlSeed && !(cave && cave.seed === urlSeed);
 const SEED = (urlSeed || (cave && !cave.escaped && cave.seed) || ((Math.random() * 1e9) | 0)) >>> 0;
 let record = { runs: 0, best: 0, escapes: 0, drowned: 0, fell: 0, froze: 0, crushed: 0, foul: 0, wedged: 0 };
 try { record = Object.assign(record, JSON.parse(localStorage.getItem('karst.record') || '{}')); } catch (e) {}
-if (!cave || cave.seed !== SEED) cave = { seed: SEED, attempts: 0, deaths: [], marks: [], escaped: false, tier: record.escapes, generatorVersion: 3 };
+if (!cave || cave.seed !== SEED) cave = { seed: SEED, attempts: 0, deaths: [], marks: [], escaped: false, tier: record.escapes, generatorVersion: 4 };
 // Existing unversioned demo saves keep their original geometry and coordinates.
 if (cave.generatorVersion === undefined) cave.generatorVersion = 2;
-const G = await import(cave.generatorVersion === 2 ? './gen-legacy.js' : './gen.js');
+const G = await import(cave.generatorVersion === 2 ? './gen-legacy.js' : cave.generatorVersion === 3 ? './gen-v3.js' : './gen.js');
 const { clamp, lerp, rr } = G;
+const surfaces=surfaceProbe((x,y,z)=>G.fieldAt(x,y,z),(x,y,z)=>{const c=G.chunks.get(G.ckey(Math.floor(x/G.CHUNK),Math.floor(y/G.CHUNK),Math.floor(z/G.CHUNK)));return !!(c?.built&&!c.dirty&&!c.building);});
 if (cave.tier === undefined) cave.tier = 0;
 if (!cave.run) cave.attempts++;
 function saveCave() { try { localStorage.setItem('karst.cave', JSON.stringify(cave)); } catch (e) {} }
@@ -82,6 +85,7 @@ function updateVisualWater(){waterUniforms.uFlood.value=floodLevel;}
 let decorationTick=0;
 function updateDecorations(){
   if(++decorationTick%30)return;
+  for(const batch of streamed)if(batch.supportCheck)batch.lastCell='';
   regionGeometry.update(camera.position);updateLightRegions();updateDripstone();
   for(const m of campDecor)m.visible=m.position.distanceToSquared(camera.position)<48*48;
   for(const list of [caches,ropes,loose,olms])for(const d of list)if(d.mesh)d.mesh.visible=!d.taken && Math.hypot(d.x-player.x,(d.y??d.top??player.y)-player.y,d.z-player.z)<48;
@@ -341,6 +345,7 @@ const boneInst = {}; const boneCount = {};
 for (const k in boneGeos) { boneInst[k] = stream(boneGeos[k], boneMat, 600); boneCount[k] = 0; }
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Euler();
 const dripstone = stream(new THREE.CylinderGeometry(.15,1,1,9,4),new THREE.MeshStandardMaterial({color:0xb8a889,roughness:.65,flatShading:true}),500);
+dripstone.supportCheck=surfaces.supported;
 const detailedSpel=new WeakSet();
 function updateDripstone(){
   for(const n of G.nodes){if(Math.hypot(n.x-player.x,n.y-player.y,n.z-player.z)>44)continue;
@@ -348,14 +353,14 @@ function updateDripstone(){
       const tipY=c.top+(c.up?1:-1)*c.len;
       // Respect the collision core: only overlay formations that still exist.
       if(G.fieldAt(c.x,tipY-(c.up?1:-1)*.18,c.z)<-.06)continue;
-      _p.set(c.x,c.top+(c.up?1:-1)*c.len*.5,c.z);_s.set(c.r*.94,c.len,c.r*.94);_e.set(c.up?0:Math.PI,0,0);_q.setFromEuler(_e);_m.compose(_p,_q,_s);dripstone.setMatrixAt(dripstone.count++,_m);
+      _p.set(c.x,c.top+(c.up?1:-1)*c.len*.5,c.z);_s.set(c.r*.94,c.len,c.r*.94);_e.set(c.up?0:Math.PI,0,0);_q.setFromEuler(_e);_m.compose(_p,_q,_s);dripstone.setSupport(dripstone.count,{x:c.x,y:c.top,z:c.z,nx:0,ny:c.up?1:-1,nz:0});dripstone.setMatrixAt(dripstone.count++,_m);
     }
   }
 }
 const bonePiles = [];       // {x,y,z, r, crunched}
 // gypsum blades for crystal pockets
 const crystalMat = new THREE.MeshStandardMaterial({ color: 0xc5c2b7, roughness: 0.42, metalness: 0.0, flatShading: true });
-const crystals = stream(assets.geometry('crystal'), crystalMat, 1800); crystals.count = 0; crystals.frustumCulled = false; crystals.castShadow = true;
+const crystals = stream(assets.geometry('crystal'), crystalMat, 1800); crystals.count = 0; crystals.frustumCulled = false; crystals.castShadow = true; crystals.supportCheck=surfaces.supported;
 const _up = new THREE.Vector3(0, 1, 0), _nrm = new THREE.Vector3();
 function placeCrystals(p) {
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
@@ -363,16 +368,16 @@ function placeCrystals(p) {
   for (let i = 0; i < n; i++) {
     // a random direction from the middle of the pocket to its wall
     const u = R() * 2 - 1, a = R() * Math.PI * 2, r = Math.sqrt(1 - u * u), dx = r * Math.cos(a), dy = u, dz = r * Math.sin(a);
-    const t = G.rayToRock(p.x, cy, p.z, dx, dy, dz, p.rx + p.ry + 2, 0.12);
-    if (t >= p.rx + p.ry + 2) continue;
-    const hx = p.x + dx * t, hy = cy + dy * t, hz = p.z + dz * t;
+    const hit=surfaces.trace(p.x,cy,p.z,dx,dy,dz,p.rx+p.ry+2);if(!hit)continue;
+    const {x:hx,y:hy,z:hz}=hit;
     G.gradAt(hx, hy, hz); const g = G.G, gl = Math.hypot(g.x, g.y, g.z) || 1;
     _nrm.set(-g.x / gl, -g.y / gl, -g.z / gl);
     _q.setFromUnitVectors(_up, _nrm);
     const rad = 0.025 + R() * 0.035, len = 0.12 + R() * 0.30;
     _p.set(hx + _nrm.x * (len * 0.35), hy + _nrm.y * (len * 0.35), hz + _nrm.z * (len * 0.35)); _s.set(rad, len, rad);
     _e.set(0, R() * Math.PI, 0); const spin = new THREE.Quaternion().setFromEuler(_e); _q.multiply(spin);
-    _m.compose(_p, _q, _s); crystals.setMatrixAt(crystals.count++, _m);
+    const anchor={x:hx,y:hy,z:hz,nx:_nrm.x,ny:_nrm.y,nz:_nrm.z};if(!surfaces.supported(anchor))continue;
+    _m.compose(_p, _q, _s); crystals.setSupport(crystals.count,anchor);crystals.setMatrixAt(crystals.count++, _m);
   }
   crystals.instanceMatrix.needsUpdate = true;
 }
@@ -381,13 +386,7 @@ function addBone(kind, x, y, z, yaw, pitch, roll, scale) {
   _p.set(x, y, z); _e.set(pitch, yaw, roll); _q.setFromEuler(_e); _s.set(scale, scale, scale);
   _m.compose(_p, _q, _s); im.setMatrixAt(im.count++, _m); im.instanceMatrix.needsUpdate = true;
 }
-function floorBelow(x, y, z) {                       // drop a point onto the meshed floor (skipping rock it may start inside)
-  let t = 0;
-  while (t < 2.0 && G.fieldAt(x, y - t, z) > -0.04) t += 0.1;
-  if (t >= 2.0) return null;
-  for (; t < 4.5; t += 0.05) if (G.fieldAt(x, y - t, z) > -0.04) return y - t;
-  return null;
-}
+function floorBelow(x,y,z){return surfaces.trace(x,y,z,0,-1,0,6,true)?.y??null;}
 function placeBones(p) {
   const rnd = G.hash3(p.seed * 1e6 | 0, 7, 3); let s = rnd;
   const R = () => (s = (s * 9301 + 49297) % 233280) / 233280;
@@ -501,7 +500,7 @@ function whistle() {
   if (o > 16) gameDelay(() => sfx.play('rumble', { vol: 0.25, rate: 1.4, dur: 1.2, wet: 1.0 }), delay * 2600);
   for (const r of roosts) if (!r.spooked && Math.hypot(r.x - player.x, r.y - player.y, r.z - player.z) < 22) gameDelay(() => spookRoost(r), 300);
   if (following > 0) { following = 0; followT = rr(40, 90); }                          // whatever it is, it stops when you do that
-  if (dread > 0.35 && Math.random() < 0.22 + 0.3 * dread) {                             // and sometimes something answers, late, from the wrong place
+  if (!G.expedition && dread > 0.35 && Math.random() < 0.22 + 0.3 * dread) {                             // and sometimes something answers, late, from the wrong place
     const a = Math.random() * Math.PI * 2, d = rr(12, 22);
     gameDelay(() => { if (player.alive) { sfx.play('whistle', { x: player.x + Math.sin(a) * d, y: player.y + 0.5, z: player.z + Math.cos(a) * d, vol: 0.4, rate: 0.9, wet: 0.9, rolloff: 0.4 }); showHint('that was not an echo', true); } }, rr(2600, 4200));
   }
@@ -564,7 +563,7 @@ function derigRope() {
     sfx.play('drag', { vol: 0.5, rate: 1.2, dur: 1.6 }); sfx.play('splash_small', { vol: 0.4 }); showHint(`line reeled in and coiled · ${player.rope}`); return;
   }
   if (ropes.some(r => (r.old || r.rescue) && Math.hypot(r.x - player.x, r.z - player.z) < 2.2)) showHint('not yours to take');
-  else useRope();
+  else useContext();
 }
 function useRope() {
   if (!running || !player.alive || player.out || roping) return;
@@ -760,7 +759,7 @@ function updateStones(dt) {
         const sp = Math.hypot(g.vx, g.vy, g.vz);
         // a false floor takes a stone the way it takes you
         const ff = falseFloors.find(f => f.state !== 'gone' && f.slab && Math.hypot(nx - f.x, nz - f.z) < f.r - 0.3 && Math.abs(ny - f.y) < 0.6);
-        if (ff && sp > 3) { ff.state = 'cracking'; ff.t = 0.4; vfx.crack(ff.x,ff.y+.02,ff.z,ff.r); vfx.emit('chips',nx,ny,nz,8); sfx.play('rattle', { x: nx, y: ny, z: nz, vol: 0.7, rate: 0.8, wet: 0.6 }); showHint('the floor there is not floor', true); }
+        if (ff && sp > 3) { ff.state = 'cracking'; ff.t = 0.4; vfx.crack(ff.x,ff.y+.02,ff.z,ff.r); vfx.emit('chips',nx,ny,nz,8); sfx.play('rattle', { x: nx, y: ny, z: nz, vol: 0.7, rate: 0.8, wet: 0.6 }); showHint('Fragile crust broke. Keep to the solid edge.', true);cue('Crust cracking · step back',ff.x,ff.y,ff.z); }
         if (sp > 3) vfx.emit('chips',g.x,g.y,g.z,5);
         sfx.play(sp > 3 ? 'rockfall' : 'step_gravel', { x: g.x, y: g.y, z: g.z, vol: Math.min(0.6, 0.15 + sp * 0.05), rate: rr(1.1, 1.5), dur: 0.45, wet: 0.8, rolloff: 0.6 });
         G.gradAt(g.x, g.y, g.z); const gr = G.G, gl = Math.hypot(gr.x, gr.y, gr.z) || 1, dot = (g.vx * gr.x + g.vy * gr.y + g.vz * gr.z) / gl;
@@ -824,26 +823,82 @@ function placeCamp(p) {
   for (const k of kinds) { const q = spot(p.rx * 0.6); if (!q) continue; placeCache(q.x, q.y, q.z, k, k === 'page' ? (R() < 0.5 ? composeSurvey(q.x, q.y, q.z, R) : { text: ['day 11. nobody has come. we stop here tonight and decide in the morning', 'day 12. the torch is the problem. we take turns in the dark to save it', 'day 14. it rained. the way we came is under water. we are going on', 'day 9. the far side of the sump has a chamber and air. it is the only way we have not tried', 'the water rises here. do not camp low'][(R() * 5) | 0] }) : null); }
   // chalk everywhere: names, days, arrows, the last count
   const names = CAVER_NAMES.slice().sort(() => R() - 0.5).slice(0, 3);
-  for (const t of [names.join(' · '), `day ${8 + (R() * 8 | 0)}`, 'we came in from there ->', '<- untried', `${names[0]} went to look. ${5 + (R() * 30 | 0)} hours`, 'do not follow the water', 'the light is the clock']) G.props.push({ type: 'note', x: p.x + (R() - 0.5) * p.rx, y: p.y, z: p.z + (R() - 0.5) * p.rx, text: t });
+  for (const t of (G.expedition?['EXPEDITION CAMP','rest here','follow numbered arrows to daylight']:[names.join(' · '), `day ${8 + (R() * 8 | 0)}`, 'we came in from there ->', '<- untried', `${names[0]} went to look. ${5 + (R() * 30 | 0)} hours`, 'do not follow the water', 'the light is the clock'])) G.props.push({ type: 'note', x: p.x + (R() - 0.5) * p.rx, y: p.y, z: p.z + (R() - 0.5) * p.rx, text: t });
   placeBones({ x: p.x + (R() - 0.5) * 2, y: p.y, z: p.z + (R() - 0.5) * 2, rx: 1.2, ry: 1, big: false, seed: R() });
   campSite = { x: p.x, y: p.y, z: p.z };
 }
 let campSite = null, campSeen = false;
+let treatment=null,expeditionTick=0,cueTime=0,campSelection=0;
+function nearCamp(){return !!campSite&&Math.hypot(player.x-campSite.x,player.z-campSite.z)<4&&Math.abs(player.y-campSite.y)<2&&!player.swim;}
+function pickupLabel(kind){return {kit:'First-aid kit',battery:'Spare batteries · +40% charge',cells:'Lithium cells · longer torch life',sticks:'Two glowsticks',rope:'12 m rope coil',suit:'Wetsuit · cold protection',page:'Expedition notes'}[kind]||'Supplies';}
+function nearPickup(){return caches.find(c=>!c.taken&&Math.hypot(c.x-player.x,c.y-player.y,c.z-player.z)<2.8);}
+function cue(text,x=player.x,y=player.y,z=player.z){cueTime=4;if(settings.captions)$('sound-caption').textContent=text+(Math.hypot(x-player.x,z-player.z)>2?' · '+bearing(x-player.x,z-player.z):'');}
+function useContext(){if(nearCamp()){openCamp();return;}useRope();}
+function checkpoint(){saveRun();if(cave.run){cave.checkpoint=structuredClone(cave.run);saveCave();}}
+function openCamp(){
+  if(!canAct()||!nearCamp())return;
+  cave.routeNotes=true;checkpoint();pauseGame();overlay.classList.add('hidden');$('camp-menu').hidden=false;
+  $('camp-note').textContent=G.expedition?'Route notes: follow the numbered arrows through the Mineral Gallery, then the Low Passage. The last climb reaches the surface. Side passages are optional. Rest here to warm up; your checkpoint is saved.':'This abandoned camp is safe to rest in. Warm up, treat injuries and consult your survey. This older cave retains its original route.';
+  $('camp-status').textContent=(player.hurt?'Injured':'Healthy')+' · '+(player.kit?'Medkit available':'No medkit')+' · '+Math.round(player.cold*100)+'% cold';
+  $('camp-heal').disabled=!player.hurt||!player.kit;campSelection=0;$('camp-rest').focus();
+}
+function leaveCamp(){ $('camp-menu').hidden=true;dragLook=true;start(); }
+$('camp-rest').onclick=()=>{leaveCamp();restRequested=true;};
+$('camp-heal').onclick=()=>{leaveCamp();beginTreatment();};
+$('camp-leave').onclick=leaveCamp;
+function beginTreatment(){
+  if(!player.hurt){showHint('Healthy · no treatment needed');return;}
+  if(!player.kit){showHint('You need a medkit to treat this injury');return;}
+  if(!player.grounded||player.swim||stuck||roping||climbing){showHint('Find dry, steady ground before treating an injury');return;}
+  clearInputs();restRequested=false;treatment={t:0,x:player.x,y:player.y,z:player.z};showHint('Treating injury · hold still for 4 seconds',true);
+}
+function updateExpedition(dt){
+  if(cueTime>0){cueTime-=dt;if(cueTime<=0)$('sound-caption').textContent='';}
+  if(!settings.captions)$('sound-caption').textContent='';
+  if(treatment){if(!player.alive||player.swim||Math.hypot(player.x-treatment.x,player.y-treatment.y,player.z-treatment.z)>.12||mouseCharge||padCharge){treatment=null;showHint('Treatment cancelled · medkit kept');}
+    else if(canAct()){treatment.t+=dt;if(treatment.t>=4){player.hurt=false;player.kit=false;treatment=null;showHint('Injury treated · medkit used',true);saveRun();if(nearCamp())checkpoint();}}}
+  if(resting&&nearCamp()&&restT>4&&player.cold<.02&&!cave.campRecovered){cave.campRecovered=true;checkpoint();showHint('Warm and rested · camp checkpoint updated',true);}
+  expeditionTick-=dt;if(expeditionTick>0)return;expeditionTick=.5;
+  const status=[`Facing ${bearing(-Math.sin(player.yaw),-Math.cos(player.yaw))}`,player.hurt?'INJURED':'HEALTHY',player.cold>.5?'COLD':'',player.kit?'Medkit ×1':'',player.cells?'Lithium torch':'',`Glowsticks ×${player.sticks}`,`Rope ×${player.rope}`].filter(Boolean).join(' · ');
+  $('condition').textContent=status;
+  let objective='Find daylight · Tab shows your survey';
+  if(G.expedition){const p=G.expedition,q=nearestRouteIndex(p,player),i=q.index;
+    if(!cave.routeNotes)objective='Find expedition camp · follow numbered arrows';
+    else if(i<p.galleryIndex)objective='Reach the Mineral Gallery · follow numbered arrows';
+    else if(i<p.climbIndex)objective='Cross the Low Passage · follow numbered arrows';
+    else objective='Climb toward daylight · follow airflow and numbered arrows';
+    if(cave.routeNotes&&q.distance>10)objective+=' · optional side passage';
+    if(i>=p.galleryIndex&&!cave.gallerySeen){cave.gallerySeen=true;surveyNote('Mineral Gallery',player.x,player.z);showHint('Mineral Gallery reached. The route notes describe a low passage beyond it.',true);saveCave();}
+  }
+  $('journey').textContent=objective;$('nb-title').textContent=objective;
+}
+function placeWaymark(p){
+  const hit=surfaces.trace(p.x,p.y+1,p.z,0,-1,0,3);if(!hit)return;
+  const dir=bearing(p.target.x-p.x,p.target.z-p.z);
+  drawMark(`${Math.floor(p.i/16)} · ${dir} →`,new THREE.Vector3(hit.x,hit.y+.01,hit.z),new THREE.Vector3(0,1,0),false);
+}
+function placeFalseFloor(p){
+  const f={...p,slab:p.node.slabs?.[0],state:'whole',t:0,warned:false};falseFloors.push(f);
+  const vertices=[];for(let j=0;j<9;j++){const a=j*2.399;for(let k=0;k<3;k++){const r1=(.2+k*.21)*p.r,r2=r1+.18*p.r;vertices.push(p.x+Math.sin(a)*r1,p.y+.26,p.z+Math.cos(a)*r1,p.x+Math.sin(a+.18)*r2,p.y+.26,p.z+Math.cos(a+.18)*r2);}}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));f.warning=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0x796b4a}));scene.add(f.warning);
+}
+
 function updateCamp(dt) {
   if (!campSite || campSeen || Math.hypot(campSite.x - player.x, campSite.y - player.y, campSite.z - player.z) > 8) return;
-  campSeen = true; showHint('a camp. sleeping bags, a stove. nobody', true); surveyNote('camp', campSite.x, campSite.z);
+  campSeen = true; showHint('EXPEDITION CAMP · approach the sleeping bags and press E', true); surveyNote('camp', campSite.x, campSite.z);
   if (!places.some(pl => Math.hypot(pl.x - campSite.x, pl.z - campSite.z) < 30)) { places.push({ x: campSite.x, y: campSite.y, z: campSite.z, name: 'The Camp', kind: 'camp' }); }
-  sfx.play('creature_breath', { vol: 0.15, rate: 0.7, wet: 0.9 });
+  cue('Sheltered camp · quiet, dry ground');
 }
 // caches: a dead caver's pack next to some bones
 const caches = [];           // {x,y,z, kind, taken, mesh}
 const packGeo = new THREE.BoxGeometry(0.28, 0.2, 0.16), packMat = new THREE.MeshStandardMaterial({ color: 0x3b3a36, roughness: 0.9, flatShading: true });
 function placeCache(x, y, z, kind, text) {
+  const cacheKey=`${kind}:${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`;if(cave.collected?.includes(cacheKey))return;
   if (kind === 'page' && (cave.pages || []).some(pg => pg.key === `${x.toFixed(0)},${z.toFixed(0)}`)) return;   // already read, on an earlier attempt
-  const mesh = kind === 'page' ? new THREE.Mesh(pageGeo,pageMat) : assets.model(assets.models.has(kind)?kind:'pack'); mesh.position.set(x, y + 0.015, z); mesh.rotation.y = rr(0, 6); if (kind !== 'page') mesh.rotation.z = rr(-0.3, 0.3); scene.add(mesh);
+  const mesh = kind === 'page' ? new THREE.Mesh(pageGeo,pageMat) : assets.model(assets.models.has(kind)?kind:'pack'); if(kind==='cells'||kind==='battery')mesh.traverse(m=>{if(m.isMesh&&m.name.startsWith('wrap')){m.material=m.material.clone();m.material.color.set(kind==='cells'?0x387a84:0xb89142);}}); mesh.position.set(x, y + 0.015, z); mesh.rotation.y = rr(0, 6); if (kind !== 'page') mesh.rotation.z = rr(-0.3, 0.3); scene.add(mesh);
   const tag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: kind === 'battery' ? 0xffb347 : kind === 'rope' ? 0xff7a5c : kind === 'cells' ? 0xffffff : kind === 'page' ? 0xf1e6cc : kind === 'kit' ? 0xff4d4d : 0x9dffb0, fog: false }));
   tag.position.set(x, y + 0.22, z); tag.visible=false; scene.add(tag);
-  caches.push({ x, y, z, kind, text, taken: false, mesh, tag });
+  caches.push({ x, y, z, kind, text, cacheKey, taken: false, mesh, tag });
 }
 const pageGeo = new THREE.PlaneGeometry(0.21, 0.28).rotateX(-Math.PI / 2), pageMat = new THREE.MeshStandardMaterial({ color: 0xd9ccb0, roughness: 0.9, side: THREE.DoubleSide });
 // a page from someone's log: what they learned about the rock near where they stopped
@@ -892,19 +947,20 @@ function placeNote(p) {
   if (p.lasting) { cave.marks.push({ text: p.text, x: best.x, y: best.y, z: best.z, nx: -g.x / gl, ny: -g.y / gl, nz: -g.z / gl }); saveCave(); }
 }
 // cave pearls: calcite spheres, polished by the water that made them
-const pearlInst = stream(new THREE.SphereGeometry(1, 6, 5), new THREE.MeshStandardMaterial({ color: 0xf2ead8, roughness: 0.35 }), 800); pearlInst.count = 0; pearlInst.frustumCulled = false;
+const pearlInst = stream(new THREE.SphereGeometry(1, 6, 5), new THREE.MeshStandardMaterial({ color: 0xf2ead8, roughness: 0.35 }), 800); pearlInst.count = 0; pearlInst.frustumCulled = false; pearlInst.supportCheck=surfaces.supported;
 function placePearls(p) {
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
   for (let i = 0; i < p.n; i++) {
     const a = R() * Math.PI * 2, d = Math.sqrt(R()) * p.r, x = p.x + Math.sin(a) * d, z = p.z + Math.cos(a) * d;
     const fy = floorBelow(x, p.y + 0.3, z); if (fy === null || fy > p.y - 0.02) continue;      // on the pool floor, under the water
     const r = 0.025 + R() * 0.035;
-    _m.compose(_p.set(x, fy + r * 0.8, z), _q.identity(), _s.set(r, r * 0.9, r)); pearlInst.setMatrixAt(pearlInst.count++, _m);
+    _m.compose(_p.set(x, fy + r * 0.8, z), _q.identity(), _s.set(r, r * 0.9, r)); pearlInst.setSupport(pearlInst.count,{x,y:fy,z,nx:0,ny:1,nz:0});pearlInst.setMatrixAt(pearlInst.count++, _m);
   }
   pearlInst.instanceMatrix.needsUpdate = true;
 }
 // soda straws: thin white tubes hanging in a cluster from the roof; the ones still growing drip from their tips
 const strawInst = stream(new THREE.CylinderGeometry(1, 1, 1, 5), new THREE.MeshStandardMaterial({ color: 0xe5ded0, roughness: 0.55 }), 1200);
+strawInst.supportCheck=surfaces.supported;
 const strawClusters = [];        // {x, z, roof, floor, tips:[[x,y,z]]}
 function placeStraws(p) {
   let sd = p.seed * 233280 | 0; const R = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
@@ -914,7 +970,7 @@ function placeStraws(p) {
     const roof = ceilingAt(x, z, p.floor, p.floor + 30);   // the first rock above head height
     if (roof === null || roof - p.floor < 1.6) continue;
     const len = Math.min(0.12 + R() * R() * 1.1, roof - p.floor - 1.5), r = 0.003 + R() * 0.0035;
-    _m.compose(_p.set(x, roof - len / 2 + 0.03, z), _q.identity(), _s.set(r, len, r)); strawInst.setMatrixAt(strawInst.count++, _m);
+    _m.compose(_p.set(x, roof - len / 2 + 0.03, z), _q.identity(), _s.set(r, len, r)); strawInst.setSupport(strawInst.count,{x,y:roof,z,nx:0,ny:-1,nz:0});strawInst.setMatrixAt(strawInst.count++, _m);
     if (R() < 0.3) cl.tips.push([x, roof - len + 0.03, z]);
   }
   strawInst.instanceMatrix.needsUpdate = true;
@@ -922,22 +978,17 @@ function placeStraws(p) {
 }
 let strawDripT = 0;
 function updateStraws(dt) {
-  strawDripT -= dt; if (strawDripT > 0) return; strawDripT = rr(0.4, 1.6);
+  strawDripT -= dt; if (strawDripT > 0) return; strawDripT = rr(5, 12);
   const near = strawClusters.filter(c => Math.hypot(c.x - player.x, c.z - player.z) < 14); if (!near.length) return;
   const c = near[Math.floor(Math.random() * near.length)], t = c.tips[Math.floor(Math.random() * c.tips.length)];
   const fallT = Math.sqrt(2 * Math.max(0.1, t[1] - c.floor) / 9.8);
-  spawnDrip(t[0], t[1], t[2], c.floor); gameDelay(() => sfx.play('drip', { x: t[0], y: c.floor, z: t[2], vol: 0.35 + Math.random() * 0.3, vary: 0.3, rate: 1.15, wet: 0.9, rolloff: 0.9 }), fallT * 1000);
+  spawnDrip(t[0], t[1], t[2], c.floor); gameDelay(() => sfx.play('drip', { x: t[0], y: c.floor, z: t[2], vol: 0.10 + Math.random() * 0.10, vary: 0.3, rate: 1.15, wet: 0.9, rolloff: 0.9 }), fallT * 1000);
   if (Math.hypot(c.x - player.x, c.z - player.z) < 5) teach('straws', 'soda straws. hollow, a few millimetres across, thousands of years each. the water still comes down the middle of them');
 }
 // draperies: a wavy calcite sheet hung from the roof
 const curtainMat = new THREE.MeshStandardMaterial({ color: 0xe8d9b8, roughness: 0.5, emissive: 0x1a1408, side: THREE.DoubleSide, flatShading: true, transparent: true, opacity: 0.92 });
 function ceilingAt(x,z,floor,roof) {
-  let air=false;
-  for(let y=floor+.35;y<=Math.min(floor+40,roof+4);y+=.15){
-    const solid=G.fieldAt(x,y,z)>-.04;
-    if(!solid)air=true;
-    else if(air){let lo=y-.15,hi=y;for(let i=0;i<4;i++){const mid=(lo+hi)/2;if(G.fieldAt(x,mid,z)>-.04)hi=mid;else lo=mid;}return lo;}
-  }return null;
+  return surfaces.trace(x,floor+.35,z,0,1,0,Math.min(40,roof+4-floor),true)?.y ?? null;
 }
 function placeCurtain(p) {
   // the roof at this spot
@@ -1127,7 +1178,8 @@ function processProps(dt) {
     else if (p.type === 'pearls') placePearls(p);
     else if (p.type === 'straws') placeStraws(p);
     else if (p.type === 'camp') { placeCamp(p); placed = 4; }
-    else if (p.type === 'falsefloor') falseFloors.push({ ...p, slab: p.node.slabs && p.node.slabs[0], state: 'whole', t: 0 });
+    else if (p.type === 'falsefloor') placeFalseFloor(p);
+    else if(p.type==='waymark') placeWaymark(p);
     else if (p.type === 'mist') placeMist(p);
     else placeBones(p);
     const tpd = performance.now() - tp0; if (tpd > (stats.propMs[p.type] || 0)) stats.propMs[p.type] = tpd;
@@ -1207,6 +1259,7 @@ function closeTools(use = false) {
   else if (choice === 1) whistle();
   else if (choice === 3) throwStone();
   else {
+    if(player.hurt&&player.kit){beginTreatment();return;}
     if (restRequested) restRequested = false;
     else if (player.grounded && !player.swim && player.wl - player.y < 0.2 && stuck === 0 && !roping && !climbing) { restRequested = true; clearInputs(); showHint('resting. move to stand up', true); }
     else showHint('find dry, steady ground to rest');
@@ -1252,6 +1305,7 @@ $('keep-cave').addEventListener('click', () => { $('abandon-confirm').hidden = t
 $('leave-cave').addEventListener('click', newCave);
 addEventListener('keydown', e => {
   if (e.code === 'Escape') {
+    if(!$('camp-menu').hidden){e.preventDefault();leaveCamp();return;}
     e.preventDefault();
     if (typing) closeChalk();
     if (canAct()) pauseGame();
@@ -1279,7 +1333,7 @@ addEventListener('keyup', e => {
   keyboard[e.code] = keys[e.code] = false;
   if (e.code === 'KeyQ' && toolsOpen && wheelSource === 'keyboard') closeTools(true);
   if (e.code === 'KeyG') releaseGlow();
-  if (e.code === 'KeyE' && eHeldAt) { const held = (performance.now() - eHeldAt) / 1000; eHeldAt = 0; if (hauled) hauled = false; else if (canAct() && !typing && !toolsOpen && !notebookOpen) { if (held > 0.6) derigRope(); else useRope(); } }
+  if (e.code === 'KeyE' && eHeldAt) { const held = (performance.now() - eHeldAt) / 1000; eHeldAt = 0; if (hauled) hauled = false; else if (canAct() && !typing && !toolsOpen && !notebookOpen) { if (held > 0.6) derigRope(); else useContext(); } }
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('mousedown', e => {
@@ -1302,13 +1356,13 @@ document.addEventListener('pointerlockchange', () => {
 });
 addEventListener('blur', () => { if (canAct()) pauseGame(); else { clearInputs(); playRequest++; } });
 document.addEventListener('visibilitychange', () => { if (document.hidden && canAct()) pauseGame(); });
-let settings = { sens: 1, vol: 0.9, inv: false, hud: true, ...visualDefaults };
+let settings = { captions:true, sens: 1, vol: 0.9, inv: false, hud: true, ...visualDefaults };
 try { settings = Object.assign(settings, JSON.parse(localStorage.getItem('karst.settings') || '{}')); } catch (e) {}
 function motionAmount(){return settings.reduced?0:settings.motion;}
 function applySettings() {
   normalizeVisuals(settings);presentation.apply(settings);vfx.quality(settings.quality);resize();
   for(const id of ['quality','tape','motion','brightness']) $('s-'+id).value=settings[id];
-  $('s-reduced').checked=settings.reduced;
+  $('s-reduced').checked=settings.reduced; $('s-captions').checked=settings.captions;
   $('recording').hidden=settings.tape==='off';
   document.body.classList.toggle('reduced-motion',settings.reduced);
   $('s-sens').value = settings.sens; $('s-vol').value = settings.vol; $('s-inv').checked = settings.inv; $('s-hud').checked = settings.hud;
@@ -1317,6 +1371,7 @@ function applySettings() {
   try { localStorage.setItem('karst.settings', JSON.stringify(settings)); } catch (e) {}
 }
 $('s-sens').addEventListener('input', e => { settings.sens = +e.target.value; applySettings(); });
+$('s-captions').addEventListener('change',e=>{settings.captions=e.target.checked;applySettings();});
 $('s-vol').addEventListener('input', e => { settings.vol = +e.target.value; applySettings(); });
 $('s-inv').addEventListener('change', e => { settings.inv = e.target.checked; applySettings(); });
 $('s-hud').addEventListener('change', e => { settings.hud = e.target.checked; applySettings(); });
@@ -1334,6 +1389,7 @@ function pollGamepad(dt) {
   const pressed = Array.from({ length: 16 }, (_, i) => !!gp.buttons[i]?.pressed);
   const down = i => pressed[i] && !padPrev[i], up = i => !pressed[i] && padPrev[i];
   const finish = () => pressed.forEach((v, i) => { padPrev[i] = v; });
+  if(!$('camp-menu').hidden){const buttons=[$('camp-rest'),$('camp-heal'),$('camp-leave')].filter(b=>!b.disabled);if(down(12))campSelection=(campSelection+buttons.length-1)%buttons.length;if(down(13))campSelection=(campSelection+1)%buttons.length;buttons[campSelection%buttons.length].focus();if(down(0))buttons[campSelection%buttons.length].click();if(down(9)||down(1))leaveCamp();finish();return;}
   if (!canAct()) { if (down(0) || down(9)) { if (!$('abandon-confirm').hidden) $('abandon-confirm').hidden = true; else if (!overlay.classList.contains('hidden')) { if (!player.alive || player.out) requestPlay(); else { dragLook = true; start(); } } } finish(); return; }
   if (down(9)) { pauseGame(); finish(); return; }
   if (typing) { if (down(1)) closeChalk(); finish(); return; }
@@ -1346,7 +1402,7 @@ function pollGamepad(dt) {
   if (!notebookOpen) {
     if (Math.abs(rx) > 0.18 || Math.abs(ry) > 0.18) look((Math.abs(rx) > 0.18 ? rx : 0) * 900 * dt, (Math.abs(ry) > 0.18 ? ry : 0) * 700 * dt);
     if (down(12)) { restRequested = false; padUseAt = gameClock; }
-    if (up(12) && padUseAt !== null) { const held = (gameClock - padUseAt) / 1000; padUseAt = null; if (hauled) hauled = false; else if (held > .6) derigRope(); else useRope(); }
+    if (up(12) && padUseAt !== null) { const held = (gameClock - padUseAt) / 1000; padUseAt = null; if (hauled) hauled = false; else if (held > .6) derigRope(); else useContext(); }
     if (down(11)) takePhoto();
     if (down(5)) beginGlow(); if (up(5)) releaseGlow();
   }
@@ -1373,7 +1429,10 @@ function updateContext() {
   if (canAct() && !typing && !toolsOpen && !notebookOpen) {
     if (stuck > 0) text = stuckTight ? 'Hold C / B to breathe out · release to breathe' : 'Alternate left and right to work free';
     else if (roping) text = 'On the rope';
-    else if (resting) text = 'Resting · move to stand up';
+    else if(treatment)text=`Treating injury · ${Math.ceil(4-treatment.t)}s · move to cancel`;
+    else if (resting) text = 'Resting · warming up and recovering stamina · move to stand up';
+    else if(nearCamp())text=padSeen?'D-pad up · use expedition camp':'E · use expedition camp';
+    else if(nearPickup())text=pickupLabel(nearPickup().kind)+' · approach to collect';
     else if (G.chimneyAt(player.x, player.y + 1.5, player.z)) text = padSeen ? 'Hold A to climb' : 'Hold Space to climb';
     else if (ropes.some(r => Math.hypot(r.x - player.x, r.z - player.z) < 1.8 && Math.min(Math.abs(player.y - r.top), Math.abs(player.y - r.bottom)) < 1.8)) text = padSeen ? 'D-pad up · use rope; hold at the top to retrieve' : 'E · use rope   hold E at the top · pull it up';
     else if (nearestVoid() && player.rope > 0) text = padSeen ? 'D-pad up · rig rope' : 'E · rig rope';
@@ -1398,7 +1457,7 @@ function start() {
     sfx.play('whoosh', { vol: 0.9, rate: 0.7 });
     gameDelay(() => { sfx.play('body_fall', { vol: 1 }); sfx.play('rockfall', { vol: 0.6, rate: 0.9, dur: 1.5, wet: 0.8 }); camera.rotation.z = 0.12 * motionAmount(); fl.style.transition = 'opacity 3s ease-in'; fl.style.opacity = 0; $('hurt').style.opacity = 0.6; gameDelay(() => { $('hurt').style.opacity = 0; }, 1200); }, 900);
     gameDelay(() => sfx.play('gasping', { vol: 0.6 }), 1900);
-    gameDelay(() => showHint('the hole you fell through. it is a long way up', true), 3200);
+    gameDelay(() => showHint(G.expedition?'Find the expedition camp. The first tunnel runs south; follow the numbered chalk marks.':'the hole you fell through. it is a long way up', true), 3200);
   } else if (!introDone) introDone = true;
 }
 if (matchMedia('(pointer: coarse)').matches) $('warn').style.display = 'block';
@@ -1449,7 +1508,7 @@ function die(title, why, stat) {
   cave.marks.push(...runMarks); cave.places = (cave.places || []).concat(places.filter(p => !(cave.places || []).some(q => q.name === p.name)));
   cave.notes = (cave.notes || []).concat(notes.filter(n => !(cave.notes || []).some(q => q.t === n.t && Math.hypot(q.x - n.x, q.z - n.z) < 9))); saveCave();
   $('hurt').style.opacity = 0.9;
-  gameDelay(() => endScreen(title, why, 'TRY THIS CAVE AGAIN'), 1400);
+  gameDelay(() => endScreen(title, why, cave.checkpoint?'RETRY FROM CAMP':'TRY THIS CAVE AGAIN'), 1400);
 }
 function rescued() {
   if (player.out) return; player.out = true; record.rescued = (record.rescued || 0) + 1;
@@ -1472,7 +1531,7 @@ function escape() {
   gameDelay(() => endScreen(exitDaylight === 'night' ? 'STARS' : exitDaylight === 'dusk' ? 'THE LAST OF THE LIGHT' : 'DAYLIGHT', `you found the way out. ${Math.round(runTime / 60) >= 1 ? `you were down there ${Math.round(runTime / 60)} minute${Math.round(runTime / 60) > 1 ? 's' : ''}. ` : ''}the next one is deeper.`, 'CLICK FOR A NEW CAVE'), 2400);
 }
 function newCave() { location.href = location.pathname + '?seed=' + ((Math.random() * 1e9) | 0); }
-function sameCave() { location.href = location.pathname + '?seed=' + SEED; }
+function sameCave() { if(cave.checkpoint){cave.run=structuredClone(cave.checkpoint);cave.attempts++;saveCave();} location.href = location.pathname + '?seed=' + SEED; }
 
 // ---------- chalk ----------
 const decalHelper = new THREE.Object3D();
@@ -1566,7 +1625,7 @@ const loops = {};
 let soundsOn = false;
 sfx.load().then(() => {
   soundsOn = true;
-  for (const k of ['amb_cave', 'amb_grotto', 'amb_drone', 'amb_underwater', 'drips_cave', 'breath_calm', 'breath_scared', 'breath_labored', 'heartbeat'])
+  for (const k of ['amb_cave','amb_drone','amb_underwater','heartbeat'])
     loops[k] = sfx.loop(k, { hrtf: false });
   $('ov-snd').textContent = '';
 }).catch(e => { console.warn(e); $('ov-snd').textContent = 'sound unavailable'; });
@@ -1587,7 +1646,9 @@ function updateDrips(dt) {
   dripInst.instanceMatrix.needsUpdate = true;
 }
 let stillT = 0, presenceT = rr(40, 90), gustT = 0;
+let breathEventT=8;
 function updateSound(dt) {
+  sfx.tick(dt);
   if (!soundsOn) return;
   camera.getWorldDirection(viewDir);
   sfx.setListener(camera.position.x, camera.position.y, camera.position.z, viewDir.x, viewDir.y, viewDir.z);
@@ -1605,22 +1666,25 @@ function updateSound(dt) {
   const level = torchLevel(player.battery);
   fear = clamp(Math.max(level < 0.05 ? 0.8 : (1 - level) * 0.45, player.breath < 0.6 ? (1 - player.breath) * 0.9 : 0, eyes ? 0.55 : 0, player.hurt ? 0.3 : 0, stuck > 0 ? Math.min(1, 0.5 + stuckT * 0.1) : 0, batList.length ? 0.5 : 0, lakeFear * 0.8), 0, 1);
   lakeFear = Math.max(0, lakeFear - dt * 0.08);
-  const set = (k, v) => loops[k] && loops[k].setVol(v, 0.6);
-  set('amb_cave', (1 - u) * (0.45 + 0.5 * clamp((open - 2) / 10, 0, 1)));
+  const set = (k, v) => loops[k] && loops[k].setVol(v*(cueTime>0?.3:1), 1.2);
+  set('amb_cave',(1-u)*.075*(nearCamp()?.3:1));
   set('amb_grotto', (1 - u) * nearWater * 0.7);
   set('drips_cave', (1 - u) * nearWater * 0.5);
-  set('amb_drone', (1 - u) * clamp((open - 9) / 10, 0, 1) * 0.8);
-  set('amb_underwater', u * 0.9);
+  set('amb_drone',(1-u)*clamp((open-12)/15,0,1)*.045);
+  set('amb_underwater',u*.3);
   const puff = 1 - player.stamina;
-  set('breath_calm', (1 - u) * (player.hurt ? 0 : (0.35 + (player.h < 0.8 ? 0.35 : 0)) * (1 - fear) * (1 - puff)));
-  set('breath_scared', (1 - u) * Math.max(fear, puff * 0.9, player.cold > 0.5 ? (player.cold - 0.5) * 1.2 : 0) * (player.hurt ? 0.5 : 1));
-  set('breath_labored', (1 - u) * Math.max(player.hurt ? 0.7 : 0, player.foul ? 0.4 + (1 - player.breath) * 0.8 : 0));
-  set('heartbeat', u * (0.35 + (1 - player.breath) * 0.8) + (1 - u) * fear * 0.35);
+  breathEventT-=dt;
+  if(breathEventT<=0&&!u){const exerted=puff>.35||player.cold>.5,bad=player.hurt||player.foul;
+    breathEventT=bad?rr(5,8):exerted?rr(6,10):rr(15,25);
+    sfx.play(bad?'breath_labored':exerted?'breath_scared':'breath_calm',{vol:bad?.23:exerted?.16:.035,dur:2.4,vary:.06});
+    if(bad||exerted)cue(player.hurt?'Laboured breathing · injured':player.foul?'Laboured breathing · bad air':player.cold>.5?'Shivering breath · cold':'Heavy breathing · rest to recover');
+  }
+  set('heartbeat', u * (0.35 + (1 - player.breath) * 0.8) + (1 - u) * Math.max(0,fear-.65) * 0.12);
   if (loops.heartbeat) loops.heartbeat.setRate(0.9 + (1 - player.breath) * 0.6 + fear * 0.2, 1);
   // drips, somewhere on the ceiling nearby
   dripT -= dt;
   if (dripT <= 0) {
-    dripT = rr(1.5, 6) / (nearWater ? 2.2 : 1) / (lastTheme === 'wet' ? 1.8 : lastTheme === 'dry' ? 0.5 : 1);   // the wet rock drips; the dry rock hardly does
+    dripT = rr(8, 22) / (nearWater ? 2.2 : 1) / (lastTheme === 'wet' ? 1.8 : lastTheme === 'dry' ? 0.5 : 1);   // the wet rock drips; the dry rock hardly does
     const list = G.cellSegs.get(G.ckey(Math.floor(player.x / G.CHUNK), Math.floor(player.y / G.CHUNK), Math.floor(player.z / G.CHUNK)));
     if (list && list.length) {
       const s = list[Math.floor(Math.random() * list.length)], t = Math.random();
@@ -1632,8 +1696,8 @@ function updateSound(dt) {
       const landY = s.wl !== undefined ? s.wl : floor;
       if (fromTip && y - landY > 0.4) {                                                 // you see it fall before you hear it land
         const fallT = Math.sqrt(2 * Math.max(0.1, y - landY) / 9.8);
-        spawnDrip(x, y, z, landY); gameDelay(() => sfx.play('drip', { x, y: landY, z, vol: 0.5 + Math.random() * 0.4, vary: 0.25, wet: 0.9, rolloff: 0.8 }), fallT * 1000);
-      } else sfx.play('drip', { x, y, z, vol: 0.5 + Math.random() * 0.4, vary: 0.25, wet: 0.9, rolloff: 0.8 });
+        spawnDrip(x, y, z, landY); gameDelay(() => sfx.play('drip', { x, y: landY, z, vol: 0.12 + Math.random() * 0.12, vary: 0.12, wet: 0.9, rolloff: 0.8 }), fallT * 1000);
+      } else sfx.play('drip', { x, y, z, vol: 0.12 + Math.random() * 0.12, vary: 0.12, wet: 0.9, rolloff: 0.8 });
     }
   }
   // the mountain settling, far off
@@ -1641,11 +1705,11 @@ function updateSound(dt) {
   if (rockT <= 0) {
     rockT = rr(70, 200) / (lastTheme === 'broken' ? 2.5 : 1);                                                  // broken ground settles, audibly
     const a = Math.random() * Math.PI * 2, d = rr(18, 40);
-    sfx.play(Math.random() < 0.7 ? 'rockfall' : 'rumble', { x: player.x + Math.sin(a) * d, y: player.y + rr(-4, 6), z: player.z + Math.cos(a) * d, vol: 0.5, wet: 1, rolloff: 0.5 });
+    sfx.play('step_gravel', { x: player.x + Math.sin(a) * d, y: player.y + rr(-4, 6), z: player.z + Math.cos(a) * d, vol: 0.055, dur:.3, wet: .4, rolloff: 1.5 });
   }
   if (gaspT > 0) gaspT -= dt;
   // the presence: the longer you have been here, the less alone you are
-  if (dread > 0.05 && running && player.alive && !player.out) {
+  if (!G.expedition && dread > 0.05 && running && player.alive && !player.out) {
     const moving = Math.hypot(player.x - lastPx, player.z - lastPz) > 0.02; lastPx = player.x; lastPz = player.z;
     stillT = moving ? 0 : stillT + dt;
     presenceT -= dt * (1 + dread) * (stillT > 4 ? 2 : 1) * (torchLevel(player.battery) < 0.3 ? 1.6 : 1);
@@ -1679,6 +1743,7 @@ function updateSound(dt) {
     const d = Math.hypot(exitInfo.x - player.x, exitInfo.y - player.y, exitInfo.z - player.z);
     // stand still in the dark and you hear further: the draught and the birds reach you from twice as far
     const near = clamp(1 - d / (70 * (1 + listening)), 0, 1);
+    if(d<35&&!cave.heardExit){cave.heardExit=true;cue('Outside wind · an opening ahead',exitInfo.x,exitInfo.y,exitInfo.z);showHint('Fresh air. Follow the wind toward daylight.',true);}
     if (exitLoops.wind) exitLoops.wind.setVol((1 - u) * (0.2 + 0.8 * near) * (player.out ? 1.6 : 1) * (1 + 0.6 * listening), 1);
     if (exitLoops.birds) exitLoops.birds.setVol((1 - u) * (near > 0.3 ? (near - 0.3) * 1.2 : 0) * (player.out ? 1.5 : 1) * (1 + 0.6 * listening) * (exitDaylight === 'night' ? 0.15 : 1), 1);   // few birds at night
     if (listening > 0.9 && near > 0.05 && !player.out) teach('listen', 'still, and dark: you can hear a draught. air moves toward the way out');
@@ -1699,6 +1764,7 @@ function updateSound(dt) {
 }
 let followT = rr(70, 160), following = 0, followLookedT = 0;
 function updateFollower(dt) {
+  if(G.expedition)return;
   if (!running || !player.alive || player.out) return;
   if (following > 0) {
     following -= dt;
@@ -1709,7 +1775,7 @@ function updateFollower(dt) {
     return;
   }
   const dim = !torchHeld || torchLevel(player.battery) < 0.35;
-  if (dread > 0.25 && dim && open < 7 && !player.swim) { followT -= dt; if (followT <= 0) { following = rr(18, 40); followLookedT = 0; teach('follow', 'those are not your steps'); } }
+  if (!G.expedition && dread > 0.25 && dim && open < 7 && !player.swim) { followT -= dt; if (followT <= 0) { following = rr(18, 40); followLookedT = 0; teach('follow', 'those are not your steps'); } }
 }
 let lastMoveX = 0, lastMoveZ = 0;
 function footstep(kind) {
@@ -1798,6 +1864,8 @@ function updatePlayer(dt) {
     }
   }
   let want = player.swim ? 0.62 : crouchKey ? H_CROUCH : H_STAND;
+  const routeUnder=G.nearestSegAt(player.x,player.y+.35,player.z);
+  if(routeUnder?.route&&routeUnder.ry<.7)want=Math.min(want,H_PRONE);
   if (duckT > 0) { duckT -= dt; want = Math.min(want, duckLevel >= 2 ? H_PRONE : H_CROUCH); }
   const target = clamp(Math.min(want, clear - 0.06), H_PRONE, H_STAND);
   player.h += clamp(target - player.h, -5 * dt, 5 * dt);
@@ -1810,7 +1878,7 @@ function updatePlayer(dt) {
   if (!player.swim && player.h <= 0.52 && depthW > 0.18) teach('duck', 'flat out with your chin in the water. keep your head up, keep moving, and do not stop where it dips');
   if (player.under) teach('under', 'under. the bar at the top is your breath. turn back at half if you can’t see air');
   if (player.battery < 0.3) teach('torch-hold', 'the torch is dying. hold left mouse (X on controller) to charge — you’re blind while you do');
-  if (player.hurt) teach('hurt', 'something is broken. you’re slower now, and a second fall will finish you');
+  if (player.hurt) teach('hurt', 'injured: moving is slower. Q → Recover uses a medkit on safe ground. Severe falls are still fatal');
   if (player.cold > 0.6) teach('cold', 'you’re cold. keep moving to warm up. too long and your hands stop working');
   player.sprint = sprintKey && ml > 0 && stance === 1 && !player.swim && player.stamina > 0.05 && !player.hurt;
   if (player.sprint) player.stamina = Math.max(0, player.stamina - dt / 7); else if (!climbing) player.stamina = Math.min(1, player.stamina + dt / (12 * (1 + player.cold)));
@@ -1882,14 +1950,14 @@ function updatePlayer(dt) {
     } else if (player.airT > 0) {
       const hEq = preVy * preVy / (2 * GRAV);
       const soft = depthW > 1.4;
-      if (hEq > 7 && !soft) { sfx.play('body_fall', { vol: 1 }); die('THE FLOOR WASN\'T THERE', `a drop of ${hEq.toFixed(0)} metres, in the dark`, 'fell'); }
+      if (fallOutcome(hEq,soft,player.hurt)==='fatal') { sfx.play('body_fall', { vol: 1 }); die('THE FLOOR WASN\'T THERE', `a drop of ${hEq.toFixed(0)} metres, in the dark`, 'fell'); }
       else if (hEq > 3.5 && !soft) {
         sfx.play('body_fall', { vol: 0.9 }); sfx.play('gasping', { vol: 0.7 });
-        if (player.hurt) die('THE SECOND FALL', 'something gave way, then you did', 'fell');
+        if (player.hurt) { player.stamina=0;showHint('another hard landing. stop on safe ground and treat the injury',true); }
         else {
           player.hurt = true; $('hurt').style.opacity = 0.7; gameDelay(() => { $('hurt').style.opacity = 0; }, 900); rumble(0.8, 0.4, 400);
           if (torchHeld && Math.random() < 0.45) dropTorch(); else showHint('something is broken');
-          if (player.kit) gameDelay(() => { if (player.hurt && player.alive) { player.hurt = false; player.kit = false; showHint('you use the kit. it holds, for now', true); } }, 4000);
+          showHint(player.kit?'INJURED · reach safe ground, then Q → Recover to use your medkit':'INJURED · move carefully and find a red medkit',true);
         }
       } else if (hEq > 1.2) sfx.play(soft ? 'splash' : 'body_fall', { vol: soft ? 0.8 : 0.4 });
       player.airT = 0; player.whooshed = false;
@@ -1990,15 +2058,15 @@ function updatePlayer(dt) {
   }
   for (const c of caches) {
     if (!c.taken && Math.hypot(c.x - player.x, c.z - player.z) < 0.9 && Math.abs(c.y - player.y) < 1.4) {
-      c.taken = true; scene.remove(c.mesh); scene.remove(c.tag);
+      c.taken = true; scene.remove(c.mesh); scene.remove(c.tag);if(c.cacheKey){cave.collected??=[];cave.collected.push(c.cacheKey);}
       if (c.kind === 'battery') { player.battery = Math.min(1, player.battery + 0.4); showHint('a dead caver\'s spare cells. +40%'); }
       else if (c.kind === 'rope') { player.rope++; showHint('a coil of rope. E at a drop to rig it'); }
       else if (c.kind === 'cells') { player.cells = true; player.battery = Math.min(1, player.battery + 0.2); showHint('lithium cells. the torch will last longer now'); }
       else if (c.kind === 'suit') { if (player.suit) showHint('another wetsuit. you have one on'); else { player.suit = true; showHint('a wetsuit, someone’s size. the water will be half as cold', true); } }
-      else if (c.kind === 'kit') { if (player.hurt) { player.hurt = false; showHint('a first-aid kit. you strap it up. it will hold', true); sfx.play('gasping', { vol: 0.4, rate: 1.1 }); } else { player.kit = true; showHint('a first-aid kit. for later'); } }
+      else if (c.kind === 'kit') {player.kit=true;showHint('MEDKIT acquired · Q → Recover to treat an injury',true);}
       else if (c.kind === 'page') { const pg = { key: `${c.x.toFixed(0)},${c.z.toFixed(0)}`, text: typeof c.text === 'object' ? c.text.text : c.text, survey: typeof c.text === 'object' ? c.text.survey : undefined, x: c.x, z: c.z }; player.pages.push(pg); cave.pages = (cave.pages || []).concat([pg]); saveCave(); showHint(pg.survey ? pg.text : `a page from someone\u2019s log: \u201c${pg.text}\u201d`, true); hintT = 9; sfx.play('scrape', { vol: 0.2, rate: 2.5, dur: 0.4 }); continue; }
       else { player.sticks += 2; showHint(`two glowsticks in the pack · ${player.sticks} now`); }
-      sfx.play('rattle', { vol: 0.5, rate: 0.7 }); sfx.play('torch_click', { vol: 0.4 });
+      saveRun();sfx.play('rattle', { vol: 0.25, rate: 0.7 }); sfx.play('torch_click', { vol: 0.25 });
     }
   }
   dropT -= dt;
@@ -2161,7 +2229,7 @@ function stealTorch() {
 }
 function updateCarried(dt) {
   if (!carried) {
-    if (resting && restT > 12 && dread > 0.6 && stealArmed && Math.random() < dt * 0.08) { stealArmed = false; stealTorch(); }
+    if (!nearCamp() && resting && restT > 12 && dread > 0.6 && stealArmed && Math.random() < dt * 0.08) { stealArmed = false; stealTorch(); }
     return;
   }
   carried.t += dt; carried.stepT -= dt;
@@ -2204,6 +2272,7 @@ function spawnCrosser() {
   }
 }
 function updateCrosser(dt) {
+  if(nearCamp())return;
   if (!crosser) {
     if (dread > 0.35 && running && player.alive && !player.out) { crosserT -= dt * (1 + dread); if (crosserT <= 0) { spawnCrosser(); crosserT = rr(150, 360) / (0.5 + dread); } }
     return;
@@ -2269,6 +2338,7 @@ function placeLoose(p) {
   loose.push({ ...p, key, mesh: m, rest, strain: 0, state: fallen ? 'down' : 'hanging', t: 0, vy: 0 });
 }
 function updateLoose(dt) {
+  if(nearCamp())return;
   for (const L of loose) {
     if (L.state === 'down') continue;
     const dx = player.x - L.x, dz = player.z - L.z, hd = Math.hypot(dx, dz);
@@ -2311,13 +2381,16 @@ const falseFloors = [];
 function updateFalseFloors(dt) {
   if (!running || !player.alive || player.out) return;
   for (const f of falseFloors) {
+    if(f.warning)f.warning.visible=f.state!=='gone'&&Math.hypot(f.x-player.x,f.y-player.y,f.z-player.z)<24;
     if (f.state === 'gone' || !f.slab) continue;
+    const approach=Math.hypot(f.x-player.x,f.z-player.z);
+    if(!f.warned&&approach<f.r+5&&Math.abs(player.y-f.y)<2){f.warned=true;sfx.play('step_gravel',{x:f.x,y:f.y,z:f.z,vol:.3,rate:.75,dur:.5});cue('Brittle ground · test it with a stone',f.x,f.y,f.z);showHint('Cracked sediment ahead. Stay back: aim at it, hold Q → Stone → release.',true);}
     const hd = Math.hypot(player.x - f.x, player.z - f.z), onIt = hd < f.r - 0.4 && Math.abs(player.y - f.y) < 0.9 && player.grounded;
     if (f.state === 'whole') {
       if (onIt) { f.state = 'cracking'; f.t = 0; rumble(0.3, 0.7, 700); vfx.emit('chips',f.x,f.y,f.z,8);vfx.crack(f.x,f.y+.02,f.z,f.r); sfx.play('rattle', { x: f.x, y: f.y, z: f.z, vol: 0.8, rate: 0.7, wet: 0.5 }); sfx.play('rockfall', { x: f.x, y: f.y - 3, z: f.z, vol: 0.4, rate: 1.4, dur: 0.6, wet: 0.9 }); showHint('the floor moved', true); }
     } else if (f.state === 'cracking') {
       f.t += dt; camera.rotation.z += ((Math.random() - 0.5) * 0.01) * motionAmount();
-      if (f.t > 0.75) {
+      if (f.t > 1.5) {
         f.state = 'gone'; G.breakSlab(f.slab); vfx.emit('dust',f.x,f.y,f.z,35);vfx.emit('chips',f.x,f.y,f.z,25);
         sfx.play('rockslide', { x: f.x, y: f.y - 2, z: f.z, vol: 0.9, wet: 0.9, rolloff: 0.4 }); sfx.play('gasp', { vol: 0.8 });
         for (let k = 0; k < 4; k++) gameDelay(() => sfx.play('rockfall', { x: f.x, y: f.bottom, z: f.z, vol: 0.45, rate: rr(0.9, 1.2), dur: 0.8, wet: 0.9 }), 500 + k * 250);
@@ -2335,6 +2408,7 @@ function restoreBrokenFloors() {
 // ---------- the passage that closes behind you ----------
 const collapsed = new Set(); let collapseT = 0; const unstableNear = [];
 function updateCollapse(dt) {
+  if(nearCamp())return;
   collapseT -= dt; if (collapseT > 0) return; collapseT = 0.4;
   if (cave.collapsed) for (const key of cave.collapsed) if (!collapsed.has(key)) { const n = G.nodes.find(q => q.unstable && `${q.x.toFixed(0)},${q.z.toFixed(0)}` === key); if (n && G.chunkReadyAt(n.x, n.y + 0.5, n.z)) { G.collapseAt(n); collapsed.add(key); } }
   for (const n of G.nodes) {
@@ -2379,6 +2453,7 @@ function spawnEyes() {
   sfx.play('creature_breath', { x: best.x, y: best.y, z: best.z, vol: 0.5, wet: 0.7, rolloff: 0.6 });
 }
 function updateEyes(dt) {
+  if(nearCamp())return;
   if (!eyes) {
     eyesT -= dt * (torchLevel(player.battery) < 0.3 ? 2.5 : 1) * (1 + dread * 2);
     if (eyesT <= 0 && running) { spawnEyes(); eyesT = rr(120, 300); }
@@ -2422,6 +2497,7 @@ function floodFlowMul() { return 1 + 1.6 * floodLevel; }
 // ---------- a tremor: the whole hill shifts, once in a while ----------
 let tremorAt = rr(420, 900), tremorT = 0;
 function updateTremor(dt) {
+  if(nearCamp())return;
   if (!running || !player.alive || player.out) return;
   if (tremorT > 0) { tremorT -= dt; camera.rotation.z += ((Math.random() - 0.5) * 0.02 * Math.min(1, tremorT)) * motionAmount(); camera.position.y += ((Math.random() - 0.5) * 0.012 * Math.min(1, tremorT)) * motionAmount(); return; }
   if (runTime < tremorAt) return;
@@ -2437,7 +2513,8 @@ function updateTremor(dt) {
 }
 
 // ---------- the sound of moving water ----------
-let streamLoop = null, rapidsLoop = null, streamT = 0;
+let streamLoop = null, rapidsLoop = null, streamT = 0,waterCaptionT=0;
+function waterAudibility(n){const dx=n.x-player.x,dy=n.wl-player.y-1,dz=n.z-player.z,L=Math.hypot(dx,dy,dz);if(L<2)return 1;return surfaces.trace(player.x,player.y+1,player.z,dx/L,dy/L,dz/L,Math.max(0,L-1))?.x!==undefined?.2:1;}
 function updateStreamSound(dt) {
   streamT -= dt; if (streamT > 0) return; streamT = 0.4;
   let best = null, bd = 1e9, rap = null, rd = 1e9;
@@ -2446,10 +2523,11 @@ function updateStreamSound(dt) {
     if (d < bd) { bd = d; best = n; }
     if (n.flow.s > 1.4 && d < rd) { rd = d; rap = n; }
   }
+  waterCaptionT-=.4;if(best&&bd<14&&waterCaptionT<=0){waterCaptionT=25;cue(best.flow.s>1.4?'Fast water · strong current':'Flowing water nearby',best.x,best.wl,best.z);}
   if (best && !streamLoop) streamLoop = sfx.loop('stream', { x: best.x, y: best.wl, z: best.z, rolloff: 0.6, wet: 0.6 });
-  if (streamLoop) { if (best) { streamLoop.setPos(best.x, best.wl, best.z); streamLoop.setVol(0.55 * Math.min(1, best.flow.s) * floodFlowMul(), 0.5); streamLoop.setRate(1 + 0.15 * floodLevel, 1); } else streamLoop.setVol(0, 1.0); }
+  if (streamLoop) { if (best) { streamLoop.setPos(best.x, best.wl, best.z); streamLoop.setVol(0.32 * Math.min(1, best.flow.s) * floodFlowMul()*(cueTime>0?.3:1)*waterAudibility(best), 0.5); streamLoop.setRate(1 + 0.15 * floodLevel, 1); } else streamLoop.setVol(0, 1.0); }
   if (rap && !rapidsLoop) rapidsLoop = sfx.loop('stream_rocks', { x: rap.x, y: rap.wl, z: rap.z, rolloff: 0.9, wet: 0.7 });
-  if (rapidsLoop) { if (rap) { rapidsLoop.setPos(rap.x, rap.wl, rap.z); rapidsLoop.setVol(0.9 * Math.min(1, rap.flow.s - 1.2), 0.5); } else rapidsLoop.setVol(0, 1.0); }
+  if (rapidsLoop) { if (rap) { rapidsLoop.setPos(rap.x, rap.wl, rap.z); rapidsLoop.setVol(0.45 * Math.min(1, rap.flow.s - 1.2)*waterAudibility(rap)*(cueTime>0?.3:1), 0.5); } else rapidsLoop.setVol(0, 1.0); }
 }
 
 // ---------- survey notes: things worth a word on the map ----------
@@ -2712,6 +2790,7 @@ function init() {
   G.scanChunks(1, true, disposeChunk); processQueue(1e9, true);
   for (let y = -3; y < 3; y += 0.1) if (G.fieldAt(0, y + 0.35, 0) < -0.3 && G.fieldAt(0, y + 1.2, 0) < -0.3) { player.y = y; break; }
   player.yaw = Math.PI;
+  if(cave.generatorVersion<4){$('mission-summary').textContent='Existing cave preserved. Start a new expedition for the 10–15 minute camp-to-surface route.';$('menu-actions').hidden=false;$('abandon').textContent='New expedition · 10–15 min';}
   if (cave.run && !urlSeedIsNew) { resumed = true;                  // pick the interrupted attempt back up
     const r = cave.run;
     player.x = r.x; player.y = r.y; player.z = r.z; player.yaw = r.yaw; player.battery = r.battery; player.breath = r.breath; player.hurt = r.hurt;
@@ -2727,7 +2806,7 @@ function init() {
     $('go').textContent = 'CLICK TO CARRY ON';
   }
   updatePlayer(0); updateTorch(1);
-  window.K = { presentation, settings, applySettings, vfx, assets, renderer, streamed, bubbles, ceilingAt, visualWater, placeGlowworms, placeCurtain, placeCrystals, placeCache, player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
+  window.K = { prepareAt(n){Object.assign(player,{x:n.x,y:n.y+.12,z:n.z,vy:0,alive:true,out:false,swim:false,under:false,wl:-Infinity});Object.assign(G.focus,n);G.advanceWorms(100);G.scanChunks(1,true,disposeChunk);processQueue(1e9,true);updatePlayer(0);camera.position.set(player.x,player.y+1.5,player.z);},walkStep(dt){updatePlayer(dt);runTime+=dt;Object.assign(G.focus,player);G.advanceWorms(3);G.scanChunks(dt,false,disposeChunk);processQueue(1e9,true);processProps(dt);},updatePlayer, surfaces, crystals, nearCamp, openCamp, beginTreatment, updateExpedition, get treatment(){return treatment;}, get checkpoint(){return cave.checkpoint;}, get routeNotes(){return cave.routeNotes;}, fallOutcome, presentation, settings, applySettings, vfx, assets, renderer, streamed, bubbles, ceilingAt, visualWater, placeGlowworms, placeCurtain, placeCrystals, placeCache, player, G, keys, stats, placeMark, shakeTorch, spawnEyes, sfx, camera, scene, torch, bonePiles, boneInst,
                get eyes() { return eyes; }, get exit() { return exitInfo; }, tick: (dt) => stepFrame(dt), render: () => presentation.render(scene, camera, gameClock*.001), motes, td: _td, tp: _tp, motePos, dropTorch, get torchHeld() { return torchHeld; }, get stuck() { return stuck; }, set stuck(v) { stuck = v; },
                run: () => { running = true; overlay.classList.add('hidden'); sfx.resume(); }, pause: pauseGame, schedule: gameDelay, get controls() { return { running, toolsOpen, typing, beamNarrow, resting, restRequested, toolChoice, gameClock }; }, spawnCrosser, get crosser() { return crosser; }, places, loose, caches, composePage, olms, falseFloors, get flood() { return { floodPhase, floodLevel, floodAt, floodStep }; }, startFlood: () => { floodAt = 0; }, tremor: () => { tremorAt = 0; }, steal: stealTorch, takePhoto, get frames() { return framesLeft; }, strawInst, strawClusters, placeStraws, placeCamp, throwStone, stones, useRope, derigRope, get carried() { return carried; }, updateHaul, updateLines, get roping() { return roping; }, get campSite() { return campSite; }, campDecor, saveRun, localMesh, updateCarried, rumble, get photos() { return cave.photos || []; }, get generatorVersion() { return cave.generatorVersion; }, lines, layLine, sumpPath, nearestSumpEnd, ropes, follow: (t) => { following = t; }, lakePoke: () => { lakeT = 0; }, tight: (n) => { stuck = n; stuckTight = true; wiggles = 0; exhaleT = 0; } };
 }
@@ -2794,7 +2873,7 @@ function stepFrame(dt) {
   updateOlms(dt);
   updateCollapse(dt);
   updateFalseFloors(dt); if (frameNo % 30 === 0) restoreBrokenFloors();
-  updateCamp(dt);
+  updateCamp(dt); updateExpedition(dt);
   updateStreamSound(dt);
   waterUniforms.uTime.value += dt;
   updatePlaces(dt);
@@ -2814,3 +2893,5 @@ function stepFrame(dt) {
   stats.frameMs = performance.now() - tf;
 }
 requestAnimationFrame(frame);
+
+addEventListener('pagehide',()=>{for(const w of workers)w.terminate();renderer.dispose();sfx.ctx.close().catch(()=>{});});

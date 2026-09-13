@@ -45,11 +45,12 @@ export class VFX {
 export class StreamedInstances {
   constructor(scene,geometry,material,capacity){
     this.mesh=new THREE.InstancedMesh(geometry,material,capacity);this.mesh.count=0;this.mesh.frustumCulled=false;this.mesh.castShadow=true;scene.add(this.mesh);
-    this.records=[];this.capacity=capacity;this.count=0;this.instanceMatrix={needsUpdate:false};this.lastCell='';
+    this.supports=new Map();this.supportCheck=null;this.records=[];this.capacity=capacity;this.count=0;this.instanceMatrix={needsUpdate:false};this.lastCell='';
   }
   setMatrixAt(i,m){this.records[i]=m.clone();this.lastCell='';}
+  setSupport(i,a){this.supports.set(i,a);}
   update(p,radius=48){const cell=`${Math.floor(p.x/4)},${Math.floor(p.y/4)},${Math.floor(p.z/4)},${this.count},${radius}`;if(cell===this.lastCell)return;this.lastCell=cell;
-    const near=[];for(const m of this.records){if(!m)continue;const e=m.elements;const dist=(e[12]-p.x)**2+(e[13]-p.y)**2+(e[14]-p.z)**2;if(dist<radius*radius)near.push({m,dist});}
+    const near=[];for(let i=0;i<this.records.length;i++){const m=this.records[i];if(!m||(this.supportCheck&&this.supports.has(i)&&!this.supportCheck(this.supports.get(i))))continue;const e=m.elements;const dist=(e[12]-p.x)**2+(e[13]-p.y)**2+(e[14]-p.z)**2;if(dist<radius*radius)near.push({m,dist});}
     near.sort((a,b)=>a.dist-b.dist);this.mesh.count=Math.min(this.capacity,near.length);for(let i=0;i<this.mesh.count;i++)this.mesh.setMatrixAt(i,near[i].m);this.mesh.instanceMatrix.needsUpdate=true;
   }
   dispose(){this.mesh.removeFromParent();this.mesh.dispose();this.records=[];}

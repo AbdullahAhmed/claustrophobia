@@ -28,7 +28,7 @@ document.querySelector('#run').onclick=async()=>{
  report.textContent='';document.querySelector('#photos').replaceChildren();let count=0;
  const check=(ok,label)=>{report.textContent+=(ok?'PASS ':'FAIL ')+label+'\n';if(!ok)throw Error(label);count++;};
  try{
-  let k=await load(null);k.settings.reduced=false;k.applySettings();check(k.generatorVersion===3,'New saves select the integrated generator');
+  let k=await load(null);k.settings.reduced=false;k.applySettings();check(k.generatorVersion===4,'New saves select the integrated generator');
   check(k.assets.models.size===19,'All 19 original equipment and creature models load');
   for(const name of ['sleepingbag','stove','suit'])check(k.assets.geometry(name).attributes.position.count>100,name+' has authored geometry');
   for(const tape of ['off','subtle','full']){k.settings.tape=tape;k.applySettings();k.run();const before=k.frames;key('KeyP');key('KeyP','keyup');ticks(k,12);check(k.frames===before-1&&k.photos.length===8-k.frames,'P takes one photograph with '+tape+' presentation');check(k.renderer.getContext().getError()===0,tape+' photo has no WebGL error');}

@@ -3,7 +3,7 @@
 // and a lowpass that closes over everything when your head goes under.
 export class Sfx {
   constructor(base = 'sounds/out/') {
-    this.base = base; this.buffers = {}; this.manifest = {}; this.ready = false; this.last = {};
+    this.base = base; this.buffers = {}; this.manifest = {}; this.ready = false; this.last = {}; this.rotating=new Set();
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     const c = this.ctx;
     this.master = c.createGain(); this.master.gain.value = 0.9;   // set from settings
@@ -69,6 +69,7 @@ export class Sfx {
     }
     out.connect(this.bus);
     if (o.wet) { const w = c.createGain(); w.gain.value = o.wet; out.connect(w); w.connect(this.revIn); }
+    if(o.loop&&o.offset===undefined)o.offset=Math.random()*buf.duration*.2;
     if (o.offset && o.dur) src.start(0, o.offset, o.dur); else src.start(0, o.offset || 0);
     const h = { src, gain: g, pan,
       stop(t = 0.05) { try { g.gain.setTargetAtTime(0, c.currentTime, t / 3); src.stop(c.currentTime + t + 0.05); } catch (e) {} },
@@ -77,7 +78,17 @@ export class Sfx {
       setPos(x, y, z) { if (pan && Number.isFinite(x + y + z)) { pan.positionX.value = x; pan.positionY.value = y; pan.positionZ.value = z; } } };
     return h;
   }
-  loop(key, o = {}) { return this.play(key, { ...o, loop: true, vol: o.vol === undefined ? 0 : o.vol }); }
+  loop(key,o={}) {
+    // Crossfade different takes/offsets before a sample wraps. Simulation time respects pause.
+    const engine=this,state={key,o:{...o},vol:o.vol??0,rate:o.rate??1,left:0,current:null};
+    const rotate=()=>{const prior=state.current;state.current=engine.play(key,{...state.o,rate:state.rate,loop:true,vol:0});if(!state.current)return;
+      const duration=state.current.src.buffer.duration;
+      // Start offsets are selected in play; rotate well before the shortest remaining loop.
+      state.left=Math.max(.2,Math.min(24,duration*.65))*(.75+Math.random()*.2);state.current.setVol(state.vol,.8);prior?.stop(.8);};
+    state.rotate=rotate;this.rotating.add(state);rotate();
+    return {setVol(v,t=.5){state.vol=v;state.current?.setVol(v,t);},setRate(v,t=.5){state.rate=v;state.current?.setRate(v,t);},setPos(x,y,z){Object.assign(state.o,{x,y,z});state.current?.setPos(x,y,z);},stop(t=.1){engine.rotating.delete(state);state.current?.stop(t);}};
+  }
+  tick(dt){for(const s of this.rotating){s.left-=dt;if(s.left<=0)s.rotate();}}
   setListener(x, y, z, fx, fy, fz) {
     const L = this.ctx.listener;
     if (L.positionX) {

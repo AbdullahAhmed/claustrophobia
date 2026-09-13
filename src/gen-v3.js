@@ -1,4 +1,3 @@
-import { planExpedition } from './expedition.js';
 // Karst — cave generator. Worm graph (floor lines) → distance field → marching cubes.
 // Pure data: no three.js objects here. main.js turns the arrays into meshes.
 import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
@@ -45,7 +44,7 @@ function addSeg(a, b) {
   const rx = (a.rx + b.rx) / 2, ry = (a.ry + b.ry) / 2, sy = rx / ry;
   const acy = a.y + CY * a.ry, bcy = b.y + CY * b.ry;          // node y is the floor; capsule centre is above it
   const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) || 1e-6;
-  const s = { route:!!(a.route&&b.route), ax: a.x, ay: acy * sy, az: a.z, bx: b.x - a.x, by: (bcy - acy) * sy, bz: b.z - a.z,
+  const s = { ax: a.x, ay: acy * sy, az: a.z, bx: b.x - a.x, by: (bcy - acy) * sy, bz: b.z - a.z,
               rx, ry, sy, y0: a.y, y1: b.y, rmin: Math.min(rx, ry),
               wl: a.wl !== undefined ? a.wl : b.wl, floods: !!(a.floods || b.floods), chimney: !!(a.chimney || b.chimney), core: a.core !== false && b.core !== false,
               old: (b.theme || a.theme) === 'old', broken: (b.theme || a.theme) === 'broken', blue: !!(a.blue || b.blue),
@@ -509,7 +508,6 @@ function round() {
 }
 // Advance while any live head is still within FRONTIER of the player (bounded per call).
 export function advanceWorms(maxRounds) {
-  advanceExpedition();
   for (let k = 0; k < maxRounds && activeWorms() > 0; k++) round();
 }
 function ensureTrunks(dead) {
@@ -678,28 +676,10 @@ export function initGen(seed, tier = 0) {
     addSeg(prev, n); nodes.push(n); prev = n;
   }
   props.push({ type: 'sinkhole', x: prev.x, y: prev.y + 0.6, z: prev.z, floor: start.y });
-  expedition=planExpedition(seed);routeHead=0;start.route=true;expedition.points[0]=Object.assign(expedition.points[0],start,{w:-4,route:true,distance:0});
-  camp=true;exitClaimed=true; // v4 has one designated camp and exit, optional branches cannot replace them.
+  for (let i = 0; i < 3; i++) {
+    const w = new Worm(i + 1, start, i * 2.094 + rr(-0.4, 0.4), 0, 'trunk', Infinity);
+    w.pickMode(MODE.passage); w.modeLeft = rr(20, 40); worms.push(w);
+  }
   advanceWorms(400);
 }
 export const debug = { Worm, MODE };
-
-export let expedition=null;
-let routeHead=0;
-function advanceExpedition(){
-  if(!expedition)return;
-  const pts=expedition.points;
-  while(routeHead+1<pts.length&&pts[routeHead].z<focus.z+75){
-    const a=pts[routeHead],b=pts[++routeHead];addSeg(a,b);nodes.push(b);
-    if(routeHead===expedition.campIndex)props.push({type:'camp',...b,seed:(SEED%99991)/99991});
-    if(routeHead%16===0)props.push({type:'waymark',...b,target:pts[Math.min(pts.length-1,routeHead+8)]});
-    if(routeHead%64===32){const side=new Worm(9000+routeHead,b,routeHead%128<64?Math.PI/2:-Math.PI/2,0,routeHead===32?'trunk':'side',routeHead===32?Infinity:35+rand()*30);side.pickMode(MODE.passage);side.modeLeft=18;worms.push(side);}
-    if(routeHead%40===0&&b.ry>1){props.push({type:'crystals',...b,seed:rand()});if(routeHead%80===0)props.push({type:'straws',...b,floor:b.y,r:.7,n:24,seed:rand()});}
-    if(routeHead===28){
-      const ledge={...b,x:b.x+4,w:-5,i:0,route:false,rx:1.6,ry:1.6},bottom={...ledge,y:b.y-4,i:1,core:false};
-      const slab={x:ledge.x,y:ledge.y+.05,z:ledge.z,r:1.25};ledge.slabs=[slab];bottom.slabs=[slab];addSeg(b,ledge);addSeg(ledge,bottom);nodes.push(ledge,bottom);
-      props.push({type:'falsefloor',x:ledge.x,y:ledge.y,z:ledge.z,r:1.25,bottom:bottom.y,node:ledge,tutorial:true});
-    }
-    if(routeHead===pts.length-1){const prev=pts[routeHead-1],L=Math.hypot(b.x-prev.x,b.z-prev.z);exit={x:b.x,y:b.y,z:b.z,dx:(b.x-prev.x)/L,dz:(b.z-prev.z)/L,n1:prev};props.push({type:'exit',...exit});}
-  }
-}

@@ -1,0 +1,42 @@
+<!doctype html><meta charset="utf-8"><title>Expedition acceptance checks</title>
+<style>body{background:#181813;color:#ddd;font:14px monospace}button{padding:10px}pre{white-space:pre-wrap}iframe{width:1280px;height:720px;border:0}img{max-width:960px}</style>
+<h1>Expedition acceptance checks</h1><p>Disposable localhost save. Collision walk is an accelerated simulation, not a timed player playtest.</p>
+<button id="run">Check expedition features</button><button id="walk">Walk complete escape route</button><button id="capture">Capture view</button><button id="inspect">Inspect camp and minerals</button><pre id="report">Ready</pre><iframe id="game" src="../index.html?seed=17"></iframe><div id="images"></div>
+<script type="module">
+const frame=document.querySelector('#game'),report=document.querySelector('#report'),wait=ms=>new Promise(r=>setTimeout(r,ms));let checks=0;
+const check=(v,m)=>{report.textContent+=(v?'PASS ':'FAIL ')+m+'\n';if(!v)throw Error(m);checks++;};
+const saved=()=>JSON.parse(localStorage.getItem('karst.cave'));
+async function load(fixture=null){frame.src='about:blank';await new Promise(r=>frame.onload=r);if(fixture)localStorage.setItem('karst.cave',JSON.stringify(fixture));else localStorage.removeItem('karst.cave');frame.src='../index.html?seed=17&qa='+Date.now();await new Promise(r=>frame.onload=r);for(let i=0;i<150&&!frame.contentWindow.K;i++)await wait(100);const k=frame.contentWindow.K;if(!k)throw Error('Initialization failed');for(let i=0;i<150&&!k.sfx.ready;i++)await wait(100);return k;}
+function capture(){const k=frame.contentWindow.K;k.render();const im=new Image();im.src=frame.contentDocument.querySelector('#c').toDataURL();document.querySelector('#images').append(im);}
+document.querySelector('#capture').onclick=capture;
+document.querySelector('#inspect').onclick=async()=>{const k=frame.contentWindow.K,plan=k.G.expedition;k.prepareAt(plan.points[plan.campIndex]);k.run();for(let i=0;i<40;i++){k.tick(.1);await wait(20);}const bag=k.campDecor.find(m=>m.name==='sleepingbag')||k.campDecor[0];if(bag){k.camera.position.set(bag.position.x+1.3,bag.position.y+1.2,bag.position.z+1.3);k.camera.lookAt(bag.position);k.torch.position.copy(k.camera.position);k.torch.quaternion.copy(k.camera.quaternion);}k.pause();capture();report.textContent='Camp equipment inspection captured.\n';
+const n=plan.points[plan.galleryIndex];k.prepareAt(n);k.run();for(let i=0;i<40;i++){k.tick(.1);await wait(20);}k.placeCrystals({...n,seed:.381});for(const batch of k.streamed)batch.update(k.player,48);const visible=k.crystals.mesh.count;const bad=[...k.crystals.supports.values()].filter(a=>Math.hypot(a.x-k.player.x,a.y-k.player.y,a.z-k.player.z)<12&&!k.surfaces.supported(a)).length;report.textContent+=`Mineral inspection: ${visible} visible attached clusters; ${bad} nearby unsupported records excluded.
+`;k.camera.rotation.set(-.2,Math.PI,0,'YXZ');k.torch.quaternion.copy(k.camera.quaternion);k.pause();capture();};
+document.querySelector('#run').onclick=async()=>{report.textContent='';checks=0;try{
+let k=await load();const d=frame.contentDocument,w=frame.contentWindow,p=k.player;
+check(k.generatorVersion===4,'New caves select the expedition generator');check(k.G.expedition.targetMinutes.join('-')==='10-15','Accepted time target is 10-15 minutes');
+k.run();k.updateExpedition(1);check(d.querySelector('#journey').textContent.includes('camp'),'Opening objective identifies the camp');
+const exp=k.G.expedition,cp=exp.points[exp.campIndex];k.prepareAt(cp);k.run();for(let i=0;i<35&&!k.campSite;i++){k.tick(.25);await wait(30);}check(!!k.campSite,'Procedural camp is placed at the planned milestone');check(k.nearCamp(),'Camp interaction is reachable on dry ground');
+k.openCamp();check(!d.querySelector('#camp-menu').hidden,'Camp opens a visible interaction menu');check(!k.controls.running,'Camp menu pauses hazards');check(k.routeNotes,'Using camp recovers the route notes');check(!!saved().checkpoint,'Using camp saves a restart checkpoint');check(d.querySelector('#camp-note').textContent.includes('Low Passage'),'Camp explains the next landmarks');
+d.querySelector('#camp-leave').click();check(k.controls.running&&d.querySelector('#camp-menu').hidden,'Leaving camp resumes play');
+p.hurt=true;p.kit=true;p.grounded=true;p.swim=false;p.wl=-Infinity;k.beginTreatment();check(!!k.treatment,'Injured player can deliberately start treatment');k.updateExpedition(1);k.pause();const before=k.treatment.t;k.updateExpedition(1);check(k.treatment.t===before,'Pause freezes treatment progress');k.run();p.x+=.3;k.updateExpedition(.1);check(!k.treatment&&p.kit&&p.hurt,'Moving cancels treatment without consuming the kit');
+k.prepareAt(cp);p.hurt=true;p.kit=true;p.grounded=true;k.beginTreatment();k.updateExpedition(4.1);check(!p.hurt&&!p.kit&&!k.treatment,'Completed treatment heals and consumes exactly one kit');check(saved().checkpoint.hurt===false,'Camp treatment updates the checkpoint');
+for(let i=0;i<20;i++)k.tick(.05);p.cold=.9;p.stamina=.1;k.openCamp();d.querySelector('#camp-rest').click();for(let i=0;i<100;i++)k.tick(.05);check(p.cold<.05&&p.stamina>.95,'Rest at camp restores warmth and stamina '+JSON.stringify({cold:p.cold,stamina:p.stamina,grounded:p.grounded,y:p.y,control:k.controls,near:k.nearCamp(),wl:p.wl,swim:p.swim}));
+k.updateExpedition(1);check(d.querySelector('#journey').textContent.includes('Mineral Gallery'),'Route notes advance the objective');
+check(k.fallOutcome(8,false,false)==='injured','Moderate high falls are recoverable injuries');check(k.fallOutcome(13,false,false)==='fatal','Severe falls remain lethal');check(k.fallOutcome(8,false,true)==='severe','A second moderate fall is not instant death');
+const sources=[...k.sfx.rotating];check(sources.every(x=>!x.key.startsWith('breath')),'Breathing is not a permanent loop');const ambient=sources.find(x=>x.key==='amb_cave');const old=ambient.current;k.sfx.tick(30);check(ambient.current!==old,'Ambient takes rotate and crossfade');
+k.settings.captions=false;k.applySettings();k.updateExpedition(.1);check(!d.querySelector('#sound-caption').textContent,'Captions can be disabled');k.settings.captions=true;k.applySettings();
+const snap=saved();snap.run=structuredClone(snap.checkpoint);k=await load(snap);check(Math.hypot(k.player.x-cp.x,k.player.z-cp.z)<4,'A checkpoint reload resumes at camp');check(k.routeNotes,'Recovered notes survive checkpoint reload');
+k.run();for(let i=0;i<30;i++){k.tick(.1);await wait(20);}k.pause();capture();
+report.textContent+='\n'+checks+' EXPEDITION CHECKS PASSED';
+}catch(e){report.textContent+='\nERROR '+e.stack;}};
+document.querySelector('#walk').onclick=async()=>{report.textContent='Starting continuous collision traversal...\n';try{
+const k=await load(),p=k.player,plan=k.G.expedition;k.pause();let target=1,steps=0,last=0,stalled=0;k.keys.KeyW=true;p.pitch=0;
+while(target<plan.points.length&&!p.out){const q=plan.points[target],dist=Math.hypot(q.x-p.x,q.z-p.z);if(dist<.45){target++;continue;}
+p.yaw=Math.atan2(-(q.x-p.x),-(q.z-p.z));k.keys.KeyW=true;k.walkStep(.05);steps++;
+if(!p.alive)throw Error('Died at route node '+target);if(steps%100===0){if(target===last)stalled++;else stalled=0;last=target;report.textContent=`Traversing node ${target}/${plan.points.length}; simulated ${(steps*.05/60).toFixed(1)} minutes; height ${p.y.toFixed(2)}; stance ${p.h.toFixed(2)}\n`;if(stalled>6)throw Error('Collision blocked at '+target+' '+JSON.stringify({x:p.x,y:p.y,z:p.z,target:q,stuck:k.stuck,grounded:p.grounded,h:p.h}));await wait(0);}
+if(steps>24000)throw Error('Traversal exceeded 20 simulated minutes');
+}
+k.keys.KeyW=false;if(!p.out)throw Error('End reached without escape trigger');k.render();capture();report.textContent+='PASS continuous collision route reached daylight; '+(steps*.05/60).toFixed(2)+' simulated movement minutes\n';
+}catch(e){report.textContent+='\nERROR '+e.stack;}};
+</script>

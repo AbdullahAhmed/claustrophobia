@@ -138,6 +138,12 @@ export function buildField(list, cx, cy, cz, into) {
           if (bs.wl !== undefined && y > bs.wl - 0.2 && y < bs.wl + 1.6) g = Math.max(g, (bs.wl - Math.max(bs.y0, bs.y1) < 0.12 ? 0.3 : 0.8) * patch * (1 - (y - bs.wl) / 1.8));   // puddles grow less than pools
           if (bs.blue) g = -g;                                                          // the sign carries the colour: negative glow renders blue-white
         }
+        // The expedition centre has a supported, traversable floor even where a side passage overlaps it.
+        // This applies only to v4 route segments; legacy fields remain byte-for-byte equivalent.
+        let route=null,rt=0,rd=Infinity;
+        for(const q of row){if(!q.route)continue;const ll=q.fdx*q.fdx+q.fdz*q.fdz,t=clamp(((x-q.fx)*q.fdx+(z-q.fz)*q.fdz)/(ll||1),0,1),d=Math.hypot(x-q.fx-q.fdx*t,z-q.fz-q.fdz*t);if(d<rd){rd=d;route=q;rt=t;}}
+        if(route&&rd<.8){const fy=lerp(route.y0,route.y1,rt),height=route.ry<.7?1.02:2.05;
+          if(y>fy-.8&&y<fy+height+.2){const passage=Math.max(fy-y,y-fy-height,rd-.72);v=Math.max(v,fy-y);v=Math.min(v,passage);}}
         dens[idx] = v; glow[idx] = g; calc[idx] = cal * 255; wet[idx] = wt * 255; tint[idx] = bs ? bs.tint * 50 : 0;
         if (v < 0) anyAir = true; else anyRock = true;
       }

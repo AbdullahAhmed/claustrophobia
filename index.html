@@ -107,6 +107,10 @@
   .reduced-motion *{animation:none!important;transition:none!important;}
   @media(max-height:820px){#overlay{align-items:flex-start}.box .sub{margin-bottom:12px}.box p{line-height:1.65}.box .go{margin-top:14px}.settings{margin-top:12px}}
 details{margin-top:18px}summary{cursor:pointer;font-size:12px;letter-spacing:.08em;color:#c8b897}details[open] summary{margin-bottom:12px}#go:disabled{opacity:.35;cursor:wait;animation:none}
+#journey{position:fixed;top:48px;left:20px;max-width:460px;font:13px var(--mono);color:#ddd1b7;pointer-events:none;text-shadow:0 2px 4px #000}
+#condition{position:fixed;right:20px;top:50px;font:12px var(--mono);color:#dbceb5;pointer-events:none}
+#sound-caption{position:fixed;bottom:90px;width:100%;text-align:center;font:13px var(--mono);color:#ddd;pointer-events:none}
+#camp-menu{position:fixed;inset:0;background:#080807e8;z-index:100;display:grid;place-items:center;padding:20px}#camp-menu[hidden]{display:none}#camp-menu section{max-width:520px;font:15px var(--mono);line-height:1.7;color:#ded4be}#camp-menu button{display:block;margin:12px 0;padding:12px;background:#29271e;border:1px solid #81745a;color:#e7ddc5;font:inherit;cursor:pointer}#camp-menu button:focus{outline:2px solid #d4bd85}#camp-menu button:disabled{opacity:.45}
 </style>
 
 <canvas id="c"></canvas>
@@ -121,11 +125,16 @@ details{margin-top:18px}summary{cursor:pointer;font-size:12px;letter-spacing:.08
 <div id="hint"></div>
 <div id="hud"></div>
 <div id="context"></div>
+<div id="journey" aria-live="polite"></div><div id="condition"></div><div id="sound-caption" aria-live="polite"></div>
+<div id="camp-menu" hidden role="dialog" aria-modal="true" aria-labelledby="camp-title"><section>
+<h2 id="camp-title">Expedition camp</h2><p id="camp-note"></p><p id="camp-status"></p>
+<button id="camp-rest">Rest and warm up</button><button id="camp-heal">Treat injury · 1 medkit</button><button id="camp-leave">Leave camp</button>
+<p>Checkpoint saved · movement cancels recovery<br>Controller: up/down to choose · A to use · Menu to leave</p></section></div>
 <div id="tools" hidden role="group" aria-label="Tools wheel">
   <h2>Tools</h2><div class="wheel">
     <button id="tool-chalk" type="button">Chalk<small>leave a note</small></button>
     <button id="tool-whistle" type="button">Whistle<small>hear the cave</small></button>
-    <button id="tool-rest" type="button">Rest<small>torch off</small></button>
+    <button id="tool-rest" type="button">Recover<small>rest or treat injury</small></button>
     <button id="tool-stone" type="button">Stone<small>test the floor</small></button>
     <span id="wheel-cursor"></span>
   </div><p id="tools-help">Move the mouse to choose · release Q to use<br>The cave keeps moving · Esc pauses</p>
@@ -135,15 +144,15 @@ details{margin-top:18px}summary{cursor:pointer;font-size:12px;letter-spacing:.08
 <div id="overlay"><div class="box">
   <h1 id="ov-title">CLAUSTROPHOBIA</h1>
   <div class="sub" id="ov-sub">the ground gave way. the hole you fell through is too far up. somewhere, this opens.</div>
-  <p>Find the way out. Keep the torch charged. Listen to the water.</p>
+  <p id="mission-summary">Find the expedition camp. Recover its route notes. Reach daylight.<br>A successful expedition targets 10–15 minutes. No time limit.</p>
   <details><summary>Controls and survival</summary>
   <p id="ov-body"><b>W A S D</b> walk &nbsp;·&nbsp; <b>mouse</b> look &nbsp;·&nbsp; <b>C</b> crouch / dive<br>
      low ceilings put you on your belly &nbsp;·&nbsp; <b>space</b> hop / surface / hold to climb a chimney<br>
      <b>shift</b> run &nbsp;·&nbsp; hold <b>left mouse</b> to charge the torch (blind while you do)<br>
      hold <b>right mouse</b> to focus the beam; release for wide<br>
-     hold <b>Q</b> for tools: chalk, whistle, rest, stone &nbsp;·&nbsp; <b>Tab</b> survey<br>
-     <b>G</b> drop glowstick; hold and release to throw &nbsp;·&nbsp; <b>E</b> use / rig rope; hold to retrieve or haul &nbsp;·&nbsp; <b>P</b> photograph (flash)<br>
-     the water takes you if you run out of breath. the floor is not always there. the rock can hold you.<br>
+     hold <b>Q</b> for tools: chalk, whistle, recover, stone &nbsp;·&nbsp; <b>Tab</b> survey<br>
+     <b>G</b> drop glowstick; hold and release to throw &nbsp;·&nbsp; <b>E</b> use camp / rig rope; hold to retrieve or haul &nbsp;·&nbsp; <b>P</b> photograph (flash)<br>
+     Q → Recover treats an injury with a medkit, or rests on dry ground. E opens camp and saves a checkpoint.<br>Severe falls can kill; a medkit treats injuries, not fatal impacts.<br>the water takes you if you run out of breath. the floor is not always there. the rock can hold you.<br>
      moving water goes somewhere. still air can be bad. the roof is not all attached.<br>
      <b>esc</b> pauses the game &nbsp;·&nbsp; headphones help<br>
      controller: sticks move / look · A hop / climb · B crouch / dive<br>
@@ -160,6 +169,7 @@ details{margin-top:18px}summary{cursor:pointer;font-size:12px;letter-spacing:.08
     <label>Tape effect <select id="s-tape"><option value="off">Off</option><option value="subtle" selected>Subtle</option><option value="full">Full</option></select></label>
     <label>Camera motion <input id="s-motion" type="range" min="0" max="1" step=".1" value="1"></label>
     <label>Brightness <input id="s-brightness" type="range" min=".7" max="1.5" step=".05" value="1"></label>
+    <label><input id="s-captions" type="checkbox" checked> Sound captions</label>
     <label><input id="s-reduced" type="checkbox"> Reduced motion</label>
     <span class="calibration">Calibrate: <i></i><i></i><i></i> three dark shades should be distinguishable</span>
   </div>

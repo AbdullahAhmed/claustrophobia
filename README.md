@@ -1,5 +1,19 @@
 # Claustrophobia — Free Browser Demo
 
+## Expedition demo v0.4
+
+New caves target a 10–15 minute successful expedition: find camp, recover route notes, cross the Mineral Gallery and Low Passage, then climb to daylight. This is a pacing target, not a timer. A seeded route grows into terrain as you explore; optional procedural branches can continue beyond it. The route has protected footing and a continuous passage core. Existing version 2 and 3 saves retain their original geometry; select **New cave** for the expedition.
+
+**Camp:** approach sleeping bags and press **E** (D-pad up). The menu saves a checkpoint, explains the route, and offers rest or treatment. Retrying after death resumes the camp checkpoint if established. **Recovery:** choose **Q → Recover** on dry ground; an injured player with a kit begins a four-second treatment. Moving cancels without consuming the kit. Otherwise Recover rests and restores warmth/stamina; camp warms you faster. Severe impacts above an equivalent 12-metre fall remain fatal. Moderate falls cause injury, including a second fall; they do not consume a kit automatically.
+
+The on-screen objective, compass bearing, condition and supplies explain progress. Nearby pickups identify themselves; lithium packs have blue wraps, ordinary batteries ochre wraps. Fragile sediment has crack markings and a nearby warning before contact. Aim at it and use **Q → Stone** from solid ground.
+
+Audio has a quiet baseline, rotating/crossfading ambience, occasional condition-based breathing, positioned water with obstruction attenuation, and optional sound captions. Important cues lower background ambience.
+
+Run `tools/expedition-check.html` on a disposable local origin for camp, recovery, checkpoint, audio and accelerated collision-route checks. The record in `EXPEDITION-PLAN.md` tracks qualification; a simulated traversal does not replace human pacing and sound-mix acceptance.
+
+## Earlier systems and controls
+
 A roguelike caving simulator in the browser. The cave is endless and procedurally carved; it is pitch black; you have a
 hand-crank torch, sixteen seconds of breath (a little more with every sump you come up from), and a piece of chalk. Somewhere, if you persist, it opens to daylight.
 
@@ -23,7 +37,7 @@ The browser checks cover rendering, sound decoding, walking, torch charging, the
 
 The cave continues to generate as the player explores. The 30 numbered seeds above are regression samples, not a level catalogue. A separate regression verifies growth beyond the initially generated region.
 
-The demo uses original low-poly Blender assets, world-space mineral detail, clipped water edges, depth coloration, splash rings, debris/dust, streamed decorations and configurable VHS presentation. Tape is **Subtle** by default; Graphics defaults to **Standard**. Reduced motion and brightness controls are in the pause menu. Existing `karst.*` save keys remain compatible. Unversioned saves retain the v0.2 generator and original cave geometry; new caves use the v0.3 generator with maze passages and a campsite. Both generate continuously as the player explores.
+The demo uses original low-poly Blender assets, world-space mineral detail, clipped water edges, depth coloration, splash rings, debris/dust, streamed decorations and configurable VHS presentation. Tape is **Subtle** by default; Graphics defaults to **Standard**. Reduced motion and brightness controls are in the pause menu. Existing `karst.*` save keys remain compatible. Unversioned saves retain the v0.2 generator and original cave geometry; version 3 caves retain the maze generator; new caves use the v0.4 expedition generator. Both generate continuously as the player explores.
 
 Runtime dependencies are local: Three.js **0.160.0**, fonts, models and sound. Static hosting needs `index.html`, `credits.html`, `src/`, `vendor/three/`, `assets/fonts/`, `assets/models/*.glb`, `sounds/out/` and `sounds/CREDITS.md`. No CDN requests are needed. The Blender source, development tools, screenshots, `.git` and `.claude` stay off the web server.
 
@@ -42,7 +56,7 @@ Runtime dependencies are local: Three.js **0.160.0**, fonts, models and sound. S
 | E | Use or rig a nearby rope — a coil is about twelve metres; deeper pitches require enough coils tied together, rounded up to cover the full drop. Hold E at the top of a rope you rigged to pull it up and coil it again. At the edge of a sump, E ties a coil off and lays it through as a line (twelve metres of usable line per coil); in the water, hold E to haul yourself along the line toward the bank you face when you grab it; release to change direction, faster than swimming and blind if you have to. Hold E on either bank to reel it in |
 | G | Tap to drop a glowstick; hold and release to throw |
 | P (right stick click) | Photograph. Eight frames on the roll per attempt; the flash lights the whole room for an instant — more than the torch ever shows — and the print goes into the survey, numbered where you took it. Prints stay in the cave's notebook across attempts and appear on the end screen |
-| Q (hold) | Tools wheel: move the mouse toward chalk, whistle, rest, or stone, then release Q. Release at the center to cancel. A tossed stone lands where you are looking: you hear the floor, or the drop — and a crust over a shaft gives way under it. |
+| Q (hold) | Tools wheel (Rest is now Recover: treat with a kit when injured, otherwise rest): move the mouse toward chalk, whistle, rest, or stone, then release Q. Release at the center to cancel. A tossed stone lands where you are looking: you hear the floor, or the drop — and a crust over a shaft gives way under it. |
 | Tab | Open / close the survey notebook |
 | chalk | type a note and press Enter; press Enter with nothing typed (or pick chalk on a controller) for an arrow with the compass direction you face |
 | Esc | Pause movement, resources, hazards, delayed events, and audio; open settings and the new-cave option |
@@ -97,8 +111,8 @@ Passages, chambers, crawls, squeezes, canyons, bedding planes, chimneys; flooded
 boulder caverns; crystal pockets; dripstone and calcite draperies; mist over the lakes; bioluminescent algae; cascades; active streamways that run downhill in
 steps and sometimes go under; rimstone terraces — calcite dams holding clear pools, stepping down, with cave pearls in them; black lakes in big chambers that you wade into, swim across in the cold, and wade out of; windows — a second hole to the sky in a shallow chamber roof, with rain and roots and birds and no way up it; glow-worms — a few hundred blue-green lights on threads of silk, hung from a damp roof, best with the torch off; bat roosts; olms in the still pools, pale and blind, that flinch from the beam; fossils in the bedding — ammonites, crinoid stems, shells; mineral tints by region; bones, and the packs of the cavers who left them — spare cells, glowsticks, rope, a first-aid kit, a wetsuit if you
 are lucky, and their pages.
-Every cave has one camp, well in: sleeping bags, a stove, the packs and pages of a party that stopped there, and
-everything they chalked on the walls. Every cave has one great room, well in: a cavern with a lake through the middle of it, algae on the walls, water
+The expedition has one designated camp; version 3 caves also place a camp procedurally: sleeping bags, a stove, the packs and pages of a party that stopped there, and
+everything they chalked on the walls. Older cave generation can include a great room: a cavern with a lake through the middle of it, algae on the walls, water
 falling from the roof, glow-worms over the far shore. The surface keeps real time: the light down the shafts and at the mouth is whatever it is outside right now — grey
 day, orange dusk, or stars, with hardly a bird. Chambers you reach get names, written into the survey. Some packs hold a page from their owner's log — what they
 learned about the sump, the drop, the roof or the air nearby — copied into the margin of your survey and kept for
