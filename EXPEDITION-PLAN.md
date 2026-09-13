@@ -22,3 +22,13 @@ Validation on 12 September 2026 (local):
 - A continuous accelerated collision traversal of seed 17 reached the actual escape trigger in 9.46 simulated movement minutes. An earlier run found a low-passage blockage; the passage clearance and automatic crawl transition were corrected and the traversal passed twice afterward.
 
 Limits: simulated movement time excludes player deliberation, map reading, rest and optional exploration. The 10-15 minute target requires human playtesting, especially the length of low passages. The traversal uses actual movement/collision and generated terrain, but is not a timed human survival run or exhaustive validation of all seeds. Physical controller feel and audio mix acceptance remain player checks. A browser WebGL-context failure followed repeated fixture reloads; a fresh Codex browser tab recovered and passed visual checks. No universal performance or constant-memory claim is made.
+
+## Publication
+
+Published to https://claustro.alphasquaredgames.com/ on 12 September 2026 (America/Edmonton), verified at 2026-09-13T03:50:37Z. Runtime commit `b8cb183` is pushed on `codex/claustrophobia-expedition-demo-v0.4` from the isolated `C:\dev\claustrophobia-demo` worktree. Claude's original checkout was not modified.
+
+Release `demo-0.4.0-9e5eac1edf` contains 148 files, 7,950,466 bytes before compression. Package and machine-readable verification evidence are at `C:\Users\afahm\Documents\ChatGPT\Claustrophobia\artifacts\browser-demo-release\demo-0.4.0-9e5eac1edf`. Through the signed-in Codex browser, the runtime archive was uploaded and extracted to `/home/u481134120/domains/alphasquaredgames.com/public_html/claustro`; all 147 versioned runtime files matched the manifest over cache-busted public HTTPS before the entry page was replaced.
+
+Both `/` and `/index.html` returned HTTP 200 with SHA-256 `aa4f1ba5c7ff8e3ba6ce903e4cd39758a296bdaf4d53c1c59ed93009cf430501`. The public game displayed version `0.4.0-demo`, preserved the previous cave at startup, and loaded a fresh expedition through its normal UI. Gameplay started with the camp objective and status, then paused successfully, with no captured warning/error logs. Pointer lock was unavailable in the Codex browser and the existing middle-drag fallback was offered.
+
+The previous live entry is saved as `previous-live-index.html` beside the package; v0.3 runtime files remain hosted. Restoring that saved entry is the rollback path. The 10-15 minute label remains a playtest target, not a measured human completion guarantee.

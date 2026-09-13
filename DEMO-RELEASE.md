@@ -1,6 +1,8 @@
 # Claustrophobia browser demo release history
 
-Current live release: **v0.3**, `demo-0.3.0-1266a34b5b`, published and verified on 12 September 2026 (America/Edmonton). See [the v0.3 integration and publication review](INTEGRATION-REVIEW.md). The v0.2 record below is retained as historical evidence and rollback context.
+Current live release: **v0.4**, `demo-0.4.0-9e5eac1edf`, published and verified on 12 September 2026 (America/Edmonton). See [the expedition implementation, validation and publication record](EXPEDITION-PLAN.md). Start a new expedition for the 10-15 minute camp-to-surface route; existing caves preserve their generators.
+
+Previous release: **v0.3**, `demo-0.3.0-1266a34b5b`. See [the v0.3 integration and publication review](INTEGRATION-REVIEW.md). Its runtime remains hosted and its entry page was saved for rollback. The v0.2 record below is retained as historical evidence.
 
 ## Previous release: v0.2
 
